@@ -2190,55 +2190,6 @@ int CChar::Skill_Lockpicking( SKTRIG_TYPE stage )
 	return 0;
 }
 
-int CChar::Skill_Hiding( SKTRIG_TYPE stage )
-{
-	ADDTOCALLSTACK("CChar::Skill_Hiding");
-	// SKILL_Hiding
-	// Skill required varies with terrain and situation ?
-	// if we are carrying a light source then this should not work.
-
-	if ( stage == SKTRIG_STROKE )	// we shoud just stay in HIDING skill ?
-		return 0;
-
-	if ( stage == SKTRIG_FAIL )
-	{
-		Reveal();
-		return 0;
-	}
-
-	if ( stage == SKTRIG_SUCCESS )
-	{
-		ObjMessage(g_Cfg.GetDefaultMsg(DEFMSG_HIDING_SUCCESS), this);
-		StatFlag_Set(STATF_HIDDEN);
-		Reveal(STATF_INVISIBLE);	// clear previous invisibility spell effect (this will not reveal the char because STATF_HIDDEN still set)
-		UpdateMode();
-		if ( IsClient() )
-		{
-			GetClient()->removeBuff( BI_HIDDEN );
-			GetClient()->addBuff( BI_HIDDEN , 1075655, 1075656 );
-		}
-		return 0;
-	}
-
-	if ( stage == SKTRIG_START )
-	{
-		// Make sure I'm not carrying a light ?
-		for ( CItem *pItem = GetContentHead(); pItem != nullptr; pItem = pItem->GetNext() )
-		{
-			if ( !CItemBase::IsVisibleLayer( pItem->GetEquipLayer()))
-				continue;
-			if ( pItem->Can( CAN_I_LIGHT ))
-			{
-				SysMessageDefault( DEFMSG_HIDING_TOOLIT );
-				return -SKTRIG_QTY;
-			}
-		}
-
-		return Calc_GetRandVal(70);	// How difficult? 1-1000
-	}
-	ASSERT(0);
-	return -SKTRIG_QTY;
-}
 
 int CChar::Skill_Herding( SKTRIG_TYPE stage )
 {
