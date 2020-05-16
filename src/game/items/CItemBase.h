@@ -418,6 +418,13 @@ public:
 		char m_dz;
 	};
 
+	struct MultiOffset
+	{
+		short m_dx;
+		short m_dy;
+		char m_dz;
+	};
+
 	std::vector<CMultiComponentItem> m_Components;
 	ShipSpeed _shipSpeed; // Speed of ships (IT_SHIP)
 	ShipMovementSpeed m_SpeedMode;

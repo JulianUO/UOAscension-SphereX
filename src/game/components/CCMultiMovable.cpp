@@ -1317,14 +1317,12 @@ bool CCMultiMovable::r_WriteVal(lpctstr ptcKey, CSString & sVal, CTextConsole * 
     ASSERT(pItemThis);
     switch (index)
     {
-
         case CML_ANCHOR:
             sVal.FormatBVal(pItemThis->m_itShip.m_fAnchored);
             break;
         case CML_DIRFACE:
             sVal.FormatBVal(pItemThis->m_itShip.m_DirFace);
-            break;
-        case CML_PILOT:
+            break;        case CML_PILOT:
         {
             if (pItemThis->m_itShip.m_Pilot)
                 sVal.FormatHex(pItemThis->m_itShip.m_Pilot);

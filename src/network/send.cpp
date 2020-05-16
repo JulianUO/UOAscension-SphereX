@@ -1732,7 +1732,7 @@ PacketAddTarget::PacketAddTarget(const CClient* target, PacketAddTarget::TargetT
 	if ( !pItemDef )
 		return;
 
-	word x, y, z = 0;
+	word x = 0, y = 0, z = 0;
 	CItemBaseMulti *pMultiDef = static_cast<CItemBaseMulti *>(pItemDef);
 	if (pMultiDef && CItemBase::IsID_Multi(id))
 	{
@@ -1740,7 +1740,7 @@ PacketAddTarget::PacketAddTarget(const CClient* target, PacketAddTarget::TargetT
 		y = (word)(pMultiDef->m_rect.m_bottom + pMultiDef->m_Offset.m_dy);
 		z = (word)(pMultiDef->m_Offset.m_dz);
 	}
-		
+
 	writeByte((byte)type);
 	writeInt32(context);
 	writeByte((byte)flags);
