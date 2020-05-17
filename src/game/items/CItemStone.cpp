@@ -117,6 +117,7 @@ void CItemStone::r_Write( CScript & s )
 	ADDTOCALLSTACK_INTENSIVE("CItemStone::r_Write");
 	CItem::r_Write( s );
 	s.WriteKeyVal( "ALIGN", GetAlignType());
+	s.WriteKeyVal( "ALLIANCE", _uidAlliance);
 	if ( ! m_sAbbrev.IsEmpty())
 		s.WriteKey( "ABBREV", m_sAbbrev );
 
@@ -348,6 +349,28 @@ bool CItemStone::r_LoadVal( CScript & s ) // Load an item Script
 		case STC_ALIGN: // "ALIGN"
 			SetALIGNTYPE(static_cast<STONEALIGN_TYPE>(s.GetArgVal()));
 			return true;
+		case STC_ALLIANCE:
+			{
+				if (s.HasArgs())
+				{
+					CUID pNewAlliance = (dword)s.GetArgVal();
+					CItem* pItem = pNewAlliance.ItemFind();
+					if (!pItem)
+					{
+						DEBUG_ERR(("ALLIANCE called on non item 0%x uid.\n", (dword)pNewAlliance));
+						return false;
+					}
+
+					_uidAlliance = pNewAlliance;
+					return true;
+				}
+				else
+				{
+					_uidAlliance = (CUID)0;
+					return true;
+				}
+			}
+			return true;
 		case STC_MASTERUID:
 			{
 				if ( s.HasArgs() )
@@ -441,6 +464,22 @@ bool CItemStone::r_WriteVal( lpctstr ptcKey, CSString & sVal, CTextConsole * pSr
 	EXC_TRY("WriteVal");
 	CChar * pCharSrc = pSrc->GetChar();
 
+	if (!strnicmp("alliance.", ptcKey, 9))
+	{
+		if (!_uidAlliance)
+		{
+			sVal.FormatHex(0);
+			return true;
+		}
+
+		lpcstr pszCmd = ptcKey + 9;
+		if (!strnicmp("MASTER", pszCmd, 6))
+		{
+			CItem* pAllyStone = _uidAlliance.ItemFind();
+			sVal.FormatHex((dword)pAllyStone->m_uidLink);
+			return true;
+		}
+	}
 	if ( !strnicmp("member.",ptcKey,7) )
 	{
 		lpctstr pszCmd = ptcKey + 7;
@@ -640,6 +679,10 @@ bool CItemStone::r_WriteVal( lpctstr ptcKey, CSString & sVal, CTextConsole * pSr
 		case STC_ALIGN:
 			sVal.FormatVal( GetAlignType());
 			return true;
+		case STC_ALLIANCE:
+			sVal.FormatHex((dword)_uidAlliance);
+			return true;
+		return true;
 		case STC_WEBPAGE: // "WEBPAGE"
 			sVal = GetWebPageURL();
 			return true;
