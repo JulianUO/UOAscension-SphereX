@@ -9,27 +9,6 @@
 #include "../chars/CStoneMember.h"
 #include "CItem.h"
 
-
-enum STONEDISP_TYPE	// Hard coded Menus
-{
-	STONEDISP_NONE = 0,
-	STONEDISP_ROSTER,
-	STONEDISP_CANDIDATES,
-	STONEDISP_FEALTY,
-	STONEDISP_ACCEPTCANDIDATE,
-	STONEDISP_REFUSECANDIDATE,
-	STONEDISP_DISMISSMEMBER,
-	STONEDISP_VIEWCHARTER,
-	STONEDISP_SETCHARTER,
-	STONEDISP_VIEWENEMYS,
-	STONEDISP_VIEWTHREATS,
-	STONEDISP_DECLAREWAR,
-	STONEDISP_DECLAREPEACE,
-	STONEDISP_GRANTTITLE,
-	STONEDISP_VIEWBANISHED,
-	STONEDISP_BANISHMEMBER
-};
-
 class CMultiStorage;
 
 class CItemStone : public CItem, public CSObjList
@@ -50,6 +29,7 @@ private:
     CMultiStorage *_pMultiStorage;
     int16 _iMaxShips;
     int16 _iMaxHouses;
+	CUID _uidAlliance;
 private:
 
 	void SetTownName();
