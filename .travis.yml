@@ -30,8 +30,8 @@ addons:
       
   coverity_scan:
     project:
-      name: "Sphereserver/Source-X"
-      description: "Game server for Ultima Online"
+      name: "JulianUO/UOAscension-SphereX"
+      description: "Game server for Ultima Online by SphereServer"
     notification_email: null@null
     branch_pattern: coverity_scan
     build_command_prepend: cmake -G '$CMAKE_GEN' -DCMAKE_BUILD_TYPE="Nightly" -DCMAKE_TOOLCHAIN_FILE='$CMAKE_TCH_64' ./src
