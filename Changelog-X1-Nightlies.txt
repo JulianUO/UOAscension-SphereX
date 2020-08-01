@@ -2264,3 +2264,20 @@ Must have event, even if it's empty, since it's applied by the source to generat
 16-05-2020, Nolok
 - Fixed: Character's CREATE property wasn't saved in the savefile (Issue #459).
 - Fixed: Retrieving EVENTS returned only the first event added (Issue #473).
+
+17-05-2020, Julian
+- Fixed: WeightReduction not being applied to containers. (Issue #407)
+- Fixed: RangeL is now 0 when it's not set in the weapon. (Issue #480)
+- Modified: Casting now searches for reagents in every pack the player has instead of only the backpack.
+
+12-07-2020, Drk84
+- Fixed: Some issues related to combat triggers order and combat actdiff.
+		The issues were the following:
+		1)When combat started, the first @HitTry trigger was fired before the @SkillStart/@Start triggers.
+		  If we were using a custom combat formula and thus overriding  the ACTDIFF in @HitTry, forcing a miss by setting a negative value in ACTDIFF would cause the combat to block.
+		2)When combat started, the chance to hit wasn't calculated so the first hit was always a success because ACTDIFF was set to 0.
+
+23-07-2020, Drk8
+- Fixed: Adding the Blade Spirits spell to a spellbook added the Clumsy spell. (Issue #496)
+		 Warning: existing Spellbooks with the Blade Spirits spell added by scroll or addspell have the more1 value corrupted and so need they must be replaced.
+		 Only Magery Spellbooks are affected because other spellsbooks doesn't have more than 32 spells (Mastery Spells are not implemented).

@@ -94,7 +94,7 @@ bool CCMultiMovable::SetMoveDir(DIR_TYPE dir, ShipMovementType eMovementType, bo
     // TODO RowBoat's checks.
     if (fWheelMove)
         _eSpeedMode = (eMovementType == SMT_SLOW) ? SMS_SLOW : SMS_FAST;
-
+	
     SetNextMove();
     return true;
 }
