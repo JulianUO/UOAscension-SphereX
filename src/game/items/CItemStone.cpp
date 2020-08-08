@@ -691,7 +691,7 @@ bool CItemStone::r_WriteVal( lpctstr ptcKey, CSString & sVal, CTextConsole * pSr
 			sVal.FormatVal( GetAlignType());
 			return true;
 		case STC_ALLIANCE:
-			sVal.FormatHex(_uidAlliance ? _uidAlliance : 0);
+			sVal.FormatHex(_uidAlliance ? _uidAlliance : (CUID)0);
 			return true;
 		case STC_WEBPAGE: // "WEBPAGE"
 			sVal = GetWebPageURL();
