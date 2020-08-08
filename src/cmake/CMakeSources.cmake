@@ -385,6 +385,7 @@ game/chars/CChar.h
 game/chars/CCharAttacker.cpp
 game/chars/CCharBase.h
 game/chars/CCharFight.cpp
+game/chars/CCharFightItem.cpp
 game/chars/CCharLOS.cpp
 game/chars/CCharMemory.cpp
 game/chars/CCharNotoriety.cpp
