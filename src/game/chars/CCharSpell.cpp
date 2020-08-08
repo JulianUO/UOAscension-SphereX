@@ -2357,8 +2357,8 @@ bool CChar::Spell_CanCast( SPELL_TYPE &spellRef, bool fTest, CObjBase * pSrc, bo
 				if ( iLowerReagentCost <= Calc_GetRandVal(100))
 				{
 					const CResourceQtyArray * pRegs = &(pSpellDef->m_Reags);
-					CContainer* pCont = dynamic_cast<CContainer*>(this);
-					size_t iMissing = pCont->ResourceConsumePart( pRegs, 1, 100, fTest );
+					CContainer* pParent = dynamic_cast<CContainer*>(this);
+					size_t iMissing = pParent->ResourceConsumePart( pRegs, 1, 100, fTest );
 					if ( iMissing != SCONT_BADINDEX )
 					{
 						if ( fFailMsg )

@@ -19,6 +19,7 @@ CItemStone::CItemStone( ITEMID_TYPE id, CItemBase * pItemDef ) :
     _pMultiStorage = new CMultiStorage(CUID());
     _iMaxShips = g_Cfg._iMaxShipsGuild;
     _iMaxHouses = g_Cfg._iMaxHousesGuild;
+	_uidAlliance = 0;
 }
 
 CItemStone::~CItemStone()
@@ -78,6 +79,16 @@ STONEALIGN_TYPE CItemStone::GetAlignType() const
 void CItemStone::SetALIGNTYPE(STONEALIGN_TYPE iAlign)
 {
 	m_itStone.m_iAlign = iAlign;
+}
+
+CUID CItemStone::GetAlliance() const
+{
+	return _uidAlliance;
+}
+
+void CItemStone::SetAlliance(CUID uid)
+{
+	_uidAlliance = uid;
 }
 
 lpctstr CItemStone::GetAbbrev() const
@@ -361,12 +372,12 @@ bool CItemStone::r_LoadVal( CScript & s ) // Load an item Script
 						return false;
 					}
 
-					_uidAlliance = pNewAlliance;
+					SetAlliance(pNewAlliance);
 					return true;
 				}
 				else
 				{
-					_uidAlliance = (CUID)0;
+					SetAlliance((CUID)0);
 					return true;
 				}
 			}
@@ -466,17 +477,17 @@ bool CItemStone::r_WriteVal( lpctstr ptcKey, CSString & sVal, CTextConsole * pSr
 
 	if (!strnicmp("alliance.", ptcKey, 9))
 	{
+		lpcstr pszCmd = ptcKey + 9;
+
 		if (!_uidAlliance)
 		{
-			sVal.FormatHex(0);
+			sVal.FormatVal(0);
 			return true;
 		}
-
-		lpcstr pszCmd = ptcKey + 9;
-		if (!strnicmp("MASTER", pszCmd, 6))
+		else if (!strnicmp("master", pszCmd, 6))
 		{
-			CItem* pAllyStone = _uidAlliance.ItemFind();
-			sVal.FormatHex((dword)pAllyStone->m_uidLink);
+			CItemStone* pAllyStone = dynamic_cast<CItemStone *>(_uidAlliance.ItemFind());
+			sVal.FormatHex((dword)pAllyStone->GetMaster()->GetUID());
 			return true;
 		}
 	}
@@ -680,9 +691,8 @@ bool CItemStone::r_WriteVal( lpctstr ptcKey, CSString & sVal, CTextConsole * pSr
 			sVal.FormatVal( GetAlignType());
 			return true;
 		case STC_ALLIANCE:
-			sVal.FormatHex((dword)_uidAlliance);
+			sVal.FormatHex(_uidAlliance ? _uidAlliance : 0);
 			return true;
-		return true;
 		case STC_WEBPAGE: // "WEBPAGE"
 			sVal = GetWebPageURL();
 			return true;
@@ -961,7 +971,7 @@ bool CItemStone::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command f
 						CUID pGuildUid = (uint)(piCmd[0]);
 						bool bWeDeclared = (piCmd[1] != 0);
 						CItem * pEnemyItem = pGuildUid.ItemFind();
-						if ( pEnemyItem && (pEnemyItem->IsType(IT_STONE_GUILD) || pEnemyItem->IsType(IT_STONE_TOWN)) )
+						if ( pEnemyItem && (pEnemyItem->IsType(IT_STONE_GUILD) || pEnemyItem->IsType(IT_STONE_TOWN) || pEnemyItem->IsType(IT_STONE_ALLIANCE)) )
 						{
 							CStoneMember * pMemberGuild = GetMember( pEnemyItem );
 							if ( !pMemberGuild )
@@ -1378,6 +1388,10 @@ bool CItemStone::IsAlliedWith( const CItemStone * pStone) const
 			return true;
 	}
 
+	// We share the same Alliance UID
+	if (_uidAlliance && pStone->_uidAlliance)
+		return (_uidAlliance == pStone->_uidAlliance);
+
 	// we have declared or they declared.
 	CStoneMember * pAllyMember = GetMember(pStone);
 	if ( pAllyMember ) // Ok, we might be ally
@@ -1415,9 +1429,22 @@ bool CItemStone::IsAtWarWith( const CItemStone * pEnemyStone ) const
 			return true;
 	}
 
-	// we have declared or they declared.
+	// We are part of an alliance and we should check if the alliance master is at war.
+	// The alliance is considered a "guildstone" by itself
+	// Should search through the members
+	if (_uidAlliance)
+	{
+		CItemStone* pAllianceStone = dynamic_cast<CItemStone*>(_uidAlliance.ItemFind());
+		CStoneMember* pEnemyMember = pAllianceStone->GetMember(pEnemyStone);
+
+		if (pEnemyMember->m_iPriv == STONEPRIV_ENEMY && pEnemyMember->GetTheyDeclaredWar() && pEnemyMember->GetWeDeclaredWar())
+			return true;
+	}
+
+	// We have declared or they declared.
+	// If our guild is not in alliance, we search in our members.
 	CStoneMember * pEnemyMember = GetMember(pEnemyStone);
-	if (pEnemyMember) // Ok, we might be at war
+	if (pEnemyMember)
 	{
 		if ( pEnemyMember->m_iPriv == STONEPRIV_ENEMY && pEnemyMember->GetTheyDeclaredWar() && pEnemyMember->GetWeDeclaredWar())
 			return true;

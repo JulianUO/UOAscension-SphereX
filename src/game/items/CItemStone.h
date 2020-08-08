@@ -15,6 +15,7 @@ class CItemStone : public CItem, public CSObjList
 {
 	// IT_STONE_GUILD
 	// IT_STONE_TOWN
+	// IT_STONE_ALLIANCE
 	// ATTR_OWNED = auto promote to member.
 
 	friend class CStoneMember;
@@ -22,6 +23,7 @@ class CItemStone : public CItem, public CSObjList
 	static lpctstr const sm_szLoadKeys[];
 	static lpctstr const sm_szLoadKeysM[];
 	static lpctstr const sm_szLoadKeysG[];
+
 private:
 	CSString m_sCharter[6];
 	CSString m_sWebPageURL;
@@ -30,17 +32,17 @@ private:
     int16 _iMaxShips;
     int16 _iMaxHouses;
 	CUID _uidAlliance;
-private:
 
+private:
 	void SetTownName();
 	bool SetName( lpctstr pszName );
+
 	virtual bool MoveTo(CPointMap pt, bool bForceFix = false);
 
 	MEMORY_TYPE GetMemoryType() const;
-
 	lpctstr GetCharter(uint iLine) const;
-	void SetCharter( uint iLine, lpctstr pCharter );
 	lpctstr GetWebPageURL() const;
+	void SetCharter(uint iLine, lpctstr pCharter);
 	void SetWebPageURL( lpctstr pWebPageURL );
 	void ElectMaster();
 public:
@@ -88,6 +90,8 @@ public:
 	STONEALIGN_TYPE GetAlignType() const;
 	void SetALIGNTYPE(STONEALIGN_TYPE iAlign);
 	lpctstr GetAlignName() const;
+	void SetAlliance(CUID uid);
+	CUID GetAlliance() const;
 	lpctstr GetAbbrev() const;
 	void SetAbbrev( lpctstr pAbbrev );
 };

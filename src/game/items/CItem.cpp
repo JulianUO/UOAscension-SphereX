@@ -299,6 +299,7 @@ CItem * CItem::CreateBase( ITEMID_TYPE id, IT_TYPE type )	// static
 			// A message for a bboard or book text.
 			pItem = new CItemMessage( id, pItemDef );
 			break;
+		case IT_STONE_ALLIANCE:
 		case IT_STONE_GUILD:
 		case IT_STONE_TOWN:
 			pItem = new CItemStone( id, pItemDef );

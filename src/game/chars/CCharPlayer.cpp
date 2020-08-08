@@ -203,6 +203,17 @@ bool CCharPlayer::r_WriteVal( CChar * pChar, lpctstr ptcKey, CSString & sVal )
 		}
 		return false;
 	}
+	/* else if (!strnicmp(ptcKey, "ALLIANCE", 8))
+	{
+		ptcKey += 8;
+		if (*ptcKey == 0)
+		{
+			CItemStone* pMyGuild = pChar->Guild_Find(MEMORY_GUILD);
+			if (pMyGuild)
+				sVal.FormatHex((dword)pMyGuild->GetAlliance);
+		}
+		return false;
+	}*/
 
 	switch ( FindTableHeadSorted( ptcKey, sm_szLoadKeys, CPC_QTY ))
 	{
@@ -624,6 +635,24 @@ bool CChar::Player_OnVerb( CScript &s, CTextConsole * pSrc )
 					script.m_iLineNum = s.m_iLineNum;						// Line in the script file where Key/Arg were read
                    	return pMyGuild->r_Verb(script, pSrc);
                 }
+			}
+			return false;
+		}
+		if (!strnicmp(ptcKey, "ALLIANCE", 8))
+		{
+			ptcKey += 8;
+			if (*ptcKey == '.')
+			{
+				ptcKey += 1;
+				CItemStone* pMyGuild = Guild_Find(MEMORY_GUILD);
+				if (pMyGuild && pMyGuild->GetAlliance())
+				{
+					CItemStone* pAllianceStone = dynamic_cast<CItemStone*>(pMyGuild->GetAlliance().ItemFind());
+					CScript script(ptcKey, s.GetArgRaw());
+					script.m_iResourceFileIndex = s.m_iResourceFileIndex;
+					script.m_iLineNum = s.m_iLineNum;
+					return pAllianceStone->r_Verb(script, pSrc);
+				}
 			}
 			return false;
 		}
