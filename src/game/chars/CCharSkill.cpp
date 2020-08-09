@@ -4231,7 +4231,7 @@ bool CClient::Skill_Menu(SKILL_TYPE skill, ITEMID_TYPE itemused)
 {
 	// Default menu is d_craft_menu
 	// Open in page 0, args is skill used.
-	LPCTSTR dSkillMenu = "d_CraftingMenu";
+	lpctstr dSkillMenu = "d_CraftingMenu";
 
 	CScriptTriggerArgs Args;
 	Args.m_VarsLocal.SetStrNew("SkillMenu", dSkillMenu);
@@ -4245,7 +4245,7 @@ bool CClient::Skill_Menu(SKILL_TYPE skill, ITEMID_TYPE itemused)
 		dSkillMenu = Args.m_VarsLocal.GetKeyStr("Skillmenu", false);
 	}
 
-	LPCTSTR SkillUsed = g_Cfg.GetSkillKey(skill);
+	lpctstr SkillUsed = g_Cfg.GetSkillKey(skill);
 	//g_Log.EventError("Crafting::Using skill %s \n", SkillUsed);
 	if (IsValidDef(dSkillMenu))
 		return Dialog_Setup(CLIMODE_DIALOG, g_Cfg.ResourceGetIDType(RES_DIALOG, dSkillMenu), 0, m_pChar, SkillUsed);
