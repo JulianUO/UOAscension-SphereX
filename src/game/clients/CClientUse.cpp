@@ -934,7 +934,7 @@ bool CClient::Cmd_Skill_Magery( SPELL_TYPE iSpell, CObjBase *pSrc )
 					return true;
 			}
 			return Cmd_Skill_Menu(g_Cfg.ResourceGetIDType(RES_SKILLMENU, "sm_polymorph"));
-		}
+		} break;
 
 		case SPELL_Summon:
 		{
@@ -955,7 +955,7 @@ bool CClient::Cmd_Skill_Magery( SPELL_TYPE iSpell, CObjBase *pSrc )
 				Dialog_Setup(CLIMODE_DIALOG, g_Cfg.ResourceGetIDType(RES_DIALOG, dSkillMenu), 0, m_pChar, "skill_magery");
 				return true;			
 			}
-		}
+		} break;
 
 		case SPELL_Summon_Familiar:
 		{
@@ -966,7 +966,7 @@ bool CClient::Cmd_Skill_Magery( SPELL_TYPE iSpell, CObjBase *pSrc )
 					return true;
 			}
 			return Cmd_Skill_Menu(g_Cfg.ResourceGetIDType(RES_SKILLMENU, "sm_summon_familiar"));
-		}
+		} break;
 
 		default:
 			break;
