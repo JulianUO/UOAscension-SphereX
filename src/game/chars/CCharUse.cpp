@@ -754,7 +754,7 @@ bool CChar::Use_Repair( CItem * pItemArmor )
 		return false;
 
 	SKILL_TYPE skill = static_cast<SKILL_TYPE>(pItemDef->m_SkillMake[i].GetResIndex());
-	WORD wSkillVal = Skill_GetAdjusted(skill);
+	ushort wSkillVal = Skill_GetAdjusted(skill);
 	int iDecrease = 0;
 	if (wSkillVal >= 900)
 		iDecrease = 1;
