@@ -939,7 +939,7 @@ bool CClient::Cmd_Skill_Magery( SPELL_TYPE iSpell, CObjBase *pSrc )
 		case SPELL_Summon:
 		{
 
-			LPCTSTR dSkillMenu = "d_SummonCreature";
+			lpctstr dSkillMenu = "d_SummonCreature";
 			CScriptTriggerArgs Args;
 			Args.m_VarsLocal.SetStrNew("SkillMenu", dSkillMenu);
 			Args.m_VarsLocal.SetNumNew("Skill", SKILL_MAGERY);
