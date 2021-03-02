@@ -182,10 +182,11 @@ CServerConfig::CServerConfig()
 	m_iDistanceYell		= UO_MAP_VIEW_RADAR;
 	m_iDistanceWhisper	= 3;
 	m_iDistanceTalk		= UO_MAP_VIEW_SIZE_DEFAULT;
+    m_iNPCDistanceHear  = 4;
 	m_iOptionFlags		= (OF_Command_Sysmsgs|OF_NoHouseMuteSpeech);
 
 	m_iMaxSkill			= SKILL_QTY;
-	m_iWalkBuffer		= 75;
+	m_iWalkBuffer		= 15;
 	m_iWalkRegen		= 25;
 	m_iWoolGrowthTime	= 30*60 * MSECS_PER_SEC;
 	m_iAttackerTimeout	= 30;
@@ -198,6 +199,7 @@ CServerConfig::CServerConfig()
 	m_fPayFromPackOnly	= false;	// pay vendors from packs only
 
 	m_iOverSkillMultiply	= 2;
+	m_iCanSeeSamePLevel		= 0;
 	m_fSuppressCapitals		= false;
 
 	m_iAdvancedLos		= 0;
@@ -270,6 +272,7 @@ CServerConfig::CServerConfig()
 	m_iColorNotoInvulGameMaster = 0x12;		// purple
 	m_iColorNotoDefault			= 0x3b2;	// grey (if not any other)
 
+	m_iColorInvisItem   = 1000;
 	m_iColorInvis		= 0;
 	m_iColorInvisSpell	= 0;
 	m_iColorHidden		= 0;
@@ -430,6 +433,7 @@ enum RC_TYPE
 	RC_BANKMAXITEMS,
 	RC_BANKMAXWEIGHT,
 	RC_BUILD,
+	RC_CANSEESAMEPLEVEL,		// m_iCanSeeSamePLevel
 	RC_CANUNDRESSPETS,			// m_fCanUndressPets
 	RC_CHARTAGS,				// m_fCharTags
 	RC_CLIENTLINGER,
@@ -440,6 +444,7 @@ enum RC_TYPE
 	RC_CLIENTS,
 	RC_COLORHIDDEN,
 	RC_COLORINVIS,
+	RC_COLORINVISITEM,
 	RC_COLORINVISSPELL,
 	RC_COLORNOTOCRIMINAL,		// m_iColorNotoCriminal
 	RC_COLORNOTODEFAULT,		// m_iColorNotoDefault
@@ -581,6 +586,7 @@ enum RC_TYPE
 	RC_NOWEATHER,				// m_fNoWeather
 	RC_NPCAI,					// m_iNpcAi
 	RC_NPCCANFIZZLEONHIT,		// m_fNPCCanFizzle
+    RC_NPCDISTANCEHEAR,         // m_iNPCDistanceHear
 	RC_NPCNOFAMETITLE,			// m_NPCNoFameTitle
 	RC_NPCSKILLSAVE,			// m_iSaveNPCSkills
 	RC_NPCTRAINCOST,			// m_iTrainSkillCost
@@ -681,6 +687,7 @@ const CAssocReg CServerConfig::sm_szLoadKeys[RC_QTY+1] =
 	{ "BANKMAXITEMS",			{ ELEM_INT,		OFFSETOF(CServerConfig,m_iBankIMax),			0 }},
 	{ "BANKMAXWEIGHT",			{ ELEM_INT,		OFFSETOF(CServerConfig,m_iBankWMax),			0 }},
 	{ "BUILD",					{ ELEM_VOID,	0,											    0 }},
+	{ "CANSEESAMEPLEVEL",		{ ELEM_INT,		OFFSETOF(CServerConfig,m_iCanSeeSamePLevel),	0 }},
 	{ "CANUNDRESSPETS",			{ ELEM_BOOL,	OFFSETOF(CServerConfig,m_fCanUndressPets),		0 }},
 	{ "CHARTAGS",				{ ELEM_BOOL,	OFFSETOF(CServerConfig,m_fCharTags),			0 }},
 	{ "CLIENTLINGER",			{ ELEM_INT,		OFFSETOF(CServerConfig,m_iClientLingerTime),	0 }},
@@ -691,6 +698,7 @@ const CAssocReg CServerConfig::sm_szLoadKeys[RC_QTY+1] =
 	{ "CLIENTS",				{ ELEM_VOID,	0,											    0 }},	// duplicate
 	{ "COLORHIDDEN",			{ ELEM_VOID,	OFFSETOF(CServerConfig,m_iColorHidden),			0 }},
 	{ "COLORINVIS",				{ ELEM_VOID,	OFFSETOF(CServerConfig,m_iColorInvis),			0 }},
+	{ "COLORINVISITEM",			{ ELEM_VOID,	OFFSETOF(CServerConfig,m_iColorInvisItem),		0 }},
 	{ "COLORINVISSPELL",		{ ELEM_VOID,	OFFSETOF(CServerConfig,m_iColorInvisSpell),		0 }},
 	{ "COLORNOTOCRIMINAL",		{ ELEM_WORD,	OFFSETOF(CServerConfig,m_iColorNotoCriminal),	0 }},
 	{ "COLORNOTODEFAULT",		{ ELEM_WORD,	OFFSETOF(CServerConfig,m_iColorNotoDefault),	0 }},
@@ -831,7 +839,8 @@ const CAssocReg CServerConfig::sm_szLoadKeys[RC_QTY+1] =
 	{ "NOTOTIMEOUT",			{ ELEM_INT,		OFFSETOF(CServerConfig,m_iNotoTimeout),			0 }},
 	{ "NOWEATHER",				{ ELEM_BOOL,	OFFSETOF(CServerConfig,m_fNoWeather),			0 }},
 	{ "NPCAI",					{ ELEM_INT,		OFFSETOF(CServerConfig,m_iNpcAi),				0 }},
-	{ "NPCCANFIZZLEONHIT",		{ ELEM_BOOL,	OFFSETOF(CServerConfig,m_fNPCCanFizzleOnHit),		0 }},
+	{ "NPCCANFIZZLEONHIT",		{ ELEM_BOOL,	OFFSETOF(CServerConfig,m_fNPCCanFizzleOnHit),	0 }},
+    { "NPCDISTANCEHEAR",        { ELEM_INT,     OFFSETOF(CServerConfig,m_iNPCDistanceHear),     0 }},
 	{ "NPCNOFAMETITLE",			{ ELEM_BOOL,	OFFSETOF(CServerConfig,m_NPCNoFameTitle),		0 }},
 	{ "NPCSKILLSAVE",			{ ELEM_INT,		OFFSETOF(CServerConfig,m_iSaveNPCSkills),		0 }},
 	{ "NPCTRAINCOST",			{ ELEM_INT,		OFFSETOF(CServerConfig,m_iTrainSkillCost),		0 }},
@@ -961,8 +970,7 @@ bool CServerConfig::r_LoadVal( CScript &s )
 						if ( pszStr && *pszStr )
 						{
 							CScript script(pszStr);
-							script.m_iResourceFileIndex = s.m_iResourceFileIndex;	// If s is a CResourceFile, it should have valid m_iResourceFileIndex
-							script.m_iLineNum = s.m_iLineNum;						// Line where Key/Arg were read
+							script.CopyParseState(s);
 							for (int nIndex = 0; nIndex < nSectors; ++nIndex)
 							{
 								CSector* pSector = CWorldMap::GetSector(nMapNumber, nIndex);
@@ -986,8 +994,7 @@ bool CServerConfig::r_LoadVal( CScript &s )
                             if (pSector)
                             {
                                 CScript script(pszStr);
-                                script.m_iResourceFileIndex = s.m_iResourceFileIndex;	// If s is a CResourceFile, it should have valid m_iResourceFileIndex
-                                script.m_iLineNum = s.m_iLineNum;						// Line where Key/Arg were read
+								script.CopyParseState(s);
                                 return pSector->r_Verb(script, &g_Serv);
                             }
 
@@ -1079,6 +1086,9 @@ bool CServerConfig::r_LoadVal( CScript &s )
 		case RC_COLORINVIS:
 			m_iColorInvis = (HUE_TYPE)(s.GetArgVal());
 			break;
+		case RC_COLORINVISITEM:
+			m_iColorInvisItem = (HUE_TYPE)(s.GetArgVal());
+			break;
 		case RC_COLORINVISSPELL:
 			m_iColorInvisSpell = (HUE_TYPE)(s.GetArgVal());
 			break;
@@ -1098,12 +1108,14 @@ bool CServerConfig::r_LoadVal( CScript &s )
             }
             m_iCombatFlags = uiVal;
         }
+		break;
         case RC_CONTAINERMAXITEMS:
         {
-            uint uiVal = s.GetArgUVal();
+            const uint uiVal = s.GetArgUVal();
             if ((uiVal > 0) && (uiVal < MAX_ITEMS_CONT))
                 m_iContainerMaxItems = uiVal;
         }
+		break;
 		case RC_CORPSENPCDECAY:
 			m_iDecay_CorpseNPC = s.GetArgLLVal()*60*MSECS_PER_SEC;
 			break;
@@ -1495,8 +1507,12 @@ bool CServerConfig::r_WriteVal( lpctstr ptcKey, CSString & sVal, CTextConsole * 
 				{
 					default:
 					case 4:
-						if ( IsDigit(ppVal[3][0]) )
+						if (IsDigit(ppVal[3][0]))
+						{
 							pt.m_map = (byte)(atoi(ppVal[3]));
+						}
+						FALLTHROUGH;
+
 					case 3:
 						if ( IsDigit(ppVal[2][0]) || (( iArgs == 4 ) && ( ppVal[2][0] == '-' )) )
 						{
@@ -1504,10 +1520,16 @@ bool CServerConfig::r_WriteVal( lpctstr ptcKey, CSString & sVal, CTextConsole * 
 							if ( iArgs == 3 )
 								pt.m_map = (byte)(atoi(ppVal[2]));
 						}
+						FALLTHROUGH;
+
 					case 2:
 						pt.m_y = (short)(atoi(ppVal[1]));
+						FALLTHROUGH;
+
 					case 1:
 						pt.m_x = (short)(atoi(ppVal[0]));
+						FALLTHROUGH;
+
 					case 0:
 						break;
 				}
@@ -1828,6 +1850,9 @@ bool CServerConfig::r_WriteVal( lpctstr ptcKey, CSString & sVal, CTextConsole * 
 			break;
 		case RC_COLORINVIS:
 			sVal.FormatHex( m_iColorInvis );
+			break;
+		case RC_COLORINVISITEM:
+			sVal.FormatHex( m_iColorInvisItem );
 			break;
 		case RC_COLORINVISSPELL:
 			sVal.FormatHex( m_iColorInvisSpell );
@@ -2229,8 +2254,9 @@ bool CServerConfig::IsObscene( lpctstr pszText ) const
 	for ( size_t i = 0; i < m_Obscene.size(); ++i )
 	{
 		match.Resize(int(2 * strlen(m_Obscene[i])));
-		snprintf(match.GetBuffer(), match.GetCapacity(), "%s%s%s", "*", m_Obscene[i], "*");
-		MATCH_TYPE ematch = Str_Match( match , pszText );
+        lptstr ptcMatch = const_cast<lptstr>(match.GetBuffer()); // Do that just because we know that the buffer has the right size and we won't write past the buffer's end.
+		snprintf(ptcMatch, match.GetCapacity(), "%s%s%s", "*", m_Obscene[i], "*");
+		MATCH_TYPE ematch = Str_Match( ptcMatch , pszText );
 
 		if ( ematch == MATCH_VALID )
 			return true;
@@ -2723,11 +2749,11 @@ uint CServerConfig::GetPacketFlag( bool bCharlist, RESDISPLAY_VERSION res, uchar
 bool CServerConfig::LoadResourceSection( CScript * pScript )
 {
 	ADDTOCALLSTACK("CServerConfig::LoadResourceSection");
-	// Index or read any resource blocks we know how to handle.
+	// Index or read any resource sections we know how to handle.
 
 	ASSERT(pScript);
 	CScriptFileContext FileContext( pScript );	// set this as the context.
-    CSString sSection = pScript->GetSection();
+    const CSString sSection = pScript->GetSection();
     lpctstr pszSection = sSection.GetBuffer();
 
 	CVarDefContNum * pVarNum = nullptr;
@@ -2815,7 +2841,7 @@ bool CServerConfig::LoadResourceSection( CScript * pScript )
 
 	if ( !rid.IsValidUID() )
 	{
-		DEBUG_ERR(( "Invalid %s block, index '%s'\n", pszSection, pScript->GetArgStr()));
+		DEBUG_ERR(( "Invalid %s section, index '%s'\n", pszSection, pScript->GetArgStr()));
 		return false;
 	}
 
@@ -2911,6 +2937,16 @@ bool CServerConfig::LoadResourceSection( CScript * pScript )
 			}
 		}
 		return true;
+
+	case RES_RESDEFNAME:
+		// just get a block of resource aliases (like a classic DEF).
+		while (pScript->ReadKeyParse())
+		{
+			const lpctstr ptcKey = pScript->GetKey();
+			g_Exp.m_VarResDefs.SetStr(ptcKey, false, pScript->GetArgStr(), false);
+		}
+		return true;
+
 	case RES_RESOURCELIST:
 		{
 			while ( pScript->ReadKey() )
@@ -3666,6 +3702,7 @@ CResourceID CServerConfig::ResourceGetNewID( RES_TYPE restype, lpctstr pszName, 
 	case RES_MOONGATES:
 	case RES_NOTOTITLES:
 	case RES_OBSCENE:
+	case RES_RESDEFNAME:
 	case RES_RESOURCES:
 	case RES_RUNES:
 	case RES_SERVERS:

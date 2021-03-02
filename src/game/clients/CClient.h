@@ -108,8 +108,9 @@ private:
 
 	// Walk limiting code
 	int m_iWalkStepCount;	// Count the actual steps. Turning does not count.
-    llong m_iWalkTimeAvg;
-	int64 m_timeWalkStep;	// the last %8 walk step time.
+    llong m_iWalkTimeAvg;	// Average time betwwen 2 running step
+	int64 m_timeWalkStep;	// the last walk step time.
+	byte m_lastDir;
 
     // Client last know state stuff.
     CSectorEnviron m_Env;	// Last Environment Info Sent. so i don't have to keep resending if it's the same.
@@ -260,8 +261,6 @@ private:
 	static CHuffman m_Comp;
 
 private:
-	bool r_GetRef( lpctstr & ptcKey, CScriptObj * & pRef );
-
 	bool OnRxConsoleLoginComplete();
 	bool OnRxConsole( const byte * pData, uint len );
 	bool OnRxAxis( const byte * pData, uint len );
@@ -350,7 +349,7 @@ public:
 	void Event_VendorSell_Cheater( int iCode = 0 );
     void Event_VirtueSelect(dword dwVirtue, CChar *pCharTarg);
 	bool Event_Walk( byte rawdir, byte sequence = 0 ); // Player moves
-	bool Event_CheckWalkBuffer();
+	bool Event_CheckWalkBuffer(byte rawdir);
 
 	TRIGRET_TYPE Menu_OnSelect( const CResourceID& rid, int iSelect, CObjBase * pObj );
 	TRIGRET_TYPE Dialog_OnButton( const CResourceID& rid, dword dwButtonID, CObjBase * pObj, CDialogResponseArgs * pArgs );
@@ -399,6 +398,7 @@ public:
 		return ( static_cast <CClient*>( CSObjListRec::GetNext()));
 	}
 
+	virtual bool r_GetRef(lpctstr& ptcKey, CScriptObj*& pRef) override;
 	virtual bool r_Verb( CScript & s, CTextConsole * pSrc ) override; // Execute script type command on me
 	virtual bool r_WriteVal( lpctstr ptcKey, CSString & s, CTextConsole * pSrc = nullptr, bool fNoCallParent = false, bool fNoCallChildren = false ) override;
 	virtual bool r_LoadVal( CScript & s ) override;
@@ -498,7 +498,7 @@ public:
 	void addDyeOption( const CObjBase * pBase );
 	void addWebLaunch( lpctstr pMsg ); // Direct client to a web page
 
-	void addPromptConsole( CLIMODE_TYPE mode, lpctstr pMsg, CUID context1 = UID_CLEAR, CUID context2 = UID_CLEAR, bool fUnicode = false );
+	void addPromptConsole(CLIMODE_TYPE mode, lpctstr pMsg, CUID context1 = {}, CUID context2 = {}, bool fUnicode = false);
 	void addTarget( CLIMODE_TYPE targmode, lpctstr pMsg, bool fAllowGround = false, bool fCheckCrime = false, int64 iTicksTimeout = 0 ); // Send targetting cursor to client
 	void addTargetDeed( const CItem * pDeed );
 	bool addTargetItems( CLIMODE_TYPE targmode, ITEMID_TYPE id, HUE_TYPE color = HUE_DEFAULT, bool fAllowGround = true );
@@ -556,36 +556,86 @@ private:
 	void AOSTooltip_addDefaultItemData(CItem * pItem);
 
 private:
+// Number in comment are the old number working before we use the correct contextmenu ID
 #define MAX_POPUPS 15
 #define POPUPFLAG_LOCKED 0x01
 #define POPUPFLAG_ARROW 0x02
 #define POPUPFLAG_COLOR 0x20
 #define POPUP_REQUEST 0
-#define POPUP_PAPERDOLL 11
-#define POPUP_BACKPACK 12
-#define POPUP_PARTY_ADD 13
-#define POPUP_PARTY_REMOVE 14
-#define POPUP_TRADE_ALLOW 15
-#define POPUP_TRADE_REFUSE 16
-#define POPUP_TRADE_OPEN 17
-#define POPUP_BANKBOX 21
-#define POPUP_VENDORBUY 31
-#define POPUP_VENDORSELL 32
-#define POPUP_PETGUARD 41
-#define POPUP_PETFOLLOW 42
+#define POPUP_PAPERDOLL 520		//11
+#define POPUP_BACKPACK 302		//12
+#define POPUP_PARTY_ADD 810		//13
+#define POPUP_PARTY_REMOVE 811	//14
+#define POPUP_TRADE_ALLOW 1013	//15
+#define POPUP_TRADE_REFUSE 1014	//16
+#define POPUP_TRADE_OPEN 819	//17
+#define POPUP_BANKBOX 120		//21
+#define POPUP_VENDORBUY 110		//31
+#define POPUP_VENDORSELL 111	//32
+#define POPUP_PETGUARD 130		//41
+#define POPUP_PETFOLLOW 131		//42
 #define POPUP_PETDROP 43
-#define POPUP_PETKILL 44
-#define POPUP_PETSTOP 45
-#define POPUP_PETSTAY 46
-#define POPUP_PETFRIEND_ADD 47
-#define POPUP_PETFRIEND_REMOVE 48
-#define POPUP_PETTRANSFER 49
-#define POPUP_PETRELEASE 50
-#define POPUP_STABLESTABLE 51
-#define POPUP_STABLERETRIEVE 52
-#define POPUP_TAME 53
-#define POPUP_PETRENAME 54
-#define POPUP_TRAINSKILL 100
+#define POPUP_PETKILL 134		//44
+#define POPUP_PETSTOP 135		//45
+#define POPUP_PETSTAY 137		//46
+#define POPUP_PETFRIEND_ADD 133	//47
+#define POPUP_PETFRIEND_REMOVE 140//48
+#define POPUP_PETTRANSFER 136	//49
+#define POPUP_PETRELEASE 138	//50
+#define POPUP_STABLESTABLE 400	//51
+#define POPUP_STABLERETRIEVE 401//52
+#define POPUP_TAME 301			//53
+#define POPUP_PETRENAME 919		//54
+#define POPUP_TRAINSKILL 200	//100
+
+/* This is a list of other context menu ID sphere do not use for now.
+OpenMap = 10
+TeleportVendor = 1015
+OpenVendorContainer = 1018
+NPCTalk = 303
+DigForTreasure = 305
+CancelProtection = 308
+EnablePVPWarning = 320
+ClaimBodRewards = 348
+BodRequest = 403
+ViewQuestLog = 404
+CancelQuest = 405
+QuestConversation = 406
+InsuranceMenu = 416
+ToggleItemInsurance = 418
+Bribe = 419
+OpenBackpackPet = 508
+SetSecurity = 600
+ReleaseCoOwnership = 602
+LeaveHouse = 604
+UnpackTransferCrate = 622
+LoadShuriken = 701
+QuestItem = 801
+SiegeBless = 820
+LoyaltyRating = 915
+TitlesMenu = 918
+EmergencyRepairs = 930
+PermanentRepairs = 931
+ShipSecurity = 934
+ResetShipSecurity = 935
+RenameShip = 936
+DryDockShip = 937
+MoveTillerman = 938
+MannequinCompareSlotItem = 956
+MannequinViewSuitStatsWithItems = 957
+MannequinViewStats = 958
+MannequinUseTransparentGump = 959
+MannequinCustomizeBody = 1003
+MannequinRotate = 1004
+MannequinRedeed = 1006
+VoidPool = 1010
+Retrieve = 1012
+SwitchMastery = 953
+VendorSearch = 1016
+AcceptFriendRequests = 1020
+RefuseFriendRequests = 1021
+RelocateContainer = 1022
+*/
 
 	PacketDisplayPopup* m_pPopupPacket;
 

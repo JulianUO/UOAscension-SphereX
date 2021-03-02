@@ -563,9 +563,9 @@ void CClient::Cmd_EditItem( CObjBase *pObj, int iSelect )
 			return;
 
 		if ( m_Targ_Text.IsEmpty() )
-			addGumpDialogProps(m_tmMenu.m_Item[iSelect]);
+			addGumpDialogProps(CUID(m_tmMenu.m_Item[iSelect]));
 		else
-			OnTarg_Obj_Set( CUID::ObjFind(m_tmMenu.m_Item[iSelect]) );
+			OnTarg_Obj_Set( CUID::ObjFindFromUID(m_tmMenu.m_Item[iSelect]) );
 		return;
 	}
 
@@ -812,7 +812,7 @@ int CClient::Cmd_Skill_Menu_Build( const CResourceID& rid, int iSelect, CMenuIte
 		// Check for a skill / non-consumables required.
 		if ( s.IsKey("TEST") )
 		{
-			m_pChar->ParseText(s.GetArgRaw(), m_pChar);
+			m_pChar->ParseScriptText(s.GetArgRaw(), m_pChar);
 			CResourceQtyArray skills(s.GetArgStr());
 			if ( !skills.IsResourceMatchAll(m_pChar) )
 			{
@@ -823,7 +823,7 @@ int CClient::Cmd_Skill_Menu_Build( const CResourceID& rid, int iSelect, CMenuIte
 
 		if ( s.IsKey("TESTIF") )
 		{
-			m_pChar->ParseText(s.GetArgRaw(), m_pChar);
+			m_pChar->ParseScriptText(s.GetArgRaw(), m_pChar);
 			if ( !s.GetArgVal() )
 			{
                 fSkipNeedCleanup = true;
@@ -1053,7 +1053,7 @@ bool CClient::Cmd_Skill_Tracking( uint track_sel, bool fExec )
 		{
 			// Tracking menu got us here. Start tracking the selected creature.
 			m_pChar->SetTimeoutS(1);
-			m_pChar->m_Act_UID = m_tmMenu.m_Item[track_sel];	// selected UID
+			m_pChar->m_Act_UID.SetObjUID(m_tmMenu.m_Item[track_sel]);	// selected UID
 			m_pChar->Skill_Start(SKILL_TRACKING);
 			return true;
 		}
@@ -1255,7 +1255,7 @@ bool CClient::Cmd_SecureTrade( CChar *pChar, CItem *pItem )
 
 	if ( pChar->m_pNPC )		// NPC's can't use trade windows
 		return pItem ? pChar->NPC_OnItemGive(m_pChar, pItem) : false;
-	if ( !pChar->IsClient() )	// and also offline players
+	if ( !pChar->IsClientActive() )	// and also offline players
 		return false;
 
 	if ( pChar->GetDefNum("REFUSETRADES", true) )
@@ -1340,7 +1340,7 @@ bool CClient::Cmd_SecureTrade( CChar *pChar, CItem *pItem )
 	cmd.prepareContainerOpen(pChar, pCont1, pCont2);
 	cmd.send(this);
 	cmd.prepareContainerOpen(m_pChar, pCont2, pCont1);
-	cmd.send(pChar->GetClient());
+	cmd.send(pChar->GetClientActive());
 
 	if ( g_Cfg.m_iFeatureTOL & FEATURE_TOL_VIRTUALGOLD )
 	{
@@ -1350,15 +1350,15 @@ bool CClient::Cmd_SecureTrade( CChar *pChar, CItem *pItem )
 			cmd2.prepareUpdateLedger(pCont1, (dword)(m_pChar->m_virtualGold % 1000000000), (dword)(m_pChar->m_virtualGold / 1000000000));
 			cmd2.send(this);
 		}
-		if ( pChar->GetClient()->GetNetState()->isClientVersion(MINCLIVER_NEWSECURETRADE) )
+		if ( pChar->GetClientActive()->GetNetState()->isClientVersion(MINCLIVER_NEWSECURETRADE) )
 		{
 			cmd2.prepareUpdateLedger(pCont2, (dword)(pChar->m_virtualGold % 1000000000), (dword)(pChar->m_virtualGold / 1000000000));
-			cmd2.send(pChar->GetClient());
+			cmd2.send(pChar->GetClientActive());
 		}
 	}
 
 	LogOpenedContainer(pCont2);
-	pChar->GetClient()->LogOpenedContainer(pCont1);
+	pChar->GetClientActive()->LogOpenedContainer(pCont1);
 
 	if ( pItem )
 	{

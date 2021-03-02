@@ -103,8 +103,8 @@ void CPartyDef::AddStatsUpdate( CChar *pChar, PacketSend *pPacket )
 		CChar *pCharNow = m_Chars.GetChar(i).CharFind();
 		if ( pCharNow && pCharNow != pChar )
 		{
-			if ( pCharNow->IsClient() && pCharNow->CanSee(pChar) )
-				pPacket->send(pCharNow->GetClient());
+			if ( pCharNow->IsClientActive() && pCharNow->CanSee(pChar) )
+				pPacket->send(pCharNow->GetClientActive());
 		}
 	}
 }
@@ -134,9 +134,9 @@ void CPartyDef::UpdateWaypointAll(CChar * pCharSrc, MAPWAYPOINT_TYPE type)
     for (size_t i = 0; i < iQty; i++)
     {
         pChar = m_Chars.GetChar(i).CharFind();
-        if (!pChar || !pChar->GetClient() || (pChar == pCharSrc))
+        if (!pChar || !pChar->GetClientActive() || (pChar == pCharSrc))
             continue;
-        pChar->GetClient()->addMapWaypoint(pCharSrc, type);
+        pChar->GetClientActive()->addMapWaypoint(pCharSrc, type);
     }
 }
 
@@ -163,9 +163,9 @@ bool CPartyDef::SendMemberMsg( CChar *pCharDest, PacketSend *pPacket )
 		return true;
 	}
 
-	if ( pCharDest->IsClient() )
+	if ( pCharDest->IsClientActive() )
 	{
-		CClient *pClient = pCharDest->GetClient();
+		CClient *pClient = pCharDest->GetClientActive();
 		ASSERT(pClient);
 		pPacket->send(pClient);
 		if ( *pPacket->getData() == PARTYMSG_Remove )
@@ -255,7 +255,7 @@ bool CPartyDef::MessageEvent( CUID uidDst, CUID uidSrc, const nchar *pText, int 
 		Args.m_iN1 = uidSrc;
 		Args.m_iN2 = uidDst;
 		Args.m_s1 = szText;
-		Args.m_s1_raw = szText;
+		Args.m_s1_buf_vec = szText;
 
 		if ( r_Call(m_pSpeechFunction, &g_Serv, &Args, nullptr, &tr) )
 		{
@@ -265,7 +265,7 @@ bool CPartyDef::MessageEvent( CUID uidDst, CUID uidSrc, const nchar *pText, int 
 	}
 
 	if ( g_Log.IsLoggedMask(LOGM_PLAYER_SPEAK) )
-		g_Log.Event(LOGM_PLAYER_SPEAK|LOGM_NOCONTEXT, "%x:'%s' Says '%s' in party to '%s'\n", pFrom->GetClient()->GetSocketID(), pFrom->GetName(), szText, pTo ? pTo->GetName() : "all");
+		g_Log.Event(LOGM_PLAYER_SPEAK|LOGM_NOCONTEXT, "%x:'%s' Says '%s' in party to '%s'\n", pFrom->GetClientActive()->GetSocketID(), pFrom->GetName(), szText, pTo ? pTo->GetName() : "all");
 
 	snprintf(szText, STR_TEMPLENGTH, g_Cfg.GetDefaultMsg(DEFMSG_PARTY_MSG), pText);
 	PacketPartyChat cmd(pFrom, pText);
@@ -423,7 +423,7 @@ bool CPartyDef::AcceptEvent( CChar *pCharAccept, CUID uidInviter, bool bForced, 
 	// Party master is only one that can add ! GetChar(0)
 
 	CChar *pCharInviter = uidInviter.CharFind();
-	if ( !pCharInviter || !pCharInviter->IsClient() || !pCharAccept || !pCharAccept->IsClient() || (pCharInviter == pCharAccept) )
+	if ( !pCharInviter || !pCharInviter->IsClientActive() || !pCharAccept || !pCharAccept->IsClientActive() || (pCharInviter == pCharAccept) )
 		return false;
 
 	CPartyDef *pParty = pCharInviter->m_pParty;
@@ -530,7 +530,7 @@ bool CPartyDef::r_GetRef( lpctstr &ptcKey, CScriptObj *&pRef )
 	else if ( !strnicmp("MEMBER.", ptcKey, 7) )
 	{
 		ptcKey += 7;
-		size_t nNumber = Exp_GetVal(ptcKey);
+		size_t nNumber = Exp_GetSTVal(ptcKey);
 		SKIP_SEPARATORS(ptcKey);
 		if ( !m_Chars.IsValidIndex(nNumber) )
 			return false;
@@ -578,7 +578,7 @@ bool CPartyDef::r_LoadVal( CScript &s )
             ptcKey += (fZero ? 5 : 4);
             bool fQuoted = false;
             lpctstr ptcArg = s.GetArgStr(&fQuoted);
-            m_TagDefs.SetStr(ptcKey, fQuoted, ptcArg, false);
+            m_TagDefs.SetStr(ptcKey, fQuoted, ptcArg, fZero);
 		} break;
 		
 		default:
@@ -629,7 +629,7 @@ bool CPartyDef::r_WriteVal( lpctstr ptcKey, CSString &sVal, CTextConsole *pSrc, 
 			GETNONWHITESPACE(ptcKey);
 			if ( ptcKey[0] != '\0' )
 			{
-				CChar *pCharToCheck = CUID::CharFind(Exp_GetDWVal(ptcKey));
+				CChar *pCharToCheck = CUID::CharFindFromUID(Exp_GetDWVal(ptcKey));
 				sVal.FormatVal(pCharToCheck && (pCharToCheck->m_pParty == this));
 			}
 			else
@@ -721,8 +721,7 @@ bool CPartyDef::r_Verb( CScript &s, CTextConsole *pSrc )
 			if ( !pRef )
 				return true;
 			CScript script(ptcKey, s.GetArgStr());
-			script.m_iResourceFileIndex = s.m_iResourceFileIndex;	// Index in g_Cfg.m_ResourceFiles of the CResourceScript (script file) where the CScript originated
-			script.m_iLineNum = s.m_iLineNum;						// Line in the script file where Key/Arg were read
+			script.CopyParseState(s);
 			return pRef->r_Verb(script, pSrc);
 		}
 	}
@@ -734,7 +733,7 @@ bool CPartyDef::r_Verb( CScript &s, CTextConsole *pSrc )
 		case PDV_ADDMEMBERFORCED:
 		{
 			bool bForced = (iIndex == PDV_ADDMEMBERFORCED);
-			CUID toAdd = (dword)s.GetArgVal();
+			CUID toAdd(s.GetArgDWVal());
 			CChar *pCharAdd = toAdd.CharFind();
 			CChar *pCharMaster = GetMaster().CharFind();
 			if ( !pCharAdd || IsInParty(pCharAdd) )
@@ -768,17 +767,17 @@ bool CPartyDef::r_Verb( CScript &s, CTextConsole *pSrc )
 			lpctstr ptcArg = s.GetArgStr();
 			if ( *ptcArg == '@' )
 			{
-				ptcArg++;
-				size_t nMember = Exp_GetVal(ptcArg);
+				++ptcArg;
+				const size_t nMember = Exp_GetSTVal(ptcArg);
 				if ( !m_Chars.IsValidIndex(nMember) )
 					return false;
 
 				toRemove = m_Chars.GetChar(nMember);
 			}
 			else
-				toRemove = (dword)s.GetArgVal();
+				toRemove.SetObjUID(s.GetArgDWVal());
 
-			if ( toRemove != (dword)0 )
+			if ( toRemove.IsValidUID() )
 				return RemoveMember(toRemove, GetMaster());
 
 			return false;
@@ -790,17 +789,17 @@ bool CPartyDef::r_Verb( CScript &s, CTextConsole *pSrc )
 			lpctstr ptcArg = s.GetArgStr();
 			if ( *ptcArg == '@' )
 			{
-				ptcArg++;
-				size_t nMember = Exp_GetVal(ptcArg);
-				if ( nMember == 0 || !m_Chars.IsValidIndex(nMember) )
+				++ptcArg;
+				const size_t nMember = Exp_GetSTVal(ptcArg);
+				if ( (nMember == 0) || !m_Chars.IsValidIndex(nMember) )
 					return false;
 
 				newMaster = m_Chars.GetChar(nMember);
 			}
 			else
-				newMaster = (dword)s.GetArgVal();
+				newMaster.SetObjUID(s.GetArgDWVal());
 
-			if ( newMaster != (dword)0 )
+			if ( newMaster.IsValidUID() )
 				return SetMaster(newMaster.CharFind());
 
 			return false;
@@ -810,23 +809,23 @@ bool CPartyDef::r_Verb( CScript &s, CTextConsole *pSrc )
 		{
 			CUID toSysmessage;
 			lpctstr ptcArg = s.GetArgStr();
-			tchar *pUid = Str_GetTemp();
+			tchar *ptcUid = Str_GetTemp();
 			int x = 0;
 
 			if ( *ptcArg == '@' )
 			{
-				ptcArg++;
+				++ptcArg;
 				if ( *ptcArg != '@' )
 				{
 					lpctstr __pszArg = ptcArg;
 					while ( *ptcArg != ' ' )
 					{
-						ptcArg++;
-						x++;
+						++ptcArg;
+						++x;
 					}
-                    Str_CopyLimitNull(pUid, __pszArg, ++x);
+                    Str_CopyLimitNull(ptcUid, __pszArg, ++x);
 
-					int nMember = Exp_GetVal(pUid);
+					const size_t nMember = Exp_GetSTVal(ptcUid);
 					if ( !m_Chars.IsValidIndex(nMember) )
 						return false;
 
@@ -841,14 +840,14 @@ bool CPartyDef::r_Verb( CScript &s, CTextConsole *pSrc )
 					++ptcArg;
 					++x;
 				}
-                Str_CopyLimitNull(pUid, __pszArg, ++x);
+                Str_CopyLimitNull(ptcUid, __pszArg, ++x);
 
-				toSysmessage = Exp_GetDWVal(pUid);
+				toSysmessage.SetObjUID(Exp_GetDWVal(ptcUid));
 			}
 
 			SKIP_SEPARATORS(ptcArg);
 
-			if ( toSysmessage != (dword)0 )
+			if ( toSysmessage.IsValidUID() )
 			{
 				CChar *pSend = toSysmessage.CharFind();
 				pSend->SysMessage(ptcArg);

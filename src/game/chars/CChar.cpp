@@ -279,8 +279,8 @@ CChar::CChar( CREID_TYPE baseID ) : CTimedObject(PROFILE_CHARS), CObjBase( false
 
     m_zClimbHeight = 0;
 	m_fClimbUpdated = false;
-	m_prev_Hue = HUE_DEFAULT;
-	m_prev_id = CREID_INVALID;
+	_wPrev_Hue = HUE_DEFAULT;
+	_iPrev_id = CREID_INVALID;
 	SetID( baseID );
 
 	CCharBase* pCharDef = Char_GetDef();
@@ -289,7 +289,7 @@ CChar::CChar( CREID_TYPE baseID ) : CTimedObject(PROFILE_CHARS), CObjBase( false
 	m_attackRange = pCharDef->m_attackRange;
 	m_defenseBase = pCharDef->m_defenseBase;
 	m_defenseRange = pCharDef->m_defenseRange;
-	m_wBloodHue = pCharDef->m_wBloodHue;	// when damaged , what color is the blood (-1) = no blood
+	_wBloodHue = pCharDef->_wBloodHue;	// when damaged , what color is the blood (-1) = no blood
 
 	SetName( pCharDef->GetTypeName());	// set the name in case there is a name template.
 
@@ -324,7 +324,7 @@ CChar::~CChar()
 	DeleteCleanup(true);
 	ClearContainer();
 
-    if (IsClient())    // this should never happen.
+    if (IsClientActive())    // this should never happen.
     {
         ASSERT( m_pClient );
         m_pClient->GetNetState()->markReadClosed();
@@ -350,6 +350,8 @@ CChar::~CChar()
 void CChar::DeleteCleanup(bool fForce)
 {
 	ADDTOCALLSTACK("CChar::DeleteCleanup");
+	_fDeleting = true;
+
 	CWorldTickingList::DelCharPeriodic(this);
 
 	if (IsStatFlag(STATF_RIDDEN))
@@ -418,9 +420,9 @@ bool CChar::Delete(bool fForce)
 		return false;
 
 	// Character has been deleted
-	if (IsClient())
+	if (IsClientActive())
 	{
-		CClient* pClient = GetClient();
+		CClient* pClient = GetClientActive();
 		pClient->CharDisconnect();
 		pClient->GetNetState()->markReadClosed();
 	}
@@ -445,7 +447,7 @@ void CChar::ClientDetach()
 		if (pItem->IsType(IT_EQ_TRADE_WINDOW) )
 			pItem->Delete();
 	}
-	if ( !IsClient() )
+	if ( !IsClientActive() )
 		return;
 
 	if ( m_pParty && m_pParty->IsPartyMaster( this ))
@@ -470,7 +472,7 @@ void CChar::ClientDetach()
 void CChar::ClientAttach( CClient * pClient )
 {
 	ADDTOCALLSTACK("CChar::ClientAttach");
-	if ( GetClient() == pClient )
+	if ( GetClientActive() == pClient )
 		return;
 	if ( ! SetPlayerAccount( pClient->GetAccount()))	// i now own this char.
 		return;
@@ -482,23 +484,18 @@ void CChar::ClientAttach( CClient * pClient )
 	FixClimbHeight();
 }
 
-bool CChar::IsClient() const
+bool CChar::IsClientType() const noexcept
 {
-	return ( m_pClient != nullptr );
-}
-
-CClient * CChar::GetClient() const
-{
-	return m_pClient;
+	return (m_pClient || m_pPlayer);
 }
 
 // Client logged out or NPC is dead.
 void CChar::SetDisconnected(CSector* pNewSector)
 {
 	ADDTOCALLSTACK("CChar::SetDisconnected");
-    if (IsClient())
+    if (IsClientActive())
     {
-        GetClient()->GetNetState()->markReadClosed();
+        GetClientActive()->GetNetState()->markReadClosed();
     }
     if (m_pParty)
     {
@@ -708,14 +705,15 @@ int CChar::IsWeird() const
 // Get the Z we should be at
 char CChar::GetFixZ( const CPointMap& pt, dword dwBlockFlags)
 {
-	const dword dwCan = GetMoveBlockFlags();
+	const dword dwCanFlags = GetCanFlags();
+	const dword dwCanMoveFlags = GetCanMoveFlags(dwCanFlags);
 
 	if ( !dwBlockFlags )
-		dwBlockFlags = dwCan;
+		dwBlockFlags = dwCanMoveFlags;
 	
-    if (dwCan == 0xFFFFFFFF)
+    if (dwCanMoveFlags == 0xFFFFFFFF)
         return pt.m_z;
-	if ( dwCan & CAN_C_WALK )
+	if (dwCanMoveFlags & CAN_C_WALK )
 		dwBlockFlags |= CAN_I_CLIMB; // If we can walk than we can climb. Ignore CAN_C_FLY at all here
 
 	const short iZClimbed = pt.m_z + m_zClimbHeight;
@@ -736,13 +734,13 @@ char CChar::GetFixZ( const CPointMap& pt, dword dwBlockFlags)
 	}
 	if ( dwBlockFlags != 0x0 )
 	{
-		if ( (dwBlockFlags & CAN_I_DOOR) && Can(CAN_C_GHOST) )
+		if ( (dwBlockFlags & CAN_I_DOOR) && Can(CAN_C_GHOST, dwCanFlags) )
 			dwBlockFlags &= ~CAN_I_BLOCK;
 
-		if ( (dwBlockFlags & CAN_I_WATER) && Can(CAN_C_SWIM) )
+		if ( (dwBlockFlags & CAN_I_WATER) && Can(CAN_C_SWIM, dwCanFlags) )
 			dwBlockFlags &= ~CAN_I_BLOCK;
 
-		if ( !Can(CAN_C_FLY) )
+		if ( !Can(CAN_C_FLY, dwCanFlags) )
 		{
 			if ( ! ( dwBlockFlags & CAN_I_CLIMB ) ) // we can climb anywhere
 			{
@@ -758,7 +756,7 @@ char CChar::GetFixZ( const CPointMap& pt, dword dwBlockFlags)
 				}
 			}
 		}
-		if ( (dwBlockFlags & CAN_I_BLOCK) && !Can(CAN_C_PASSWALLS) )
+		if ( (dwBlockFlags & CAN_I_BLOCK) && !Can(CAN_C_PASSWALLS, dwCanFlags) )
 			return pt.m_z;
 
 		if ( block.m_Bottom.m_z >= UO_SIZE_Z )
@@ -842,7 +840,7 @@ void CChar::SetVisualRange(byte newSight)
 		THREAD_UNIQUE_LOCK_SET;
 		// max value is 18 on classic clients prior 7.0.55.27 version and 24 on enhanced clients and latest classic clients
 		m_iVisualRange = minimum(newSight, UO_MAP_VIEW_SIZE_MAX);
-		pClient = GetClient();
+		pClient = GetClientActive();
 	}
 	if (pClient)
     {
@@ -991,8 +989,8 @@ int CChar::FixWeirdness()
 void CChar::CreateNewCharCheck()
 {
 	ADDTOCALLSTACK("CChar::CreateNewCharCheck");
-	m_prev_id = GetID();
-	m_prev_Hue = GetHue();
+	_iPrev_id = GetID();
+	_wPrev_Hue = GetHue();
 
 	Stat_SetVal(STAT_STR, Stat_GetMaxAdjusted(STAT_STR));
 	Stat_SetVal(STAT_DEX, Stat_GetMaxAdjusted(STAT_DEX));
@@ -1076,12 +1074,12 @@ bool CChar::DupeFrom(const CChar * pChar, bool fNewbieItems )
 
 	_iTimeLastHitsUpdate = pChar->_iTimeLastHitsUpdate;
 
-	m_prev_Hue = pChar->m_prev_Hue;
+	_wPrev_Hue = pChar->_wPrev_Hue;
 	SetHue(pChar->GetHue());
-	m_prev_id = pChar->m_prev_id;
+	_iPrev_id = pChar->_iPrev_id;
 	SetID( pChar->GetID() );
 	m_CanMask = pChar->m_CanMask;
-	m_wBloodHue = pChar->m_wBloodHue;
+	_wBloodHue = pChar->_wBloodHue;
 	//m_totalweight = 0;
 
 	Skill_Cleanup();
@@ -1158,25 +1156,25 @@ bool CChar::DupeFrom(const CChar * pChar, bool fNewbieItems )
 					CItem* pItemCont = static_cast<CItem*>(pObjRec);
 					pItemCont->SetAttr(ATTR_NEWBIE);
 
-					const CChar *pTest = CUID::CharFind(pItemCont->m_itNormal.m_more1);
+					const CChar *pTest = CUID::CharFindFromUID(pItemCont->m_itNormal.m_more1);
 					if (pTest && pTest == pChar)
 						pItemCont->m_itNormal.m_more1 = myUID;
 
-					const CChar *pTest2 = CUID::CharFind(pItemCont->m_itNormal.m_more2);
+					const CChar *pTest2 = CUID::CharFindFromUID(pItemCont->m_itNormal.m_more2);
 					if ( pTest2 && pTest2 == pChar )
 						pItemCont->m_itNormal.m_more2 = myUID;
 
-					const CChar *pTest3 = CUID::CharFind(pItemCont->m_uidLink);
+					const CChar *pTest3 = CUID::CharFindFromUID(pItemCont->m_uidLink);
 					if ( pTest3 && pTest3 == pChar )
 						pItemCont->m_uidLink = myUID;
 				}
 			}
 		}
-		const CChar * pTest = CUID::CharFind(pItem->m_itNormal.m_more1);
+		const CChar * pTest = CUID::CharFindFromUID(pItem->m_itNormal.m_more1);
 		if ( pTest && pTest == pChar)
 			pItem->m_itNormal.m_more1 = myUID;
 
-		const CChar * pTest2 = CUID::CharFind(pItem->m_itNormal.m_more2);
+		const CChar * pTest2 = CUID::CharFindFromUID(pItem->m_itNormal.m_more2);
 		if (pTest2)
 		{
 			if (pTest2 == pChar)
@@ -1198,7 +1196,7 @@ bool CChar::DupeFrom(const CChar * pChar, bool fNewbieItems )
 			}
 		}
 
-		const CChar * pTest3 = CUID::CharFind(pItem->m_uidLink);
+		const CChar * pTest3 = CUID::CharFindFromUID(pItem->m_uidLink);
 		if ( pTest3 && pTest3 == pChar)
 			pItem->m_uidLink = myUID;
 	}
@@ -1216,9 +1214,9 @@ bool CChar::DupeFrom(const CChar * pChar, bool fNewbieItems )
 }
 
 // Reading triggers from CHARDEF
-bool CChar::ReadScriptTrig(CCharBase * pCharDef, CTRIG_TYPE trig, bool fVendor)
+bool CChar::ReadScriptReducedTrig(CCharBase * pCharDef, CTRIG_TYPE trig, bool fVendor)
 {
-	ADDTOCALLSTACK("CChar::ReadScriptTrig");
+	ADDTOCALLSTACK("CChar::ReadScriptReducedTrig");
 	if ( !pCharDef || !pCharDef->HasTrigger(trig) )
 		return false;
 
@@ -1226,15 +1224,15 @@ bool CChar::ReadScriptTrig(CCharBase * pCharDef, CTRIG_TYPE trig, bool fVendor)
 	if ( !pCharDef->ResourceLock(s) || !OnTriggerFind(s, sm_szTrigName[trig]) )
 		return false;
 
-	return ReadScript(s, fVendor);
+	return ReadScriptReduced(s, fVendor);
 }
 
 // If this is a regen they will have a pack already.
 // RETURN:
 //  true = default return. (mostly ignored).
-bool CChar::ReadScript(CResourceLock &s, bool fVendor)
+bool CChar::ReadScriptReduced(CResourceLock &s, bool fVendor)
 {
-	ADDTOCALLSTACK("CChar::ReadScript");
+	ADDTOCALLSTACK("CChar::ReadScriptReduced");
 	bool fFullInterp = false;
 	bool fBlockItemAttr = false; //Set a temporary boolean to block item attributes to set on Character.
 
@@ -1245,7 +1243,7 @@ bool CChar::ReadScript(CResourceLock &s, bool fVendor)
 			break;
 
 		int iCmd = FindTableSorted(s.GetKey(), CItem::sm_szTemplateTable, CountOf(CItem::sm_szTemplateTable)-1);
-
+		bool fItemCreation = false;
 		if ( fVendor )
 		{
 			if (iCmd != -1)
@@ -1311,6 +1309,8 @@ bool CChar::ReadScript(CResourceLock &s, bool fVendor)
 				case ITC_CONTAINER:
 				case ITC_ITEMNEWBIE:
 					{
+						fItemCreation = true;
+
 						if ( IsStatFlag( STATF_CONJURED ) && iCmd != ITC_ITEMNEWBIE ) // This check is not needed.
 							break; // conjured creates have no loot.
 
@@ -1354,7 +1354,7 @@ bool CChar::ReadScript(CResourceLock &s, bool fVendor)
 			else
 				pItem->r_LoadVal( s );
 		}
-		else
+		else if (!fItemCreation)
 		{
 			TRIGRET_TYPE tRet = OnTriggerRun( s, TRIGRUN_SINGLE_EXEC, &g_Serv, nullptr, nullptr );
 			if ( (tRet == TRIGRET_RET_FALSE) && fFullInterp )
@@ -1459,7 +1459,7 @@ void CChar::SetID( CREID_TYPE id )
 	CCharBase * pCharDef = CCharBase::FindCharBase(id);
 	if ( pCharDef == nullptr )
 	{
-		if ( id != -1 && id != CREID_INVALID )
+		if ( (id != -1) && (id != CREID_INVALID) )
 			DEBUG_ERR(("Create Invalid Char 0%x\n", id));
 
 		id = (CREID_TYPE)(g_Cfg.ResourceGetIndexType(RES_CHARDEF, "DEFAULTCHAR"));
@@ -1469,12 +1469,21 @@ void CChar::SetID( CREID_TYPE id )
 		pCharDef = CCharBase::FindCharBase(id);
 	}
 
-	if ( pCharDef == Char_GetDef() )
+	ASSERT(pCharDef != nullptr);
+
+	CCharBase* pCharOldDef = Char_GetDef();
+	if ( pCharDef == pCharOldDef )
 		return;
 
-	m_BaseRef.SetRef(pCharDef);
-	if ( m_prev_id == CREID_INVALID )
-		m_prev_id = GetID();
+	if (pCharOldDef != nullptr)
+	{
+		pCharOldDef->DelInstance();
+	}
+	pCharDef->AddInstance();	// Increase object instance counter (different from the resource reference counter!)
+	m_BaseRef.SetRef(pCharDef);	// Among the other things, it increases the new resource reference counter and decreases the old, if any
+
+	if ( _iPrev_id == CREID_INVALID )
+		_iPrev_id = GetID();
 
 	if ( !IsMountCapable() )	// new body may not be capable of riding mounts
 		Horse_UnMount();
@@ -1557,6 +1566,7 @@ void CChar::InitPlayer( CClient *pClient, const char *pszCharname, bool fFemale,
 		default:
             g_Log.EventWarn("Character creation: invalid race. Defaulting to human.\n");
             rtRace = RACETYPE_HUMAN;
+			FALLTHROUGH;
 		case RACETYPE_HUMAN:
 			SetID(fFemale ? CREID_WOMAN : CREID_MAN);
 			break;
@@ -1945,16 +1955,16 @@ void CChar::InitPlayer( CClient *pClient, const char *pszCharname, bool fFemale,
 
 	CResourceLock s;
 	if ( g_Cfg.ResourceLock(s, CResourceID(RES_NEWBIE, fFemale ? RES_NEWBIE_FEMALE_DEFAULT : RES_NEWBIE_MALE_DEFAULT, (word)rtRace)) )
-		ReadScript(s);
+		ReadScriptReduced(s);
 	else if ( g_Cfg.ResourceLock(s, CResourceID(RES_NEWBIE, fFemale ? RES_NEWBIE_FEMALE_DEFAULT : RES_NEWBIE_MALE_DEFAULT)) )
-		ReadScript(s);
+		ReadScriptReduced(s);
 
     if (iProfession != INT32_MAX)
     {
         if ( g_Cfg.ResourceLock(s, CResourceID(RES_NEWBIE, iProfession, (word)rtRace)) )
-            ReadScript(s);
+            ReadScriptReduced(s);
         else if ( g_Cfg.ResourceLock(s, CResourceID(RES_NEWBIE, iProfession)) )
-            ReadScript(s);
+            ReadScriptReduced(s);
     }
 
 	if ( fCreateSkillItems )
@@ -1983,7 +1993,7 @@ void CChar::InitPlayer( CClient *pClient, const char *pszCharname, bool fFemale,
 				if ( !g_Cfg.ResourceLock(s, CResourceID(RES_NEWBIE, iSkill)) )
 					continue;
 			}
-			ReadScript(s);
+			ReadScriptReduced(s);
 		}
 	}
 
@@ -2081,6 +2091,7 @@ bool CChar::r_GetRef( lpctstr & ptcKey, CScriptObj * & pRef )
 					SKIP_SEPARATORS(ptcKey);
 					return true;
 				}
+				return false;
             case CHR_SHIP:
 				if (m_pPlayer)
 				{
@@ -2094,6 +2105,7 @@ bool CChar::r_GetRef( lpctstr & ptcKey, CScriptObj * & pRef )
 					SKIP_SEPARATORS(ptcKey);
 					return true;
 				}
+				return false;
 			case CHR_MEMORYFINDTYPE:	// FInd a type of memory.
 				pRef = Memory_FindTypes((word)(Exp_GetSingle(ptcKey)));
 				SKIP_SEPARATORS(ptcKey);
@@ -2141,7 +2153,7 @@ bool CChar::r_WriteVal( lpctstr ptcKey, CSString & sVal, CTextConsole * pSrc, bo
 	ADDTOCALLSTACK("CChar::r_WriteVal");
     EXC_TRY("WriteVal");
 
-	if ( IsClient() && GetClient()->r_WriteVal(ptcKey, sVal, pSrc, true, true) ) // Call CClient::r_WriteVal
+	if ( IsClientActive() && GetClientActive()->r_WriteVal(ptcKey, sVal, pSrc, true, true) ) // Call CClient::r_WriteVal
 		return true;
 
     if (!fNoCallChildren)
@@ -2225,7 +2237,7 @@ do_default:
 					if ( !strnicmp(ptcKey, "ID", 2 ) )
 					{
 						ptcKey += 3;	// ID + whitspace
-						const CChar * pChar = CUID::CharFind(Exp_GetSingle(ptcKey));
+						const CChar * pChar = CUID::CharFindFromUID(Exp_GetSingle(ptcKey));
 						sVal.FormatVal(Attacker_GetID(pChar));
 						return true;
 					}
@@ -2293,7 +2305,7 @@ do_default:
 							}
 							else if (( !strnicmp(ptcKey, "UID", 3) ) || ( *ptcKey == '\0' ))
 							{
-                                const CUID& uid = refAttacker.charUID;
+                                const CUID uid(refAttacker.charUID);
 								sVal.FormatHex( uid.CharFind() ? refAttacker.charUID : 0 );
 								return true;
 							}
@@ -2373,7 +2385,7 @@ do_default:
 							}
 							else if (( !strnicmp(ptcKey, "UID", 3) ) || ( *ptcKey == '\0' ))
 							{
-								const CUID& uid = refnoto.charUID;
+								const CUID uid(refnoto.charUID);
 								sVal.FormatHex( uid.CharFind() ? refnoto.charUID : 0 );
 								return true;
 							}
@@ -2394,7 +2406,7 @@ do_default:
 			sVal.FormatVal( Fight_CalcRange( m_uidWeapon.ItemFind() ) );
 			return true;
 		case CHC_BLOODCOLOR:
-			sVal.FormatHex( m_wBloodHue );
+			sVal.FormatHex( _wBloodHue );
 			break;
         case CHC_OFAME:
 		case CHC_FAME:
@@ -2585,14 +2597,14 @@ do_default:
 				// use m_Act_UID ?
 				ptcKey += 7;
 				ITEMID_TYPE id = (ITEMID_TYPE)(g_Cfg.ResourceGetIndexType( RES_ITEMDEF, ptcKey ));
-				sVal.FormatVal( Skill_MakeItem( id,	UID_CLEAR, SKTRIG_SELECT ) );
+				sVal.FormatVal( Skill_MakeItem( id,	CUID(UID_CLEAR), SKTRIG_SELECT ) );
 			}
 			return true;
 		case CHC_CANMAKESKILL:
 			{
 				ptcKey += 12;
 				ITEMID_TYPE id = (ITEMID_TYPE)(g_Cfg.ResourceGetIndexType( RES_ITEMDEF, ptcKey ));
-				sVal.FormatVal( Skill_MakeItem( id,	UID_CLEAR, SKTRIG_SELECT, true ) );
+				sVal.FormatVal( Skill_MakeItem( id,	CUID(UID_CLEAR), SKTRIG_SELECT, true ) );
 			}
 			return true;
 		case CHC_SKILLUSEQUICK:
@@ -2717,7 +2729,7 @@ do_default:
 		case CHC_ISONLINE:
 			if ( m_pPlayer != nullptr )
 			{
-				sVal = IsClient() ? "1" : "0";
+				sVal = IsClientActive() ? "1" : "0";
 				return true;
 			}
 			if ( m_pNPC != nullptr )
@@ -2762,8 +2774,7 @@ do_default:
 				if ( *ptcKey == '.' )
 				{
 					++ptcKey;
-					CUID uid = Exp_GetVal( ptcKey );
-					pMemory	= Memory_FindObj( uid );
+					pMemory	= Memory_FindObj(CUID(Exp_GetVal(ptcKey)));
 				}
 				else
 					pMemory	= Memory_FindObj( pCharSrc );
@@ -2892,7 +2903,7 @@ do_default:
 		case CHC_DIR:
 			{
 				ptcKey +=3;
-				CChar * pChar = CUID::CharFind(Exp_GetSingle(ptcKey));
+				CChar * pChar = CUID::CharFindFromUID(Exp_GetSingle(ptcKey));
 				if ( pChar )
 					sVal.FormatVal( GetDir(pChar) );
 				else
@@ -3059,11 +3070,11 @@ do_default:
 			goto do_default;
 
 		case CHC_OBODY:
-			sVal = g_Cfg.ResourceGetName( CResourceID( RES_CHARDEF, m_prev_id ));
+			sVal = g_Cfg.ResourceGetName( CResourceID( RES_CHARDEF, _iPrev_id ));
 			break;
 
 		case CHC_OSKIN:
-			sVal.FormatHex( m_prev_Hue );
+			sVal.FormatHex( _wPrev_Hue );
 			break;
 		case CHC_P:
 			goto do_default;
@@ -3091,7 +3102,8 @@ do_default:
 					sVal = m_sTitle.c_str(); //GetTradeTitle
 				else
 					sVal = GetTradeTitle();
-			}break;
+			}
+			break;
 		case CHC_EXP:
 			sVal.FormatVal(m_exp);
 			break;
@@ -3106,6 +3118,7 @@ do_default:
                 break;
             }
             // not break, just run down to VIRTUALGOLD
+			FALLTHROUGH;
 		case CHC_VIRTUALGOLD:
 			sVal.FormatLLVal(m_virtualGold);
 			break;
@@ -3163,7 +3176,7 @@ bool CChar::r_LoadVal( CScript & s )
 
         // special load values
 		int i = g_Cfg.FindSkillKey( ptcKey );
-		if ( i != SKILL_NONE )
+		if ( IsSkillBase((SKILL_TYPE)i) )
 		{
 			// Check some skill name.
 			Skill_SetBase((SKILL_TYPE)i, s.GetArgUSVal() );
@@ -3172,7 +3185,6 @@ bool CChar::r_LoadVal( CScript & s )
 
 		return CObjBase::r_LoadVal( s );
 	}
-
 	switch (iKeyNum)
 	{
 		//Status Update Variables
@@ -3229,7 +3241,7 @@ bool CChar::r_LoadVal( CScript & s )
 			break;
 
 		case CHC_BLOODCOLOR:
-			m_wBloodHue = (HUE_TYPE)(s.GetArgVal());
+			_wBloodHue = (HUE_TYPE)(s.GetArgVal());
 			break;
         case CHC_MODSTR:
             Stat_SetMod(STAT_STR, s.GetArgSVal());
@@ -3279,7 +3291,7 @@ bool CChar::r_LoadVal( CScript & s )
 		case CHC_ACCOUNT:
 			return SetPlayerAccount( s.GetArgStr() );
 		case CHC_ACT:
-			m_Act_UID = s.GetArgVal();
+			m_Act_UID.SetObjUID(s.GetArgDWVal());
 			break;
 		case CHC_ACTP:
 			if ( ! s.HasArgs() )
@@ -3288,7 +3300,7 @@ bool CChar::r_LoadVal( CScript & s )
 				m_Act_p.Read( s.GetArgStr() );
 			break;
 		case CHC_ACTPRV:
-			m_Act_Prv_UID = s.GetArgVal();
+			m_Act_Prv_UID.SetObjUID(s.GetArgVal());
 			break;
 		case CHC_ACTDIFF:
 			{
@@ -3340,7 +3352,7 @@ bool CChar::r_LoadVal( CScript & s )
 						if ( !m_lastAttackers.empty() )
 						{
 							int idx = s.GetArgVal();
-							CChar *pChar = CUID::CharFind(idx);
+							CChar *pChar = CUID::CharFindFromUID(idx);
 							if (!pChar)
 								return false;
 							Attacker_Delete(idx, false, ATTACKER_CLEAR_SCRIPT);
@@ -3349,7 +3361,7 @@ bool CChar::r_LoadVal( CScript & s )
 					}
 					else if ( !strnicmp(ptcKey, "ADD", 3) )
 					{
-						CChar *pChar = CUID::CharFind(s.GetArgVal());
+						CChar *pChar = CUID::CharFindFromUID(s.GetArgVal());
 						if ( !pChar )
 							return false;
 						Fight_Attack(pChar);
@@ -3357,7 +3369,7 @@ bool CChar::r_LoadVal( CScript & s )
 					}
 					else if ( !strnicmp(ptcKey, "TARGET", 6) )
 					{
-						CChar *pChar = CUID::CharFind(s.GetArgVal());
+						CChar *pChar = CUID::CharFindFromUID(s.GetArgVal());
 						if ( !pChar || (pChar == this) )	// can't set ourself as target
 						{
 							m_Fight_Targ_UID.InitUID();
@@ -3415,6 +3427,15 @@ bool CChar::r_LoadVal( CScript & s )
 				}
 				return false;
 			}break;
+        case CHC_CREATE:
+            {
+                if (g_Serv.IsLoading())
+                    {
+                        _iTimeCreate = (CWorldGameTime::GetCurrentTime().GetTimeRaw() - (s.GetArgLLVal() * MSECS_PER_TENTH));
+                        break;
+                    }
+                return false;
+            }
 		case CHC_DIR:
 			{
 				DIR_TYPE dir = static_cast<DIR_TYPE>(s.GetArgVal());
@@ -3467,16 +3488,16 @@ bool CChar::r_LoadVal( CScript & s )
 			break;
 		case CHC_HITPOINTS:
 		case CHC_HITS:
-			Stat_SetVal(STAT_STR, s.GetArgUSVal());
+			Stat_SetVal(STAT_STR, (ushort)std::max(s.GetArgVal(), 0));
 			UpdateHitsFlag();
 			break;
 		case CHC_MANA:
-			Stat_SetVal(STAT_INT, s.GetArgUSVal());
+			Stat_SetVal(STAT_INT, (ushort)std::max(s.GetArgVal(), 0));
 			UpdateManaFlag();
 			break;
 		case CHC_STAM:
 		case CHC_STAMINA:
-			Stat_SetVal(STAT_DEX, s.GetArgUSVal());
+			Stat_SetVal(STAT_DEX, (ushort)std::max(s.GetArgVal(), 0));
 			UpdateStamFlag();
 			break;
 		case CHC_STEPSTEALTH:
@@ -3543,8 +3564,8 @@ bool CChar::r_LoadVal( CScript & s )
 				if ( iArgQty < 2 )
 					return false;
 
-				CUID	uid		= (dword)piCmd[0];
-				word	wFlags	= (word)piCmd[1];
+				const CUID uid((dword)piCmd[0]);
+				const word wFlags = (word)piCmd[1];
 
 				Memory_AddObjTypes( uid, wFlags );
 			}
@@ -3559,11 +3580,11 @@ bool CChar::r_LoadVal( CScript & s )
 					DEBUG_ERR(( "OBODY Invalid Char 0%x\n", id ));
 					return false;
 				}
-				m_prev_id = id;
+				_iPrev_id = id;
 			}
 			break;
 		case CHC_OSKIN:
-			m_prev_Hue = (HUE_TYPE)(s.GetArgWVal());
+			_wPrev_Hue = (HUE_TYPE)(s.GetArgWVal());
 			break;
 		case CHC_P:
 			{
@@ -3601,7 +3622,7 @@ bool CChar::r_LoadVal( CScript & s )
 				if ( fChange )
 				{
 					UpdateMode(nullptr, true);
-					if ( IsClient() )
+					if ( IsClientActive() )
 						m_pClient->addCharMove(this);
 				}
 			}
@@ -3649,6 +3670,7 @@ bool CChar::r_LoadVal( CScript & s )
                 break;
             }
             // not break, just run down to VIRTUALGOLD
+			FALLTHROUGH;
         }
 		case CHC_VIRTUALGOLD:
 			m_virtualGold = s.GetArgLLVal();
@@ -3712,10 +3734,10 @@ void CChar::r_Write( CScript & s )
 		s.WriteKeyVal("EMOTECOLOROVERRIDE", m_EmoteHueOverride);
 	if ( m_dirFace != DIR_SE )
 		s.WriteKeyVal("DIR", m_dirFace);
-	if ( m_prev_id != GetID() )
-		s.WriteKey("OBODY", g_Cfg.ResourceGetName(CResourceID(RES_CHARDEF, m_prev_id)));
-	if ( m_prev_Hue != HUE_DEFAULT )
-		s.WriteKeyHex("OSKIN", m_prev_Hue);
+	if ( _iPrev_id != GetID() )
+		s.WriteKey("OBODY", g_Cfg.ResourceGetName(CResourceID(RES_CHARDEF, _iPrev_id)));
+	if ( _wPrev_Hue != HUE_DEFAULT )
+		s.WriteKeyHex("OSKIN", _wPrev_Hue);
 	if ( m_iStatFlag )
 		s.WriteKeyHex("FLAGS", m_iStatFlag);
 	if ( m_attackBase )
@@ -3828,6 +3850,19 @@ void CChar::r_Write( CScript & s )
         s.WriteKeyVal("MAXMANA", iVal);     // should be OMAXMANA, but we keep it like this for backwards compatibility
     s.WriteKeyVal("MANA", Stat_GetVal(STAT_INT));
 
+	static constexpr lpctstr _ptcKeyRegen[STAT_QTY] =
+	{
+		"REGENHITS",
+		"REGENMANA",
+		"REGENSTAM",
+		"REGENFOOD"
+	};
+	for (ushort j = 0; j < STAT_QTY; ++j)
+	{
+		const int uiRegen = Stats_GetRegenRate((STAT_TYPE)j); //we cannot use ushort here because by default REGENFOOD has a value higher than 65k.
+		if (uiRegen > 1 && uiRegen != g_Cfg.m_iRegenRate[j])
+			s.WriteKeyVal(_ptcKeyRegen[j], uiRegen / MSECS_PER_SEC);
+	}
     static constexpr lpctstr _ptcKeyRegenVal[STAT_QTY] =
     {
         "REGENVALHITS",
@@ -3885,7 +3920,7 @@ bool CChar::r_Load( CScript & s ) // Load a character from script
 	// StatFlag_Mod( STATF_SAVEPARITY, g_World.m_fSaveParity );
 
 	// Make sure everything is ok.
-	if (( m_pPlayer && ! IsClient()) ||
+	if (( m_pPlayer && ! IsClientActive()) ||
 		( m_pNPC && IsStatFlag( STATF_RIDDEN )))	// ridden npc
 	{
 		SetDisconnected();
@@ -3926,7 +3961,9 @@ bool CChar::r_Verb( CScript &s, CTextConsole * pSrc ) // Execute command from sc
 	if ( !pSrc )
 		return false;
 
-	if ( IsClient() && GetClient()->r_Verb(s, pSrc) )
+	EXC_TRY("Verb");
+
+	if ( IsClientActive() && GetClientActive()->r_Verb(s, pSrc) )
 		return true;
 
     if (CEntity::r_Verb(s, pSrc))
@@ -3934,7 +3971,7 @@ bool CChar::r_Verb( CScript &s, CTextConsole * pSrc ) // Execute command from sc
         return true;
     }
 
-	EXC_TRY("Verb");
+	EXC_SET_BLOCK("Verb-statement");
 
 	int index = FindTableSorted( s.GetKey(), sm_szVerbKeys, CountOf(sm_szVerbKeys)-1 );
 	if ( index < 0 )
@@ -3997,29 +4034,29 @@ bool CChar::r_Verb( CScript &s, CTextConsole * pSrc ) // Execute command from sc
 			}
 			break;
 		case CHV_ATTACK:
-			Fight_Attack(CUID::CharFind(s.GetArgVal()), true);
+			Fight_Attack(CUID::CharFindFromUID(s.GetArgVal()), true);
 			break;
 		case CHV_BANK:
 			// Open the bank box for this person
-			if ( pCharSrc == nullptr || ! pCharSrc->IsClient() )
+			if ( pCharSrc == nullptr || ! pCharSrc->IsClientActive() )
 				return false;
-			pCharSrc->GetClient()->addBankOpen( this, ((s.HasArgs()) ? (LAYER_TYPE)(s.GetArgVal()) : LAYER_BANKBOX ) );
+			pCharSrc->GetClientActive()->addBankOpen( this, ((s.HasArgs()) ? (LAYER_TYPE)(s.GetArgVal()) : LAYER_BANKBOX ) );
 			break;
 		case CHV_BARK:	// This plays creature-specific sounds (CRESND_TYPE). Use CHV_SOUND to play a precise sound ID (SOUND_TYPE) instead.
 			SoundChar(s.HasArgs() ? (CRESND_TYPE)s.GetArgVal() : CRESND_RAND);
 			break;
 		case CHV_BOUNCE: // uid
-			return ItemBounce( CUID::ItemFind( s.GetArgVal()) );
+			return ItemBounce( CUID::ItemFindFromUID( s.GetArgVal()) );
 		case CHV_BOW:
 			if (s.HasArgs())
-				UpdateDir( CUID::ObjFind(s.GetArgVal()) );
+				UpdateDir( CUID::ObjFindFromUID(s.GetArgVal()) );
 			UpdateAnimate(ANIM_BOW);
 			break;
 
 		case CHV_CONTROL: // Possess
-			if ( pCharSrc == nullptr || ! pCharSrc->IsClient())
+			if ( pCharSrc == nullptr || ! pCharSrc->IsClientActive())
 				return false;
-			return pCharSrc->GetClient()->Cmd_Control(this);
+			return pCharSrc->GetClientActive()->Cmd_Control(this);
 
 		case CHV_CONSUME:
 			{
@@ -4052,12 +4089,12 @@ bool CChar::r_Verb( CScript &s, CTextConsole * pSrc ) // Execute command from sc
 			break;
 		case CHV_DISCONNECT:
 			// Push a player char off line. CLIENTLINGER thing
-			if ( IsClient())
-				return GetClient()->addKick( pSrc, false );
+			if ( IsClientActive())
+				return GetClientActive()->addKick( pSrc, false );
 			SetDisconnected();
 			break;
 		case CHV_DROP:	// uid
-			return ItemDrop( CUID::ItemFind(s.GetArgVal()), GetTopPoint() );
+			return ItemDrop( CUID::ItemFindFromUID(s.GetArgVal()), GetTopPoint() );
 		case CHV_DUPE:	// = dupe a creature !
 			{
 				CChar * pChar = CreateNPC( GetID() );
@@ -4068,7 +4105,7 @@ bool CChar::r_Verb( CScript &s, CTextConsole * pSrc ) // Execute command from sc
 			}
 			break;
 		case CHV_EQUIP:	// uid
-			return ItemEquip( CUID::ItemFind(s.GetArgVal()) );
+			return ItemEquip( CUID::ItemFindFromUID(s.GetArgVal()) );
 		case CHV_EQUIPHALO:
 			{
 				// equip a halo light
@@ -4102,7 +4139,7 @@ bool CChar::r_Verb( CScript &s, CTextConsole * pSrc ) // Execute command from sc
 			}
 			else if (IsStrNumeric(pszVerbArg))
 			{
-				CObjBase* pTowards = CUID::ObjFind(s.GetArgVal());
+				CObjBase* pTowards = CUID::ObjFindFromUID(s.GetArgVal());
 				if (pTowards != nullptr)
 				{
 					UpdateDir(pTowards);
@@ -4146,7 +4183,7 @@ bool CChar::r_Verb( CScript &s, CTextConsole * pSrc ) // Execute command from sc
 		case CHV_GOUID:	// uid
 			if ( s.HasArgs() )
 			{
-				const CObjBaseTemplate * pObj = CUID::ObjFind(s.GetArgVal());
+				const CObjBaseTemplate * pObj = CUID::ObjFindFromUID(s.GetArgVal());
 				if ( pObj == nullptr )
 					return false;
 				pObj = pObj->GetTopLevelObj();
@@ -4179,15 +4216,15 @@ bool CChar::r_Verb( CScript &s, CTextConsole * pSrc ) // Execute command from sc
 				UpdateMode(nullptr, true);
 				if ( IsStatFlag(STATF_INSUBSTANTIAL) )
 				{
-					if ( IsClient() )
-						GetClient()->addBuff(BI_HIDDEN, 1075655, 1075656);
+					if ( IsClientActive() )
+						GetClientActive()->addBuff(BI_HIDDEN, 1075655, 1075656);
 					if ( IsSetOF(OF_Command_Sysmsgs) )
 						pSrc->SysMessage(g_Cfg.GetDefaultMsg(DEFMSG_MSG_INVIS_ON));
 				}
 				else
 				{
-					if ( IsClient() && !IsStatFlag(STATF_HIDDEN) )
-						GetClient()->removeBuff(BI_HIDDEN);
+					if ( IsClientActive() && !IsStatFlag(STATF_HIDDEN) )
+						GetClientActive()->removeBuff(BI_HIDDEN);
 					if ( IsSetOF(OF_Command_Sysmsgs) )
 						pSrc->SysMessage(g_Cfg.GetDefaultMsg(DEFMSG_MSG_INVIS_OFF));
 				}
@@ -4232,7 +4269,7 @@ bool CChar::r_Verb( CScript &s, CTextConsole * pSrc ) // Execute command from sc
 			}
 			//DEBUG_ERR(( "CHV_MAKEITEM iTmp is %d, arg was %s\n",iTmp,psTmp ));
 
-			if ( IsClient() )
+			if ( IsClientActive() )
 				m_Act_UID = m_pClient->m_Targ_UID;
 
 			return Skill_MakeItem(
@@ -4242,7 +4279,7 @@ bool CChar::r_Verb( CScript &s, CTextConsole * pSrc ) // Execute command from sc
 
 		case CHV_MOUNT:
 			{
-				CChar *pChar = CUID::CharFind(s.GetArgVal());
+				CChar *pChar = CUID::CharFindFromUID(s.GetArgVal());
 				if ( pChar )
 					Horse_Mount(pChar);
 			}
@@ -4253,7 +4290,7 @@ bool CChar::r_Verb( CScript &s, CTextConsole * pSrc ) // Execute command from sc
 				CResourceLock t;
 				if ( !g_Cfg.ResourceLock( t, RES_NEWBIE, s.GetArgStr()) )
 					return false;
-				ReadScript(t);
+				ReadScriptReduced(t);
 			}
 			break;
 
@@ -4283,7 +4320,7 @@ bool CChar::r_Verb( CScript &s, CTextConsole * pSrc ) // Execute command from sc
 					CItem *pItem = CItem::CreateHeader(s.GetArgStr(), nullptr, false, this);
 					if ( !pItem )
                     {
-						g_World.m_uidNew = (dword)0;
+						g_World.m_uidNew.ClearUID();
                     }
 					else
 					{
@@ -4307,14 +4344,14 @@ bool CChar::r_Verb( CScript &s, CTextConsole * pSrc ) // Execute command from sc
             if (!s.HasArgs())   // If there are no args, direct call on NPC_PetSetOwner.
                 return NPC_PetSetOwner(pCharSrc);
 
-			CChar * pChar = CUID::CharFind(s.GetArgDWVal()); // otherwise we try to run it from the CChar with the given UID.
+			CChar * pChar = CUID::CharFindFromUID(s.GetArgDWVal()); // otherwise we try to run it from the CChar with the given UID.
             if (pChar)
                 return pChar->NPC_PetSetOwner(this);
             return false;   // Something went wrong, giving a warning of it.
         }
 
 		case CHV_PACK:
-			if ( pCharSrc == nullptr || ! pCharSrc->IsClient())
+			if ( pCharSrc == nullptr || ! pCharSrc->IsClientActive())
 				return false;
 			pCharSrc->m_pClient->addBankOpen( this, LAYER_PACK ); // Send Backpack (with items)
 			break;
@@ -4368,8 +4405,8 @@ bool CChar::r_Verb( CScript &s, CTextConsole * pSrc ) // Execute command from sc
 					pSrc->SysMessage( g_Cfg.GetDefaultMsg(DEFMSG_CMD_REMOVE_PLAYER) );
 					return false;
 				}
-				if ( IsClient() )
-					GetClient()->addObjectRemove(this);
+				if ( IsClientActive() )
+					GetClientActive()->addObjectRemove(this);
 			}
 			Delete((index == CHV_DESTROY));
 			break;
@@ -4386,7 +4423,7 @@ bool CChar::r_Verb( CScript &s, CTextConsole * pSrc ) // Execute command from sc
 		case CHV_SALUTE:	//	salute to player
 		{
 			if (s.HasArgs())
-				UpdateDir( CUID::ObjFind(s.GetArgVal()) );
+				UpdateDir( CUID::ObjFindFromUID(s.GetArgVal()) );
 			UpdateAnimate(ANIM_SALUTE);
 			break;
 		}
@@ -4450,8 +4487,8 @@ bool CChar::r_Verb( CScript &s, CTextConsole * pSrc ) // Execute command from sc
 			// just eat this if it's not a client.
 			break;
 		case CHV_TARGETCLOSE:
-			if ( IsClient() )
-				GetClient()->addTargetCancel();
+			if ( IsClientActive() )
+				GetClientActive()->addTargetCancel();
 			break;
 		case CHV_UNDERWEAR:
 			if ( ! IsPlayableCharacter())
@@ -4460,7 +4497,7 @@ bool CChar::r_Verb( CScript &s, CTextConsole * pSrc ) // Execute command from sc
 			UpdateMode();
 			break;
 		case CHV_UNEQUIP:	// uid
-			return ItemBounce( CUID::ItemFind(s.GetArgVal()) );
+			return ItemBounce( CUID::ItemFindFromUID(s.GetArgVal()) );
 		case CHV_WHERE:
 			if ( pCharSrc )
 			{
@@ -4724,20 +4761,26 @@ void CChar::ChangeExperience(llong delta, CChar *pCharDead)
 			}
 
 			level = delta + m_level;
+
 			// Prevent integer underflow due to negative level change
-			if( delta < 0 && abs(delta) > m_level )
+			if (delta < 0 && abs(delta) > m_level)
+			{
 				level = 0;
+			}
+
 			if (g_Cfg.m_iDebugFlags & DEBUGF_LEVEL)
 			{
-				g_Log.EventDebug("%s %s level change (was %u, delta %d, now %u)\n",
-					(m_pNPC ? "NPC" : "Player"), GetName(), m_level, delta, level);
+				g_Log.EventDebug("%s %s level change (was %u, delta %lld, now %u)\n",
+					(m_pNPC ? "NPC" : "Player"), GetName(), m_level, delta, (uint)level);
 			}
 			m_level = (uint)level;
 
 			if (m_pClient && fShowMsg)
 			{
-				m_pClient->SysMessagef((abs(delta) == 1) ? g_Cfg.GetDefaultMsg(DEFMSG_MSG_EXP_LVLCHANGE_0) : g_Cfg.GetDefaultMsg(DEFMSG_MSG_EXP_LVLCHANGE_1),
-					(delta > 0) ? g_Cfg.GetDefaultMsg(DEFMSG_MSG_EXP_LVLCHANGE_GAIN) : g_Cfg.GetDefaultMsg(DEFMSG_MSG_EXP_LVLCHANGE_LOST));
+				m_pClient->SysMessagef(
+					((abs(delta) == 1) ? g_Cfg.GetDefaultMsg(DEFMSG_MSG_EXP_LVLCHANGE_0)    : g_Cfg.GetDefaultMsg(DEFMSG_MSG_EXP_LVLCHANGE_1)),
+					((delta > 0)       ? g_Cfg.GetDefaultMsg(DEFMSG_MSG_EXP_LVLCHANGE_GAIN) : g_Cfg.GetDefaultMsg(DEFMSG_MSG_EXP_LVLCHANGE_LOST))
+				);
 			}
 		}
 	}

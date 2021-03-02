@@ -109,6 +109,7 @@ bool CChar::NPC_OnVerb( CScript &s, CTextConsole * pSrc ) // Execute command fro
 	ASSERT(m_pNPC);
 	// Stuff that only NPC's do.
 
+	EXC_TRY("OnVerb");
 	CChar * pCharSrc = pSrc->GetChar();
 
 	switch ( FindTableSorted( s.GetKey(), CCharNPC::sm_szVerbKeys, CountOf(CCharNPC::sm_szVerbKeys)-1 ))
@@ -116,10 +117,10 @@ bool CChar::NPC_OnVerb( CScript &s, CTextConsole * pSrc ) // Execute command fro
 	case NV_BUY:
 	{
 		// Open up the buy dialog.
-		if ( pCharSrc == nullptr || !pCharSrc->IsClient())
+		if ( pCharSrc == nullptr || !pCharSrc->IsClientActive())
 			return false;
 
-		CClient * pClientSrc = pCharSrc->GetClient();
+		CClient * pClientSrc = pCharSrc->GetClientActive();
 		ASSERT(pClientSrc != nullptr);
 		if ( !pClientSrc->addShopMenuBuy(this) )
 			Speak(g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_NO_GOODS));
@@ -152,10 +153,8 @@ bool CChar::NPC_OnVerb( CScript &s, CTextConsole * pSrc ) // Execute command fro
 	case NV_PETSTABLE:
 		return( NPC_StablePetSelect( pCharSrc ));
 	case NV_RELEASE:
-		Skill_Start( SKILL_NONE );
-		NPC_PetClearOwners();
-		SoundChar( CRESND_RAND );
-		return true;
+		NPC_PetRelease();
+		break;
 	case NV_RESTOCK:	// individual restock command.
 		return NPC_Vendor_Restock(true, s.GetArgVal() != 0);
 	case NV_RUN:
@@ -170,10 +169,10 @@ bool CChar::NPC_OnVerb( CScript &s, CTextConsole * pSrc ) // Execute command fro
 	case NV_SELL:
 	{
 		// Open up the sell dialog.
-		if ( pCharSrc == nullptr || !pCharSrc->IsClient() )
+		if ( pCharSrc == nullptr || !pCharSrc->IsClientActive() )
 			return false;
 
-		CClient * pClientSrc = pCharSrc->GetClient();
+		CClient * pClientSrc = pCharSrc->GetClientActive();
 		ASSERT(pClientSrc != nullptr);
 		if ( ! pClientSrc->addShopMenuSell( this ))
 			Speak(g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_NOTHING_BUY));
@@ -206,6 +205,8 @@ bool CChar::NPC_OnVerb( CScript &s, CTextConsole * pSrc ) // Execute command fro
 		//if ( FindTableSorted(s.GetKey(), CClient::sm_szVerbKeys, CountOf(sm_szVerbKeys)-1) < 0 )
 		return false;
 	}
+
+	EXC_CATCH;
 	return true;
 }
 
@@ -2005,12 +2006,12 @@ bool CChar::NPC_OnItemGive( CChar *pCharSrc, CItem *pItem )
 		{
 			if ( pItem->IsType(IT_GOLD) )
 			{
-                int iWage = Char_GetDef()->GetHireDayWage();
-                iWage = pCharSrc->PayGold(this, iWage, nullptr, PAYGOLD_HIRE);
-                if (iWage > 0)
+                uint uiWage = Char_GetDef()->GetHireDayWage();
+                uiWage = (uint)pCharSrc->PayGold(this, uiWage, nullptr, PAYGOLD_HIRE);
+                if (uiWage > 0)
                 {
                     Speak(g_Cfg.GetDefaultMsg(DEFMSG_NPC_PET_MONEY));
-                    NPC_OnHirePayMore(pItem, iWage);
+                    NPC_OnHirePayMore(pItem, uiWage);
                     return true;
                 }
 			}
@@ -2081,12 +2082,12 @@ bool CChar::NPC_OnItemGive( CChar *pCharSrc, CItem *pItem )
 	if ( NPC_IsVendor() && !IsStatFlag(STATF_PET) )
 	{
 		// Dropping item on vendor means quick sell
-		if ( pCharSrc->IsClient() )
+		if ( pCharSrc->IsClientActive() )
 		{
 			VendorItem item;
 			item.m_serial = pItem->GetUID();
 			item.m_vcAmount = pItem->GetAmount();
-			pCharSrc->GetClient()->Event_VendorSell(this, &item, 1);
+			pCharSrc->GetClientActive()->Event_VendorSell(this, &item, 1);
 		}
 		return false;
 	}

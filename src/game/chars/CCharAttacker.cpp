@@ -51,7 +51,7 @@ bool CChar::Attacker_Add(CChar * pChar, int threat)
     if (!attacker.ignore)
     {
         tchar *z = Str_GetTemp();
-        CClient *pClient = pChar->GetClient();
+        CClient *pClient = pChar->GetClientActive();
         //if ( GetTopSector()->GetCharComplexity() < 7 )
         //{
         if (!( g_Cfg.m_iEmoteFlags & EMOTEF_ATTACKER ))
@@ -139,7 +139,7 @@ CChar * CChar::Attacker_GetLast() const
         if (iCurTime <= iLastTime)
         {
             iLastTime = iCurTime;
-            retChar = CUID::CharFind(refAttacker.charUID);
+            retChar = CUID::CharFindFromUID(refAttacker.charUID);
         }
     }
     return retChar;
@@ -212,12 +212,12 @@ void CChar::Attacker_SetIgnore(const CChar * pChar, bool fIgnore)
 }
 
 // Ignoring this pChar on Hit checks
-void CChar::Attacker_SetIgnore(size_t attackerIndex, bool fIgnore)
+void CChar::Attacker_SetIgnore(int attackerIndex, bool fIgnore)
 {
     ADDTOCALLSTACK("CChar::Attacker_SetIgnore(idx)");
     if (m_lastAttackers.empty())
         return;
-    if (m_lastAttackers.size() <= attackerIndex)
+    if (m_lastAttackers.size() <= (size_t)attackerIndex)
         return;
     LastAttackers & refAttacker = m_lastAttackers[attackerIndex];
     refAttacker.ignore = fIgnore;
@@ -269,7 +269,7 @@ int CChar::Attacker_GetID(const CChar * pChar) const
     int count = 0;
     for (std::vector<LastAttackers>::const_iterator it = m_lastAttackers.begin(), end = m_lastAttackers.end(); it != end; ++it)
     {
-        const CUID& uid = it->charUID;
+        const CUID uid(it->charUID);
         if (!uid.IsValidUID())
             continue;
 
@@ -301,7 +301,7 @@ CChar * CChar::Attacker_GetUID(int attackerIndex) const
     if ((attackerIndex < 0) || (m_lastAttackers.size() <= (size_t)attackerIndex))
         return nullptr;
     const LastAttackers & refAttacker = m_lastAttackers[attackerIndex];
-    CChar * pChar = CUID::CharFind(refAttacker.charUID);
+    CChar * pChar = CUID::CharFindFromUID(refAttacker.charUID);
     return pChar;
 }
 
@@ -312,7 +312,7 @@ bool CChar::Attacker_Delete(std::vector<LastAttackers>::iterator &itAttacker, bo
     if (m_lastAttackers.empty())
         return false;
 
-    CChar *pChar = CUID::CharFind(itAttacker->charUID);
+    CChar *pChar = CUID::CharFindFromUID(itAttacker->charUID);
     if (pChar)
     {
         if (IsTrigUsed(TRIGGER_COMBATDELETE))
@@ -372,7 +372,7 @@ void CChar::Attacker_RemoveChar()
         for (auto it = m_lastAttackers.begin(), end = m_lastAttackers.end(); it != end; ++it)
         {
             LastAttackers & refAttacker = *it;
-            CChar * pSrc = CUID::CharFind(refAttacker.charUID);
+            CChar * pSrc = CUID::CharFindFromUID(refAttacker.charUID);
             if (!pSrc)
                 continue;
             pSrc->Attacker_Delete(this, false, ATTACKER_CLEAR_REMOVEDCHAR);
@@ -390,7 +390,7 @@ void CChar::Attacker_CheckTimeout()
         for (int count = 0; count < (int)m_lastAttackers.size(); )
         {
             LastAttackers & refAttacker = m_lastAttackers[count];
-            const CChar *pEnemy = CUID::CharFind(refAttacker.charUID);
+            const CChar *pEnemy = CUID::CharFindFromUID(refAttacker.charUID);
             if (pEnemy)
             {
                 // always advance refAttacker.elapsed, i might use it in scripts for a different purpose

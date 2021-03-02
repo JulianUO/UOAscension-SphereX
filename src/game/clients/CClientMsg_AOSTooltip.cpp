@@ -188,9 +188,11 @@ bool CClient::addAOSTooltip(CObjBase * pObj, bool fRequested, bool fShop)
 			}
 
 			// fall through to send full list
+			FALLTHROUGH;
 
-		case TOOLTIPMODE_SENDFULL:
 		default:
+			FALLTHROUGH;
+		case TOOLTIPMODE_SENDFULL:
 			// send full property list
 			new PacketPropertyList(this, propertyList);
 			break;
@@ -250,11 +252,15 @@ void CClient::AOSTooltip_addName(CObjBase* pObj)
 			const CItemStone * pParentStone = pGuildMember->GetParentStone();
 			ASSERT(pParentStone != nullptr);
 
-			if (pGuildMember->IsAbbrevOn() && pParentStone->GetAbbrev()[0])
+			if (pGuildMember->IsAbbrevOn())
 			{
-                Str_ConcatLimitNull(lpSuffix, " [", STR_TEMPLENGTH);
-                Str_ConcatLimitNull(lpSuffix, pParentStone->GetAbbrev(), STR_TEMPLENGTH);
-                Str_ConcatLimitNull(lpSuffix, "]", STR_TEMPLENGTH);
+				lpctstr ptcAbbrev = pParentStone->GetAbbrev();
+				if (ptcAbbrev[0])
+				{
+					Str_ConcatLimitNull(lpSuffix, " [", STR_TEMPLENGTH);
+					Str_ConcatLimitNull(lpSuffix, ptcAbbrev, STR_TEMPLENGTH);
+					Str_ConcatLimitNull(lpSuffix, "]", STR_TEMPLENGTH);
+				}
 			}
 		}
 
@@ -373,7 +379,7 @@ void CClient::AOSTooltip_addDefaultItemData(CItem * pItem)
 		}
 	}
 
-	const CChar *pCraftsman = CUID::CharFind(dword(pItem->GetDefNum("CRAFTEDBY")));
+	const CChar *pCraftsman = CUID::CharFindFromUID(dword(pItem->GetDefNum("CRAFTEDBY")));
 	if (pCraftsman)
 	{
         PUSH_BACK_TOOLTIP(pItem, t = new CClientTooltip(1050043)); // crafted by ~1_NAME~
@@ -607,8 +613,9 @@ void CClient::AOSTooltip_addDefaultItemData(CItem * pItem)
 
 	case IT_SPAWN_CHAR:
 	{
-        CCSpawn *pSpawn = pItem->GetSpawn();
-        if (!pSpawn)
+
+		CCSpawn* pSpawn = static_cast<CCSpawn*>(pItem->GetComponent(COMP_SPAWN));
+		if (!pSpawn)
             break;
         CResourceDef * pSpawnCharDef = g_Cfg.ResourceGetDef(pSpawn->GetSpawnID());
 		lpctstr pszName = nullptr;
@@ -627,18 +634,19 @@ void CClient::AOSTooltip_addDefaultItemData(CItem * pItem)
 		PUSH_BACK_TOOLTIP(pItem, t = new CClientTooltip(1060658)); // ~1_val~: ~2_val~
 		t->FormatArgs("Character\t%s", pszName ? pszName : "none");
 		PUSH_BACK_TOOLTIP(pItem, t = new CClientTooltip(1061169)); // range ~1_val~
-		t->FormatArgs("%hhu", pSpawn->GetMaxDist());
+		t->FormatArgs("%hhu", pSpawn->GetDistanceMax());
 		PUSH_BACK_TOOLTIP(pItem, t = new CClientTooltip(1074247)); // Live Creatures: ~1_NUM~ / ~2_MAX~
 		t->FormatArgs("%hhu\t%hu", pSpawn->GetCurrentSpawned(), pSpawn->GetAmount());
 		PUSH_BACK_TOOLTIP(pItem, t = new CClientTooltip(1060659)); // ~1_val~: ~2_val~
 		t->FormatArgs("Time range\t%hu min / %hu max", pSpawn->GetTimeLo(), pSpawn->GetTimeHi());
 		PUSH_BACK_TOOLTIP(pItem, t = new CClientTooltip(1060660)); // ~1_val~: ~2_val~
 		t->FormatArgs("Time until next spawn\t%" PRId64 " sec", pItem->GetTimerSAdjusted());
+		
 	} break;
 
 	case IT_SPAWN_ITEM:
 	{
-        CCSpawn *pSpawn = pItem->GetSpawn();
+		CCSpawn* pSpawn = static_cast<CCSpawn*>(pItem->GetComponent(COMP_SPAWN));
         if (!pSpawn)
             break;
 		CResourceDef * pSpawnItemDef = g_Cfg.ResourceGetDef(pSpawn->GetSpawnID());
@@ -646,7 +654,7 @@ void CClient::AOSTooltip_addDefaultItemData(CItem * pItem)
 		PUSH_BACK_TOOLTIP(pItem, t = new CClientTooltip(1060658)); // ~1_val~: ~2_val~
 		t->FormatArgs("Item\t%u %s", pSpawn->GetPile(), pSpawnItemDef ? pSpawnItemDef->GetName() : "none");
 		PUSH_BACK_TOOLTIP(pItem, t = new CClientTooltip(1061169)); // range ~1_val~
-		t->FormatArgs("%hhu", pSpawn->GetMaxDist());
+		t->FormatArgs("%hhu", pSpawn->GetDistanceMax());
 		PUSH_BACK_TOOLTIP(pItem, t = new CClientTooltip(1074247)); // Live Creatures: ~1_NUM~ / ~2_MAX~
 		t->FormatArgs("%hhu\t%hu", pSpawn->GetCurrentSpawned(), pSpawn->GetAmount());
 		PUSH_BACK_TOOLTIP(pItem, t = new CClientTooltip(1060659)); // ~1_val~: ~2_val~

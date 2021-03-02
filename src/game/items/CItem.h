@@ -94,11 +94,12 @@ public:
 #define ATTR_SHARDBOUND			0x10000000
 #define ATTR_ACCOUNTBOUND  		0x20000000
 #define ATTR_CHARACTERBOUND		0x40000000
-#define ATTR_NOREPAIR			0x80000000			// No repair, no fortify
+#define ATTR_CANUSE_PARALYZED   0x80000000          // Can able to be used while paralyzed.
 
 // TODO
 #define ATTR_FACTIONITEM		0x80000000000000	// ? Faction Item (Has cliloc)
 #define ATTR_VVVITEM			0x100000000000000	// ? Vice vs Virtue Item (Has CliLoc)
+
 
 	uint64	m_Attr;
 
@@ -555,7 +556,7 @@ public:
     }
 	bool SetBaseID( ITEMID_TYPE id );
 	bool SetID( ITEMID_TYPE id );
-    inline ITEMID_TYPE GetDispID() const {
+    inline ITEMID_TYPE GetDispID() const noexcept {
         // This is what the item looks like.
         // May not be the same as the item that defines it's type.
         return m_dwDispIndex;
@@ -582,6 +583,15 @@ public:
     * @return  Value.
     */
     byte GetRangeH() const;
+
+	/**
+  * @fn  HUE_TYPE GetHueVisible () const;
+  *
+  * @brief   Gets the "fake" hue before sending the packet to client. The real hue of the item do not change.
+  *
+  * @return  The hue that the client will see the item.
+  */
+	HUE_TYPE GetHueVisible() const;
 
 	void SetAttr(uint64 uiAttr)
 	{
@@ -636,15 +646,15 @@ public:
 	bool Stack( CItem * pItem );
 	word ConsumeAmount( word iQty = 1 );
 
-	virtual void SetAmount( word amount );
+	void SetAmount( word amount );
 	word GetMaxAmount();
 	bool SetMaxAmount( word amount );
 	void SetAmountUpdate( word amount );
-	virtual word GetAmount() const
+	word GetAmount() const noexcept
 	{
 		return m_wAmount;
 	}
-    bool CanSendAmount() const;
+    bool CanSendAmount() const noexcept;
 
     CREID_TYPE GetCorpseType() const;
     void  SetCorpseType( CREID_TYPE id );

@@ -13,64 +13,67 @@
 #endif
 #include "../common.h"
 
-
+// Similar to the MFC CTime and CTimeSpan or COleDateTime:
+//  Get time stamp in the real world. based on struct tm
+class CSTime
+{
+private:
 #ifdef _WIN32
-    // Set once at server startup; used for Windows high-resolution timer
-    extern llong g_llTimeProfileFrequency;
+    #undef GetCurrentTime
+
+	// Set once at server startup; used for Windows high-resolution timer
+	friend class GlobalInitializer;
+	static llong _kllTimeProfileFrequency;
 #endif
 
-
-llong GetPreciseSysTimeMicro() noexcept;
-llong GetPreciseSysTimeMilli() noexcept;
-
-
-class CSTime	// similar to the MFC CTime and CTimeSpan or COleDateTime
-{
-	// Get time stamp in the real world. based on struct tm
-#undef GetCurrentTime
-private:
 	time_t m_time;
-public:
-	static const char *m_sClassName;
 
-	// Constructors
+public:
+	// Static methods
+	static llong GetPreciseSysTimeMicro() noexcept;
+	static llong GetPreciseSysTimeMilli() noexcept;
+
 	static CSTime GetCurrentTime();
 
-	CSTime();
-	CSTime(time_t time);
-	CSTime(const CSTime& timeSrc);
+public:
+	static const char* m_sClassName;
 
-	CSTime( struct tm time );
+	// Constructors
+	CSTime() noexcept;
+	CSTime(time_t time) noexcept;
+	CSTime(const CSTime& timeSrc) noexcept;
+
+	CSTime(struct tm time) noexcept;
 	CSTime(int nYear, int nMonth, int nDay, int nHour, int nMin, int nSec, int nDST = -1);
 
-	const CSTime& operator=(const CSTime& timeSrc);
+	const CSTime& operator=(const CSTime& timeSrc) noexcept;
+	const CSTime& operator=(time_t t) noexcept;
 
-	const CSTime& operator=(time_t t);
-
-	bool operator<=( time_t t ) const;
-	bool operator==( time_t t ) const;
-	bool operator!=( time_t t ) const;
-
-	time_t GetTime() const;
+	// Operators
+	bool operator<=(time_t t) const noexcept;
+	bool operator==(time_t t) const noexcept;
+	bool operator!=(time_t t) const noexcept;
 
 	// Attributes
-	struct tm* GetLocalTm(struct tm* ptm = nullptr) const;
-
-	int GetYear() const;
-	int GetMonth() const;
-	int GetDay() const;
-	int GetHour() const;
-	int GetMinute() const;
+	time_t GetTime() const noexcept;
+	int GetYear() const noexcept;
+	int GetMonth() const noexcept;
+	int GetDay() const noexcept;
+	int GetHour() const noexcept;
+	int GetMinute() const noexcept;
 
 	// Operations
 	lpctstr Format(lpctstr pszFormat) const;
 	lpctstr FormatGmt(lpctstr pszFormat) const;
 
 	// non CTime operations.
-	bool Read( tchar * pVal );
-	void Init();
-	bool IsTimeValid() const;
-	int GetDaysTotal() const;
+	bool Read(tchar* pVal);
+	void Init() noexcept;
+	bool IsTimeValid() const noexcept;
+	int GetDaysTotal() const noexcept;
+
+private:
+	struct tm* GetLocalTm(struct tm* ptm = nullptr) const noexcept;
 };
 
 #endif // _INC_CTIME_H

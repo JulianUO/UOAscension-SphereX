@@ -146,7 +146,7 @@ CItemCorpse *CChar::FindMyCorpse( bool ignoreLOS, int iRadius ) const
 		CItemCorpse *pCorpse = dynamic_cast<CItemCorpse*>(pItem);
 		if ( !pCorpse || (pCorpse->m_uidLink != GetUID()) )
 			continue;
-		if ( pCorpse->m_itCorpse.m_BaseID != m_prev_id )	// not morphed type
+		if ( pCorpse->m_itCorpse.m_BaseID != _iPrev_id )	// not morphed type
 			continue;
 		if ( !ignoreLOS && !CanSeeLOS(pCorpse) )
 			continue;
@@ -180,7 +180,7 @@ CItemCorpse * CChar::MakeCorpse( bool fFrontFall )
 	pCorpse->SetHue(GetHue());
 	pCorpse->SetCorpseType(GetDispID());
 	pCorpse->SetAttr(ATTR_MOVE_NEVER);
-	pCorpse->m_itCorpse.m_BaseID = m_prev_id;	// id the corpse type here !
+	pCorpse->m_itCorpse.m_BaseID = _iPrev_id;	// id the corpse type here !
 	pCorpse->m_itCorpse.m_facing_dir = m_dirFace;
 	pCorpse->m_uidLink = GetUID();
     pCorpse->m_ModMaxWeight = g_Cfg.Calc_MaxCarryWeight(this); // set corpse maxweight to prevent weird exploits like when someone place many items on an player corpse just to make this player get stuck on resurrect
@@ -233,6 +233,7 @@ bool CChar::RaiseCorpse( CItemCorpse * pCorpse )
 	if ( !pCorpse->IsContainerEmpty() )
 	{
 		CItemContainer *pPack = GetPackSafe();
+        //Looping 2x to equip items first then send rest to pack
 		for ( CSObjContRec *pObjRec : pCorpse->GetIterationSafeContReverse() )
 		{
 			CItem* pItem = static_cast<CItem*>(pObjRec);
@@ -241,9 +242,16 @@ bool CChar::RaiseCorpse( CItemCorpse * pCorpse )
 
 			if ( pItem->GetContainedLayer() )
 				ItemEquip(pItem);
-			else if ( pPack )
-				pPack->ContentAdd(pItem);
 		}
+        for (CSObjContRec* pObjRec : pCorpse->GetIterationSafeContReverse())
+        {
+            CItem* pItem = static_cast<CItem*>(pObjRec);
+            if (pItem->IsType(IT_HAIR) || pItem->IsType(IT_BEARD))	// hair on corpse was copied!
+                continue;
+
+            if (pPack)
+                pPack->ContentAdd(pItem);
+        }
 
 		pCorpse->ContentsDump( GetTopPoint() );		// drop left items on ground
 	}

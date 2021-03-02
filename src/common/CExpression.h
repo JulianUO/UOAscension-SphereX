@@ -114,8 +114,21 @@ static lpctstr constexpr sm_IntrinsicFunctions[INTRINSIC_QTY+1] =
 	nullptr
 };
 
+struct SubexprData
+{
+	lptstr ptcStart, ptcEnd;
+	enum Type : uchar
+	{
+		Unknown = 0, None = 0x1, And = 0x2, Or = 0x4, MaybeNestedSubexpr = 0x8
+	};
+	uchar uiType;
+	uchar uiNonAssociativeOffset; // How much bytes/characters before the start is (if any) the first non-associative operator preceding the subexpression.
+};
+
 extern class CExpression
 {
+	short _iGetVal_Reentrant;
+
 public:
 	static const char *m_sClassName;
     CVarDefMap		m_VarResDefs;		// Defined variables in sorted order (RESDEF/RESDEF0).
@@ -132,16 +145,23 @@ public:
 public:
 	// Evaluate using the stuff we know.
 	llong GetSingle(lpctstr & pExpr);
-	int GetRangeVals(lpctstr & pExpr, int64 * piVals, int iMaxQty, bool bNoWarn = false);
-	int64 GetRangeNumber(lpctstr & pExpr);
-	CSString GetRangeString(lpctstr & pExpr);
+
 	llong GetValMath(llong llVal, lpctstr & pExpr);
 	llong GetVal(lpctstr & pExpr);
 
+	int GetRangeVals(lpctstr& pExpr, int64* piVals, int iMaxQty, bool bNoWarn = false);
+	int64 GetRangeNumber(lpctstr& pExpr);		// Evaluate a { } range
+	CSString GetRangeString(lpctstr& pExpr);	// STRRANDRANGE
+
+	static int GetConditionalSubexpressions(lptstr& pExpr, SubexprData(&psSubexprData)[32], int iMaxQty);
+
 	// Strict G++ Prototyping produces an error when not casting char*& to const char*&
-	// So this is a rather lazy workaround
+	// So this is a rather lazy and const-UNsafe workaround
 	inline llong GetSingle(lptstr &pArgs) {
 		return GetSingle(const_cast<lpctstr &>(pArgs));
+	}
+	inline llong GetVal(lptstr& pArgs) {
+		return GetVal(const_cast<lpctstr&>(pArgs));
 	}
 	inline int GetRangeVals(lptstr &pExpr, int64 * piVals, int iMaxQty, bool bNoWarn = false) {
 		return GetRangeVals(const_cast<lpctstr &>(pExpr), piVals, iMaxQty, bNoWarn);
@@ -149,9 +169,7 @@ public:
 	inline int64 GetRangeNumber(lptstr &pArgs) {
 		return GetRangeNumber(const_cast<lpctstr &>(pArgs));
 	}
-	inline llong GetVal(lptstr &pArgs) {
-		return GetVal(const_cast<lpctstr &>(pArgs));
-	}
+	
 
 public:
 	CExpression();
@@ -165,7 +183,7 @@ private:
 
 uint GetIdentifierString( tchar * szTag, lpctstr pszArgs );
 
-bool IsValidDef( lpctstr pszTest );
+bool IsValidResourceDef( lpctstr pszTest );
 bool IsValidGameObjDef( lpctstr pszTest );
 
 bool IsSimpleNumberString( lpctstr pszTest );
@@ -193,40 +211,40 @@ int Calc_GetBellCurve( int iValDiff, int iVariance );
 dword ahextoi( lpctstr pArgs );		// Convert decimal or (Sphere) hex string (staring with 0, not 0x) to integer
 int64 ahextoi64( lpctstr pArgs );	// Convert decimal or (Sphere) hex string (staring with 0, not 0x) to int64
 
-#define Exp_GetSingle( pa )		(int)	g_Exp.GetSingle( pa )
-#define Exp_GetUSingle( pa )	(uint)	g_Exp.GetSingle( pa )
-#define Exp_GetLLSingle( pa )			g_Exp.GetSingle( pa )
-#define Exp_GetDWSingle( pa )	(dword)	g_Exp.GetSingle( pa )
+#define Exp_GetSingle( pa )		static_cast<int>	(g_Exp.GetSingle( pa ))
+#define Exp_GetUSingle( pa )	static_cast<uint>	(g_Exp.GetSingle( pa ))
+#define Exp_GetLLSingle( pa )						 g_Exp.GetSingle( pa )
+#define Exp_GetDWSingle( pa )	static_cast<dword>	(g_Exp.GetSingle( pa ))
 
-#define Exp_GetRange( pa )		(int)	g_Exp.GetRangeNumber( pa )
-#define Exp_GetLLRange( pa )			g_Exp.GetRangeNumber( pa )
+#define Exp_GetRange( pa )		static_cast<int>	(g_Exp.GetRangeNumber( pa ))
+#define Exp_GetLLRange( pa )						 g_Exp.GetRangeNumber( pa )
 
-#define Exp_GetCVal( pa )		(char)	    g_Exp.GetVal( pa )
-#define Exp_GetUCVal( pa )		(uchar)	    g_Exp.GetVal( pa )
-#define Exp_GetSVal( pa )		(short)	    g_Exp.GetVal( pa )
-#define Exp_GetUSVal( pa )		(ushort)    g_Exp.GetVal( pa )
-#define Exp_GetVal( pa )		(int)	    g_Exp.GetVal( pa )
-#define Exp_GetUVal( pa )		(uint)	    g_Exp.GetVal( pa )
-#define Exp_GetLLVal( pa )				    g_Exp.GetVal( pa )
-#define Exp_GetULLVal( pa )		(ullong)    g_Exp.GetVal( pa )
-#define Exp_GetBVal( pa )		(byte)	    g_Exp.GetVal( pa )
-#define Exp_GetWVal( pa )		(word)	    g_Exp.GetVal( pa )
-#define Exp_GetDWVal( pa )		(dword)	    g_Exp.GetVal( pa )
-#define Exp_Get8Val( pa )		(int8)	    g_Exp.GetVal( pa )
-#define Exp_Get16Val( pa )		(int16)	    g_Exp.GetVal( pa )
-#define Exp_Get32Val( pa )		(int32)	    g_Exp.GetVal( pa )
-#define Exp_Get64Val( pa )		(int64)	    g_Exp.GetVal( pa )
-#define Exp_GetU8Val( pa )		(uint8)	    g_Exp.GetVal( pa )
-#define Exp_GetU16Val( pa )		(uint16)	g_Exp.GetVal( pa )
-#define Exp_GetU32Val( pa )		(uint32)	g_Exp.GetVal( pa )
-#define Exp_GetU64Val( pa )		(uint64)	g_Exp.GetVal( pa )
+#define Exp_GetCVal( pa )		static_cast<char>	(g_Exp.GetVal( pa ))
+#define Exp_GetUCVal( pa )		static_cast<uchar>	(g_Exp.GetVal( pa ))
+#define Exp_GetSVal( pa )		static_cast<short>	(g_Exp.GetVal( pa ))
+#define Exp_GetUSVal( pa )		static_cast<ushort> (g_Exp.GetVal( pa ))
+#define Exp_GetVal( pa )		static_cast<int>	(g_Exp.GetVal( pa ))
+#define Exp_GetUVal( pa )		static_cast<uint>	(g_Exp.GetVal( pa ))
+#define Exp_GetLLVal( pa )							 g_Exp.GetVal( pa )
+#define Exp_GetULLVal( pa )		static_cast<ullong> (g_Exp.GetVal( pa ))
+#define Exp_GetBVal( pa )		static_cast<byte>	(g_Exp.GetVal( pa ))
+#define Exp_GetWVal( pa )		static_cast<word>	(g_Exp.GetVal( pa ))
+#define Exp_GetDWVal( pa )		static_cast<dword>	(g_Exp.GetVal( pa ))
+#define Exp_Get8Val( pa )		static_cast<int8>	(g_Exp.GetVal( pa ))
+#define Exp_Get16Val( pa )		static_cast<int16>	(g_Exp.GetVal( pa ))
+#define Exp_Get32Val( pa )		static_cast<int32>	(g_Exp.GetVal( pa ))
+#define Exp_Get64Val( pa )		static_cast<int64>	(g_Exp.GetVal( pa ))
+#define Exp_GetU8Val( pa )		static_cast<uint8>	(g_Exp.GetVal( pa ))
+#define Exp_GetU16Val( pa )		static_cast<uint16>	(g_Exp.GetVal( pa ))
+#define Exp_GetU32Val( pa )		static_cast<uint32>	(g_Exp.GetVal( pa ))
+#define Exp_GetU64Val( pa )		static_cast<uint64>	(g_Exp.GetVal( pa ))
 
 #ifdef _32BITS
 	#define Exp_GetSTVal		Exp_GetU32Val
 	#define Exp_GetSTSingle		Exp_GetUSingle
 #else
 	#define Exp_GetSTVal		Exp_GetU64Val
-	#define Exp_GetSTSingle		(size_t)Exp_GetLLSingle
+	#define Exp_GetSTSingle(pa) static_cast<size_t> (Exp_GetLLSingle(pa))
 #endif
 
 #endif	// _INC_CEXPRSSION_H

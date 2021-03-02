@@ -490,7 +490,7 @@ PacketItemWorld::PacketItemWorld(const CClient* target, const CItem *item) : Pac
 	push(target);
 }
 
-void PacketItemWorld::adjustItemData(const CClient* target, const CItem* item, ITEMID_TYPE &id, HUE_TYPE &hue, word &amount, DIR_TYPE &dir, byte &flags, byte& light)
+void PacketItemWorld::adjustItemData(const CClient* target, const CItem* item, ITEMID_TYPE &id, HUE_TYPE &hue, word &amount, DIR_TYPE &dir, byte &flags, byte& light)  // static
 {
 	ADDTOCALLSTACK("PacketItemWorld::adjustItemData");
 	const CChar* character = target->GetChar();
@@ -864,7 +864,7 @@ PacketItemContainer::PacketItemContainer(const CClient* target, const CItem* ite
 
 	const CItemBase* itemDefinition = item->Item_GetDef();
 	ITEMID_TYPE id = item->GetDispID();
-	HUE_TYPE hue = item->GetHue() & HUE_MASK_HI;
+	HUE_TYPE hue = item->GetHueVisible() & HUE_MASK_HI;
 
 	if (itemDefinition && target->GetResDisp() < itemDefinition->GetResLevel())
 	{
@@ -1207,7 +1207,7 @@ PacketItemContents::PacketItemContents(CClient* target, const CItemContainer* co
 
 		const CItemBase* itemDefinition = item->Item_GetDef();
 		ITEMID_TYPE id = item->GetDispID();
-		HUE_TYPE hue = item->GetHue() & HUE_MASK_HI;
+		HUE_TYPE hue = item->GetHueVisible() & HUE_MASK_HI;
 
 		if ( fFilterLayers )
 		{
@@ -2147,7 +2147,8 @@ PacketBulletinBoard::PacketBulletinBoard(const CClient* target, BBOARDF_TYPE act
 	writeStringFixedASCII(message->GetName(), (uint)lenstr);
 
 	// message time
-	snprintf(tempstr, STR_TEMPLENGTH, "Day %lld", (CWorldGameTime::GetCurrentTimeInGameMinutes(message->GetTimeStamp()) / (MSECS_PER_SEC * 24 * 60)) % 365);
+	CSTime datetime(message->GetTimeStamp());
+	snprintf(tempstr, STR_TEMPLENGTH, "%s", datetime.Format("%b %d, %Y"));
 	lenstr = strlen(tempstr) + 1;
 
 	writeByte((byte)lenstr);
@@ -2249,11 +2250,11 @@ uint PacketVendorBuyList::fillBuyData(const CItemContainer* container, int iConv
 		if (vendorItem == nullptr || vendorItem->GetAmount() == 0)
 			continue;
 
-		dword price = vendorItem->GetVendorPrice(iConvertFactor);
+		dword price = vendorItem->GetVendorPrice(iConvertFactor,0);
 		if (price == 0)
 		{
 			vendorItem->Item_GetDef()->ResetMakeValue();
-			price = vendorItem->GetVendorPrice(iConvertFactor);
+			price = vendorItem->GetVendorPrice(iConvertFactor,0);
 
 			if (price == 0 && vendorItem->IsValidNPCSaleItem())
 				price = vendorItem->GetBasePrice();
@@ -3022,8 +3023,23 @@ uint PacketVendorSellList::fillSellList(CClient* target, const CItemContainer* c
 						writeInt16((word)vendItem->GetDispID());
 						writeInt16((word)hue);
 						writeInt16(vendItem->GetAmount());
-                        uint price = vendItem->GetVendorPrice(iConvertFactor);
-						writeInt16((word)( (price > UINT16_MAX) ? UINT16_MAX : price ));
+
+						uint price = 0;
+
+						// If OVERRIDE.VALUE is define on the script and this NPC buy this item at a specific price, we use this price in priority
+						// Else, we calculate the value of the item in the player's backpack
+						if (vendSell->GetKey("OVERRIDE.VALUE", true))
+						{
+							//Get the price on NPC template
+							price = vendSell->GetVendorPrice(iConvertFactor,1); 
+						}
+						else	
+						{
+							//Get the price/Value of the real item in the backpack
+							price = vendItem->GetVendorPrice(iConvertFactor,1); 
+						}
+
+						writeInt16((word)((price > UINT16_MAX) ? UINT16_MAX : price));
 						writeInt16((word)len);
 						writeStringFixedASCII(name, len);
 
@@ -4659,7 +4675,7 @@ bool PacketPropertyList::onSend(const CClient* client)
 
 	const CObjBase* object = m_object.ObjFind();
 	int iCharVisualRange = character->GetVisualRange();
-	if (!object || character->GetTopDistSight(object->GetTopLevelObj()) > maximum(iCharVisualRange, UO_MAP_VIEW_SIZE_DEFAULT))
+	if (!object || character->GetTopDistSight(object->GetTopLevelObj()) > maximum(iCharVisualRange, UO_MAP_VIEW_SIZE_DEFAULT) && !character->IsPriv(PRIV_ALLSHOW))
 		return false;
 
 	if (hasExpired(30 * MSECS_PER_SEC))
@@ -5114,7 +5130,7 @@ PacketItemWorldNew::PacketItemWorldNew(const CClient* target, const CItem *item)
             amount = itemAmount;
     }
 	CPointMap pt = item->GetTopPoint();
-	HUE_TYPE hue = item->GetHue();
+	HUE_TYPE hue = item->GetHueVisible();
 	byte light = 0;
 	byte flags = 0;
 
@@ -5260,10 +5276,12 @@ PacketMoveShip::PacketMoveShip(const CClient* target, const CObjBase* movingObj,
  *
  *
  ***************************************************************************/
-PacketContainer::PacketContainer(const CClient* target, CObjBase** objects, uint objectCount) : PacketItemWorldNew(XCMD_PacketCont, 5, PRI_NORMAL)
+PacketContainer::PacketContainer(const CClient* target, CObjBase** objects, uint objectCount) : PacketSend(XCMD_PacketCont, 5, PRI_NORMAL)
 {
 	ADDTOCALLSTACK("PacketContainer::PacketContainer");
 	ASSERT(objectCount > 0);
+
+	using ds = PacketItemWorldNew::DataSource;
 
 	initLength();
 	writeInt16((word)(objectCount));
@@ -5274,7 +5292,7 @@ PacketContainer::PacketContainer(const CClient* target, CObjBase** objects, uint
 		if (object->IsItem())
 		{
 			CItem* item = static_cast<CItem*>(object);
-			DataSource source = TileData;
+			ds source = ds::TileData;
 			dword uid = item->GetUID();
 			word amount = item->GetAmount();
 			ITEMID_TYPE id = item->GetDispID();
@@ -5284,13 +5302,13 @@ PacketContainer::PacketContainer(const CClient* target, CObjBase** objects, uint
 			byte flags = 0;
 			byte light = 0;
 
-			adjustItemData(target, item, id, hue, amount, dir, flags, light);
+			PacketItemWorld::adjustItemData(target, item, id, hue, amount, dir, flags, light);
 
 			if (id >= ITEMID_MULTI)
 				id = (ITEMID_TYPE)(id - ITEMID_MULTI);
 
 			if (item->IsTypeMulti())
-				source = Multi;
+				source = ds::Multi;
 
 			writeByte(0xF3);
 			writeInt16(1);
@@ -5311,7 +5329,7 @@ PacketContainer::PacketContainer(const CClient* target, CObjBase** objects, uint
 		else
 		{
 			CChar* mobile = static_cast<CChar*>(object);
-			DataSource source = Character;
+			ds source = ds::Character;
 			dword uid = mobile->GetUID();
 			CREID_TYPE id = mobile->GetDispID();
 			CPointMap p = mobile->GetTopPoint();

@@ -135,7 +135,7 @@ public:
     * @brief Calculates the largest part of the multi.
     * @return the value.
     */
-    int Multi_GetMaxDist() const;
+    int Multi_GetDistanceMax() const;
 
     /**
     * @brief Checks if a the multi can be created and create it if so.
@@ -510,6 +510,7 @@ public:
     * @param pItem the item.
     */
     void UnlockItem(const CUID& uidItem);
+    void UnlockAllItems();
     /**
     * @brief Returns the position of the given item.
     * @param pItem the item.

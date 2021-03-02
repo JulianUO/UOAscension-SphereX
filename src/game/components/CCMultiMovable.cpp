@@ -131,7 +131,7 @@ uint CCMultiMovable::ListObjs(CObjBase ** ppObjList)
     if (!pItemThis->IsTopLevel())
         return 0;
 
-    int iMaxDist = pMulti->Multi_GetMaxDist();
+    int iMaxDist = pMulti->Multi_GetDistanceMax();
     int iShipHeight = pItemThis->GetTopZ() + maximum(3, pItemThis->GetHeight());
 
     // always list myself first. All other items must see my new region !
@@ -371,7 +371,7 @@ bool CCMultiMovable::MoveDelta(const CPointMap& ptDelta, bool fUpdateViewFull)
                 else
                 {
                     CChar *pChar = static_cast<CChar *>(pObj);
-                    if (pClient == pChar->GetClient())
+                    if (pClient == pChar->GetClientActive())
                     {
                         if (!fClientUsesSmoothSailing)
                             pClient->addPlayerUpdate();     // update my (client) position
@@ -1276,7 +1276,7 @@ bool CCMultiMovable::r_Verb(CScript & s, CTextConsole * pSrc) // Execute command
 
         tchar szText[MAX_TALK_BUFFER];
         Str_CopyLimitNull(szText, pszSpeak, MAX_TALK_BUFFER);
-        pChar->ParseText(szText, &g_Serv);
+        pChar->ParseScriptText(szText, &g_Serv);
         pTiller->Speak(szText, HUE_TEXT_DEF, TALKMODE_SAY, FONT_NORMAL);
     }
     return true;
@@ -1443,7 +1443,7 @@ bool CCMultiMovable::r_LoadVal(CScript & s)
         break;
         case CML_PILOT:
         {
-			SetPilot(CUID::CharFind(s.GetArgVal()));
+			SetPilot(CUID::CharFindFromUID(s.GetArgVal()));
 			return true;
         } 
         break;

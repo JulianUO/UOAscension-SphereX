@@ -331,7 +331,7 @@ void CChat::DoCommand(CChatChanMember * pBy, lpctstr szMsg)
 
 	CSString sFrom;
 	CChatChannel * pChannel = pBy->GetChannel();
-	CClient * pByClient = pBy->GetClient();
+	CClient * pByClient = pBy->GetClientActive();
 	ASSERT(pByClient != nullptr);
 
 	switch ( FindTableSorted( pszCommand, sm_szCmd_Chat, CountOf(sm_szCmd_Chat)))
@@ -574,8 +574,6 @@ void CChat::GenerateChatName(CSString &sName, const CClient * pClient) // static
 	lpctstr pszName = nullptr;
 	if (pClient->GetChar() != nullptr)
 		pszName = pClient->GetChar()->GetName();
-	else if (pClient->GetAccount() != nullptr)
-		pszName = pClient->GetAccount()->GetName();
 
 	if (pszName == nullptr)
 		return;
@@ -623,11 +621,11 @@ void CChat::CreateJoinChannel(CChatChanMember * pByMember, lpctstr pszName, lpct
 	ADDTOCALLSTACK("CChat::CreateJoinChannel");
 	if ( ! IsValidName( pszName, false ))
 	{
-		pByMember->GetClient()->addChatSystemMessage( CHATMSG_InvalidConferenceName );
+		pByMember->GetClientActive()->addChatSystemMessage( CHATMSG_InvalidConferenceName );
 	}
 	else if (IsDuplicateChannelName(pszName))
 	{
-		pByMember->GetClient()->addChatSystemMessage( CHATMSG_AlreadyAConference );
+		pByMember->GetClientActive()->addChatSystemMessage( CHATMSG_AlreadyAConference );
 	}
 	else
 	{
@@ -658,7 +656,7 @@ bool CChat::JoinChannel(CChatChanMember * pMember, lpctstr pszChannel, lpctstr p
 {
 	ADDTOCALLSTACK("CChat::JoinChannel");
 	ASSERT(pMember != nullptr);
-	CClient * pMemberClient = pMember->GetClient();
+	CClient * pMemberClient = pMember->GetClientActive();
 	ASSERT(pMemberClient != nullptr);
 
 	// Are we in a channel now?

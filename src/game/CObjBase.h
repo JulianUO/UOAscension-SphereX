@@ -29,10 +29,10 @@ class CObjBase : public CObjBaseTemplate, public CScriptObj, public CEntity, pub
 
 private:
 	int64 m_timestamp;          // TimeStamp
-	HUE_TYPE m_wHue;			// Hue or skin color. (CItems must be < 0x4ff or so)
 
 protected:
 	CResourceRef m_BaseRef;     // Pointer to the resource that describes this type.
+    bool _fDeleting;
 
     std::string _sRunningTrigger;   // Name of the running trigger (can be custom!) [use std::string instead of CSString because the former is allocated on-demand]
     short _iRunningTriggerId;       // Current trigger being run on this object. Used to prevent the same trigger being called over and over.
@@ -42,6 +42,7 @@ public:
     static const char *m_sClassName;
     static dword sm_iCount;    // how many total objects in the world ?
 
+    
     int _iCreatedResScriptIdx;	// index in g_Cfg.m_ResourceFiles of the script file where this obj was created
     int _iCreatedResScriptLine;	// line in the script file where this obj was created
 
@@ -55,7 +56,7 @@ public:
     word	m_defenseBase;	    // Armor for IsArmor items
     word	m_defenseRange;     // variable range of defense.
     int 	m_ModMaxWeight;		// ModMaxWeight prop.
-
+    HUE_TYPE m_wHue;			// Hue or skin color. (CItems must be < 0x4ff or so)
     CUID 	_uidSpawn;          // SpawnItem for this item
 
     CResourceRefArray m_OEvents;
@@ -69,8 +70,6 @@ private:
 
 protected:
     /**
-     * @fn  virtual void CObjBase::DeletePrepare();
-     *
      * @brief   Prepares to delete.
      */
     virtual void DeletePrepare();
@@ -78,24 +77,22 @@ protected:
     void DeleteCleanup(bool fForce);
 
 public:
+    inline bool IsBeingDeleted() const noexcept
+    {
+        return _fDeleting;
+    }
+
     virtual bool IsDeleted() const override;
 
     /**
-     * @fn  virtual void CObjBase::Delete(bool bforce = false);
-     *
      * @brief   Deletes this CObjBase from game (doesn't delete the raw class instance).
-     *
      * @param   bForce  Force deletion.
-     *
      * @return  Was deleted.
      */
     virtual bool Delete(bool fForce = false);
 
     /**
-     * @fn  virtual void CObjBase::DupeCopy( const CObjBase * pObj );
-     *
      * @brief   Dupe copy.
-     *
      * @param   pObj    The object.
      */
     virtual void DupeCopy(const CObjBase* pObj); // overridden by CItem
@@ -105,17 +102,14 @@ public:
 	* @brief   Base get definition.
 	* @return  null if it fails, else a pointer to a CBaseBaseDef.
 	*/
-	CBaseBaseDef * Base_GetDef() const
-	{
-		return ( static_cast <CBaseBaseDef *>( m_BaseRef.GetRef() ));
-	}
+    CBaseBaseDef* Base_GetDef() const noexcept;
 
-	dword GetCanFlagsBase() const
+	dword GetCanFlagsBase() const noexcept
 	{
 		return Base_GetDef()->m_Can;
 	}
 
-	dword GetCanFlags() const
+	dword GetCanFlags() const noexcept
 	{
 		// m_CanMask is XORed to m_Can:
 		//  If a flag in m_CanMask is enabled in m_Can, it is ignored in this Can check
@@ -124,16 +118,19 @@ public:
 		return (GetCanFlagsBase() ^ m_CanMask);
 	}	
 
-	bool Can(dword dwCan) const
+	bool Can(dword dwCan) const noexcept
 	{
-		return (GetCanFlags() & dwCan);
+        return (GetCanFlags() & dwCan);
 	}
+
+    inline bool Can(dword dwCan, dword dwObjCanFlags) const noexcept
+    {
+        return (dwObjCanFlags & dwCan);
+    }
 
     bool IsRunningTrigger() const;
 
 	/**
-	* @fn  inline bool CObjBase::CallPersonalTrigger(tchar * pArgs, CTextConsole * pSrc, TRIGRET_TYPE & trResult, bool bFull);
-	*
 	* @brief   Call personal trigger (from scripts).
 	*
 	* @param [in,out]  pArgs       If non-null, the arguments.
@@ -148,47 +145,32 @@ public:
 public:
 
     /**
-    * @fn  CCSpawn *CObjBase::GetSpawn();
-    *
     * @brief   Returns Spawn item.
-    *
     * @return  The CItem.
     */
     CCSpawn *GetSpawn();
 
     /**
-    * @fn  CCSpawn *CObjBase::SetSpawn(CCSpawn *spawn);
-    *
     * @brief   sets the Spawn item.
-    *
     * @param  The CCSpawn.
     */
     void SetSpawn(CCSpawn *spawn);
 
     /**
-    * @fn  CCSpawn *CObjBase::GetFaction();
-    *
     * @brief   Returns Faction CComponent.
-    *
     * @return  The CCFaction.
     */
     CCFaction *GetFaction();
 
 
     /**
-     * @fn  int64 CObjBase::GetTimeStamp() const;
-     *
      * @brief   Gets time stamp.
-     *
      * @return  The time stamp.
      */
 	int64 GetTimeStamp() const;
 
     /**
-     * @fn  void CObjBase::SetTimeStamp(int64 t_time);
-     *
      * @brief   Sets time stamp.
-     *
      * @param   t_time  The time.
      */
 	void SetTimeStamp(int64 t_time);
@@ -294,18 +276,18 @@ public:
 	lpctstr GetDefStr( lpctstr ptcKey, bool fZero = false, bool fBaseDef = false ) const;
 
     /**
-     * @fn  int64 CObjBase::GetDefNum( lpctstr ptcKey, bool fZero = false, bool fDef = false ) const;
+     * @fn  int64 CObjBase::GetDefNum( lpctstr ptcKey, bool fDef = false, int64 iDefault = 0 ) const;
      *
      * @brief   Gets definition number from m_BaseDefs.
      *
      * @param   ptcKey      The key.
-     * @param   fZero       true to zero.
+     * @param   iDefault    Default value to return if not existant.
      * @param   fBaseDef    if the def doesn't exist, then check for a base def.
      *
      * @return  The definition number.
      */
 
-	int64 GetDefNum( lpctstr ptcKey, bool fBaseDef = false ) const;
+	int64 GetDefNum( lpctstr ptcKey, bool fBaseDef = false, int64 iDefault = 0) const;
 
     /**
      * @fn  void CObjBase::SetDefNum(lpctstr ptcKey, int64 iVal, bool fZero = true);
@@ -545,8 +527,14 @@ public:
      */
 	lpctstr GetResourceName() const;
 
-public:
+protected:
+     /**
+     * @brief   Sets hue without calling triggers or additional checks (internally used by memory objects).
+     * @param   wHue    The hue.
+     */
+     void SetHueQuick(HUE_TYPE wHue);
 
+public:
     /**
      * @fn  void CObjBase::SetHue( HUE_TYPE wHue, bool bAvoidTrigger = true, CTextConsole *pSrc = nullptr, CObjBase *SourceObj = nullptr, llong sound = 0 );
      *
@@ -568,27 +556,6 @@ public:
      * @return  The hue.
      */
 	HUE_TYPE GetHue() const;
-
-protected:
-
-    /**
-     * @fn  word CObjBase::GetHueAlt() const;
-     *
-     * @brief   Gets hue alternate (OColor).
-     *
-     * @return  The hue alternate.
-     */
-
-	word GetHueAlt() const;
-
-    /**
-     * @fn  void CObjBase::SetHueAlt( HUE_TYPE wHue );
-     *
-     * @brief   Sets hue alternate (OColor).
-     *
-     * @param   wHue    The hue.
-     */
-	void SetHueAlt( HUE_TYPE wHue );
 
 
 public:
@@ -1283,12 +1250,8 @@ enum CTRIG_TYPE : short
 
 
 /**
- * @fn  DIR_TYPE GetDirStr( lpctstr pszDir );
- *
  * @brief   Gets dir string.
- *
  * @param   pszDir  The dir.
- *
  * @return  The dir string.
  */
 DIR_TYPE GetDirStr( lpctstr pszDir );

@@ -733,7 +733,7 @@ void CChar::NotoSave_CheckTimeout()
             ++refNoto.time;
             if ((refNoto.time > g_Cfg.m_iNotoTimeout) && (g_Cfg.m_iNotoTimeout > 0))
             {
-                vToResend.emplace_back(CUID::CharFind(refNoto.charUID));
+                vToResend.emplace_back(CUID::CharFindFromUID(refNoto.charUID));
                 it = m_notoSaves.erase(it);
             }
             else
@@ -767,10 +767,10 @@ int CChar::NotoSave_GetID( CChar * pChar ) const
 	if ( !m_notoSaves.empty() )
 	{
 		int id = 0;
-		for (auto it : m_notoSaves)
+		for (const auto& it : m_notoSaves)
 		{
-			const CUID& uid = it.charUID;
-			if ( uid.CharFind() && uid == pChar->GetUID() )
+			const CUID uid(it.charUID);
+			if ( uid.CharFind() && (uid == pChar->GetUID()) )
 				return id;
 			++id;
 		}

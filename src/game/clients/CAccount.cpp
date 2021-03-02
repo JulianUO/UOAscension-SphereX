@@ -1070,6 +1070,7 @@ enum AC_TYPE
 	AC_RESDISP,
 	AC_TAG,
 	AC_TAG0,
+	AC_TAGAT,
 	AC_TAGCOUNT,
 	AC_TOTALCONNECTTIME,
 	AC_QTY
@@ -1103,6 +1104,7 @@ lpctstr const CAccount::sm_szLoadKeys[AC_QTY+1] = // static
 	"RESDISP",
 	"TAG",
 	"TAG0",
+	"TAGAT",
 	"TAGCOUNT",
 	"TOTALCONNECTTIME",
 	nullptr
@@ -1150,6 +1152,42 @@ bool CAccount::r_WriteVal( lpctstr ptcKey, CSString &sVal, CTextConsole * pSrc, 
 			break;
 		case AC_CHATNAME:
 			sVal = m_sChatName;
+			break;
+		case AC_TAGAT:
+			{
+				ptcKey += 5;	// eat the 'TAGAT'
+ 				if ( *ptcKey == '.' )	// do we have an argument?
+ 				{
+ 					SKIP_SEPARATORS( ptcKey );
+ 					size_t iQty = Exp_GetSTVal( ptcKey );
+					if ( iQty >= m_TagDefs.GetCount() )
+ 						return false; // trying to get non-existant tag
+
+ 					const CVarDefCont * pTagAt = m_TagDefs.GetAt( iQty );
+ 					if ( !pTagAt )
+ 						return false; // trying to get non-existant tag
+
+ 					SKIP_SEPARATORS( ptcKey );
+ 					if ( ! *ptcKey )
+ 					{
+ 						sVal.Format("%s=%s", pTagAt->GetKey(), pTagAt->GetValStr());
+ 					}
+ 					else if ( !strnicmp( ptcKey, "KEY", 3 )) // key?
+ 					{
+ 						sVal = pTagAt->GetKey();
+ 					}
+ 					else if ( !strnicmp( ptcKey, "VAL", 3 )) // val?
+ 					{
+ 						sVal = pTagAt->GetValStr();
+ 					}
+                    else
+                    {
+                        return false;
+                    }
+                    break;
+ 				}
+			return false;
+			}
 			break;
 		case AC_TAGCOUNT:
 			sVal.FormatSTVal( m_TagDefs.GetCount() );
@@ -1320,7 +1358,7 @@ bool CAccount::r_LoadVal( CScript & s )
 			m_lang.Set( s.GetArgStr());
 			break;
 		case AC_LASTCHARUID:
-			m_uidLastChar = s.GetArgVal();
+			m_uidLastChar.SetObjUID(s.GetArgDWVal());
 			break;
 		case AC_LASTCONNECTDATE:
 			m_dateLastConnect.Read( s.GetArgStr());
@@ -1373,7 +1411,7 @@ bool CAccount::r_LoadVal( CScript & s )
             ptcKey += (fZero ? 5 : 4);
             bool fQuoted = false;
             lpctstr ptcArg = s.GetArgStr(&fQuoted);
-            m_TagDefs.SetStr(ptcKey, fQuoted, ptcArg, true);
+            m_TagDefs.SetStr(ptcKey, fQuoted, ptcArg, fZero);
         }
         break;
 

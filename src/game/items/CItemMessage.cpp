@@ -81,11 +81,12 @@ bool CItemMessage::r_WriteVal(lpctstr ptcKey, CSString &sVal, CTextConsole *pSrc
     UNREFERENCED_PARAMETER(fNoCallChildren);
     ADDTOCALLSTACK("CItemMessage::r_WriteVal");
     EXC_TRY("WriteVal");
+
     // Load the message body for a book or a bboard message.
     if (!strnicmp(ptcKey, "BODY", 4))
     {
         ptcKey += 4;
-        uint uiPage = Exp_GetUVal(ptcKey);
+        const size_t uiPage = Exp_GetSTVal(ptcKey);
         if (m_sBodyLines.IsValidIndex(uiPage) == false)
             return false;
         sVal = *m_sBodyLines[uiPage];

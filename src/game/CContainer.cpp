@@ -99,7 +99,13 @@ int CContainer::FixWeight()
 	{
 		CItemContainer *pCont = dynamic_cast<CItemContainer *>(pObjRec);
 		if (!pCont)
+		{
+			//For every non-container item inside this container add its weight to it.
+			CItem* pItem = dynamic_cast<CItem*>(pObjRec);
+			if (pItem)
+				m_totalweight += pItem->GetWeight();
 			continue;
+		}
 
         pCont->FixWeight();
         if (!pCont->IsWeighed())	// bank box doesn't count for weight.
@@ -602,7 +608,10 @@ bool CContainer::r_GetRefContainer( lpctstr &ptcKey, CScriptObj *&pRef )
 		{
 			ptcKey += 4;
 			SKIP_SEPARATORS(ptcKey);
-			pRef = dynamic_cast<CItem*>(GetContentIndex(Exp_GetSTSingle(ptcKey)));
+			const size_t idx = Exp_GetSTSingle(ptcKey);
+			if (idx >= GetContentCount())
+				return false;
+			pRef = dynamic_cast<CItem*>(GetContentIndex(idx));
 			SKIP_SEPARATORS(ptcKey);
 			return true;
 		}

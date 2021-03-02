@@ -76,7 +76,7 @@ bool CChar::Use_CarveCorpse( CItemCorpse * pCorpse )
 	{
 		CItem *pBlood = CItem::CreateBase(ITEMID_BLOOD4);
 		ASSERT(pBlood);
-		pBlood->SetHue(pCorpseDef->m_wBloodHue);
+		pBlood->SetHue(pCorpseDef->_wBloodHue);
 		pBlood->MoveToDecay(pnt, 5 * MSECS_PER_SEC);
 	}
 
@@ -1049,15 +1049,15 @@ CChar * CChar::Use_Figurine( CItem * pItem, bool fCheckFollowerSlots )
         const HUE_TYPE iMountHue = pItem->GetHue();
 		if (iMountHue)
 		{
-			pPet->m_prev_Hue = iMountHue;
+			pPet->_wPrev_Hue = iMountHue;
 			pPet->SetHue(iMountHue);
 		}
 	}
 
 	if ( fCheckFollowerSlots && IsSetOF(OF_PetSlots) )
 	{
-		const short iFollowerSlots = (short)pPet->GetDefNum("FOLLOWERSLOTS", true);
-		if ( !FollowersUpdate(pPet, (maximum(1, iFollowerSlots)), true) )
+		const short iFollowerSlots = (short)pPet->GetDefNum("FOLLOWERSLOTS", true, 1);
+		if ( !FollowersUpdate(pPet, (maximum(0, iFollowerSlots)), true) )
 		{
 			SysMessageDefault(DEFMSG_PETSLOTS_TRY_CONTROL);
 			if ( fCreatedNewNpc )
@@ -1084,18 +1084,24 @@ bool CChar::FollowersUpdate( CChar * pChar, short iFollowerSlots, bool fCheckOnl
 {
 	ADDTOCALLSTACK("CChar::FollowersUpdate");
 	// Attemp to update followers on this character based on pChar
-	// bSustract = true for pet's release, shrink, etc ...
 	// This is supossed to be called only when OF_PetSlots is enabled, so no need to check it here.
 
-	if ( !fCheckOnly && IsTrigUsed(TRIGGER_FOLLOWERSUPDATE) )
-	{
-		CScriptTriggerArgs Args;
-		Args.m_iN1 = (iFollowerSlots > 0) ? 0 : 1;
-		Args.m_iN2 = abs(iFollowerSlots);
-		if ( OnTrigger(CTRIG_FollowersUpdate, pChar, &Args) == TRIGRET_RET_TRUE )
-			return false;
+    if (!fCheckOnly && IsTrigUsed(TRIGGER_FOLLOWERSUPDATE))
+    {
+        CScriptTriggerArgs Args;
+        Args.m_iN1 = (iFollowerSlots >= 0) ? 0 : 1;
+        Args.m_iN2 = abs(iFollowerSlots);
+        if (OnTrigger(CTRIG_FollowersUpdate, pChar, &Args) == TRIGRET_RET_TRUE)
+            return false;
 
-		iFollowerSlots = (short)(Args.m_iN2);
+        if (Args.m_iN1 == 1)
+        {
+            iFollowerSlots = -(short)(Args.m_iN2);
+        }
+        else
+        {
+            iFollowerSlots = (short)(Args.m_iN2);
+        }
 	}
 
 	short iCurFollower = (short)(GetDefNum("CURFOLLOWER", true));
@@ -1107,7 +1113,7 @@ bool CChar::FollowersUpdate( CChar * pChar, short iFollowerSlots, bool fCheckOnl
 
 	if ( !fCheckOnly )
 	{
-		SetDefNum("CURFOLLOWER", maximum(iSetFollower, 0));
+        SetDefNum("CURFOLLOWER", maximum(iSetFollower, 0));
 		UpdateStatsFlag();
 	}
 	return true;
@@ -1164,8 +1170,8 @@ bool CChar::Use_Key( CItem * pKey, CItem * pItemTarg )
 	}
 	if ( pKey == pItemTarg )	// rename the key
 	{
-		if ( IsClient() )
-			GetClient()->addPromptConsole(CLIMODE_PROMPT_NAME_KEY, g_Cfg.GetDefaultMsg(DEFMSG_MSG_KEY_SETNAME), pKey->GetUID());
+		if ( IsClientActive() )
+			GetClientActive()->addPromptConsole(CLIMODE_PROMPT_NAME_KEY, g_Cfg.GetDefaultMsg(DEFMSG_MSG_KEY_SETNAME), pKey->GetUID());
 		return false;
 	}
 
@@ -1203,8 +1209,8 @@ bool CChar::Use_KeyChange( CItem * pItemTarg )
 	{
 		case IT_SIGN_GUMP:
 			// We may rename the sign.
-			if ( IsClient() )
-				GetClient()->addPromptConsole(CLIMODE_PROMPT_NAME_SIGN, g_Cfg.GetDefaultMsg(DEFMSG_MSG_KEY_TARG_SIGN), pItemTarg->GetUID());
+			if ( IsClientActive() )
+				GetClientActive()->addPromptConsole(CLIMODE_PROMPT_NAME_SIGN, g_Cfg.GetDefaultMsg(DEFMSG_MSG_KEY_TARG_SIGN), pItemTarg->GetUID());
 			return true;
 		case IT_CONTAINER:
 			pItemTarg->SetType(IT_CONTAINER_LOCKED);
@@ -1232,8 +1238,8 @@ bool CChar::Use_KeyChange( CItem * pItemTarg )
 			SysMessageDefault(DEFMSG_MSG_KEY_TARG_DOOR_ULOCK);
 			break;
 		case IT_SHIP_TILLER:
-			if ( IsClient() )
-				GetClient()->addPromptConsole(CLIMODE_PROMPT_NAME_SHIP, g_Cfg.GetDefaultMsg(DEFMSG_MSG_SHIPNAME_PROMT), pItemTarg->GetUID());
+			if ( IsClientActive() )
+				GetClientActive()->addPromptConsole(CLIMODE_PROMPT_NAME_SHIP, g_Cfg.GetDefaultMsg(DEFMSG_MSG_SHIPNAME_PROMT), pItemTarg->GetUID());
 			return true;
 		case IT_SHIP_PLANK:
 			pItemTarg->Ship_Plank(false);	// just close it.
@@ -1778,8 +1784,8 @@ bool CChar::Use_Obj( CObjBase * pObj, bool fTestTouch, bool fScript  )
 	ADDTOCALLSTACK("CChar::Use_Obj");
 	if ( !pObj )
 		return false;
-	if ( IsClient() )
-		return GetClient()->Event_DoubleClick(pObj->GetUID(), false, fTestTouch, fScript);
+	if ( IsClientActive() )
+		return GetClientActive()->Event_DoubleClick(pObj->GetUID(), false, fTestTouch, fScript);
 	else
 		return Use_Item(dynamic_cast<CItem*>(pObj), fTestTouch);
 }

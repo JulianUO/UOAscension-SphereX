@@ -1256,7 +1256,7 @@ void CItemMultiCustom::DeleteComponent(const CUID& uidComponent)
         pt.m_x -= GetTopPoint().m_x;
         pt.m_y -= GetTopPoint().m_y;
         pt.m_z -= GetTopPoint().m_z;
-        RemoveItem(GetOwner().CharFind()->GetClient(), pComp->GetDispID(), pt.m_x, pt.m_y, pt.m_z);
+        RemoveItem(GetOwner().CharFind()->GetClientActive(), pComp->GetDispID(), pt.m_x, pt.m_y, pt.m_z);
     }*/
     CItemMulti::DeleteComponent(uidComponent);
 }
@@ -1403,7 +1403,7 @@ void CItemMultiCustom::ClearFloor(char iFloor)
         }
     }
 
-    CWorldSearch Area(m_pRegion->m_pt, Multi_GetMaxDist());	// largest area.
+    CWorldSearch Area(m_pRegion->m_pt, Multi_GetDistanceMax());	// largest area.
     Area.SetSearchSquare(true);
     for (;;)
     {
@@ -1601,14 +1601,14 @@ bool CItemMultiCustom::r_Verb(CScript & s, CTextConsole * pSrc) // Execute comma
         case IMCV_CUSTOMIZE:
         {
             if (s.HasArgs())
-                pChar = CUID::CharFind(s.GetArgVal());
+                pChar = CUID::CharFindFromUID(s.GetArgVal());
             else if (pSrc)
                 pChar = pSrc->GetChar();
 
-            if (pChar == nullptr || !pChar->IsClient())
+            if (pChar == nullptr || !pChar->IsClientActive())
                 return false;
 
-            BeginCustomize(pChar->GetClient());
+            BeginCustomize(pChar->GetClientActive());
         }
         break;
 
@@ -1642,12 +1642,12 @@ bool CItemMultiCustom::r_Verb(CScript & s, CTextConsole * pSrc) // Execute comma
         case IMCV_RESYNC:
         {
             if (s.HasArgs())
-                pChar = CUID::CharFind(s.GetArgVal());
+                pChar = CUID::CharFindFromUID(s.GetArgVal());
 
-            if (pChar == nullptr || !pChar->IsClient())
+            if (pChar == nullptr || !pChar->IsClientActive())
                 return false;
 
-            SendStructureTo(pChar->GetClient());
+            SendStructureTo(pChar->GetClientActive());
         }
         break;
 

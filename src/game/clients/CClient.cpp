@@ -44,8 +44,9 @@ CClient::CClient(CNetState* state)
 	m_timeNextEventWalk = 0;
 
 	m_iWalkStepCount = 0;
-	m_iWalkTimeAvg	= 100;
-	m_timeWalkStep = GetPreciseSysTimeMilli();
+	m_iWalkTimeAvg	= 500;
+	m_timeWalkStep = CSTime::GetPreciseSysTimeMilli();
+	m_lastDir = 0;
 
     _fShowPublicHouseContent = true;
 
@@ -305,11 +306,17 @@ bool CClient::CanSee( const CObjBaseTemplate * pObj ) const
 	if ( !m_pChar || !pObj )
 		return false;
 
-	if (!IsPriv(PRIV_ALLSHOW) && pObj->IsChar())
+	if ( pObj->IsChar() )
 	{
 		const CChar *pChar = static_cast<const CChar*>(pObj);
-		if (pChar->IsDisconnected())
-			return false;
+		if ( pChar->IsDisconnected() )
+        {
+            if( !IsPriv(PRIV_ALLSHOW) )
+                return false;
+            //dont show pet when is ridden (cause double)
+            else if ( pChar->IsStatFlag(STATF_PET) && pChar->IsStatFlag(STATF_RIDDEN) )
+                return false;
+        }
 	}
 	return m_pChar->CanSee( pObj );
 }
@@ -332,7 +339,7 @@ bool CClient::CanHear( const CObjBaseTemplate * pSrc, TALKMODE_TYPE mode ) const
 	{
 		const CChar * pCharSrc = dynamic_cast <const CChar*> ( pSrc );
 		ASSERT(pCharSrc);
-		if ( pCharSrc->IsClient() && (pCharSrc->GetPrivLevel() <= GetPrivLevel()) )
+		if ( pCharSrc->IsClientActive() && (pCharSrc->GetPrivLevel() <= GetPrivLevel()) )
 			return true;
 	}
 
@@ -408,7 +415,7 @@ void CClient::addPromptConsoleFunction( lpctstr pszFunction, lpctstr pszSysmessa
 	// Target a verb at some object .
 	ASSERT(pszFunction);
 	m_Prompt_Text = pszFunction;
-	addPromptConsole( CLIMODE_PROMPT_SCRIPT_VERB, pszSysmessage, 0, 0, bUnicode );
+	addPromptConsole( CLIMODE_PROMPT_SCRIPT_VERB, pszSysmessage, CUID(), CUID(), bUnicode );
 }
 
 
@@ -458,37 +465,41 @@ bool CClient::r_GetRef( lpctstr & ptcKey, CScriptObj * & pRef )
 				pRef = m_pHouseDesign;
 				return true;
 			case CLIR_PARTY:
-				if (!strnicmp(ptcKey, "CREATE", 7))
+				if (CChar* pCharThis = GetChar())
 				{
-					if (m_pChar->m_pParty)
-						return false;
-
-					lpctstr oldKey = ptcKey;
-					ptcKey += 7;
-
-					// Do i want to send the "joined" message to the party members?
-					bool fSendMsgs = (Exp_GetSingle(ptcKey) != 0) ? true : false;
-
-					// Add all the UIDs to the party
-					for (int ip = 0; ip < 10; ++ip)
+					if (!strnicmp(ptcKey, "CREATE", 7))
 					{
-						SKIP_ARGSEP(ptcKey);
-						CChar * pChar = CUID::CharFind(Exp_GetDWSingle(ptcKey));
-						if (!pChar)
-							continue;
-						if (!pChar->IsClient())
-							continue;
-						CPartyDef::AcceptEvent(pChar, m_pChar->GetUID(), true, fSendMsgs);
+						if (pCharThis->m_pParty)
+							return false;
 
-						if (*ptcKey == '\0')
-							break;
+						lpctstr oldKey = ptcKey;
+						ptcKey += 7;
+
+						// Do i want to send the "joined" message to the party members?
+						bool fSendMsgs = (Exp_GetSingle(ptcKey) != 0) ? true : false;
+
+						// Add all the UIDs to the party
+						for (int ip = 0; ip < 10; ++ip)
+						{
+							SKIP_ARGSEP(ptcKey);
+							CChar* pChar = CUID::CharFindFromUID(Exp_GetDWSingle(ptcKey));
+							if (!pChar)
+								continue;
+							if (!pChar->IsClientActive())
+								continue;
+							CPartyDef::AcceptEvent(pChar, pChar->GetUID(), true, fSendMsgs);
+
+							if (*ptcKey == '\0')
+								break;
+						}
+						ptcKey = oldKey;	// Restoring back to real ptcKey, so we don't get errors for giving an uid instead of PDV_CREATE.
 					}
-					ptcKey = oldKey;	// Restoring back to real ptcKey, so we don't get errors for giving an uid instead of PDV_CREATE.
+					if (!pCharThis->m_pParty)
+						return false;
+					pRef = pCharThis->m_pParty;
+					return true;
 				}
-				if (!this->m_pChar->m_pParty)
-					return false;
-				pRef = this->m_pChar->m_pParty;
-				return true;
+				return false;
 			case CLIR_TARG:
 				pRef = m_Targ_UID.ObjFind();
 				return true;
@@ -500,6 +511,7 @@ bool CClient::r_GetRef( lpctstr & ptcKey, CScriptObj * & pRef )
 				return true;
 		}
 	}
+
 	return CScriptObj::r_GetRef( ptcKey, pRef );
 }
 
@@ -686,7 +698,7 @@ bool CClient::r_LoadVal( CScript & s )
             ptcKey = ptcKey + (fZero ? 6 : 5);
             bool fQuoted = false;
             lpctstr ptcArg = s.GetArgStr(&fQuoted);
-            m_TagDefs.SetStr(ptcKey, fQuoted, ptcArg, false);
+            m_TagDefs.SetStr(ptcKey, fQuoted, ptcArg, fZero);
             return true;
         }
     }
@@ -751,7 +763,7 @@ bool CClient::r_LoadVal( CScript & s )
 			break;
 
 		case CC_TARG:
-			m_Targ_UID = s.GetArgVal();
+			m_Targ_UID.SetObjUID(s.GetArgVal());
 			break;
 		case CC_TARGP:
 			m_Targ_p.Read( s.GetArgRaw());
@@ -762,10 +774,10 @@ bool CClient::r_LoadVal( CScript & s )
 			}
 			break;
 		case CC_TARGPROP:
-			m_Prop_UID = s.GetArgVal();
+			m_Prop_UID.SetObjUID(s.GetArgVal());
 			break;
 		case CC_TARGPRV:
-			m_Targ_Prv_UID = s.GetArgVal();
+			m_Targ_Prv_UID.SetObjUID(s.GetArgVal());
 			break;
 		default:
 			return false;
@@ -782,13 +794,14 @@ bool CClient::r_LoadVal( CScript & s )
 bool CClient::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command from script
 {
 	ADDTOCALLSTACK("CClient::r_Verb");
-	EXC_TRY("Verb");
+	ASSERT(pSrc);
+
 	// NOTE: This can be called directly from a RES_WEBPAGE script.
 	//  So do not assume we are a game client !
 	// NOTE: Mostly called from CChar::r_Verb
 	// NOTE: Little security here so watch out for dangerous scripts !
 
-	ASSERT(pSrc);
+	EXC_TRY("Verb-Special");
 	lpctstr ptcKey = s.GetKey();
 
 	// Old ver
@@ -815,6 +828,7 @@ bool CClient::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command from
 		return true;
 	}
 
+	EXC_SET_BLOCK("Verb-Statement");
 	int index = FindTableSorted( s.GetKey(), sm_szVerbKeys, CountOf(sm_szVerbKeys)-1 );
 	switch (index)
 	{
@@ -824,7 +838,7 @@ bool CClient::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command from
 				tchar *ppszArgs[2];
 				size_t iQty = Str_ParseCmds(s.GetArgStr(), ppszArgs, CountOf(ppszArgs));
 
-				if ( !IsValidGameObjDef(static_cast<lpctstr>(ppszArgs[0])) )
+				if ( !IsValidGameObjDef(ppszArgs[0]) )
 				{
 					//g_Log.EventWarn("Invalid ADD argument '%s'\n", pszArgs);
 					SysMessageDefault( DEFMSG_CMD_INVALID );
@@ -852,7 +866,7 @@ bool CClient::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command from
 			}
 			else
 			{
-				if ( IsValidDef( "D_ADD" ) )
+				if ( IsValidResourceDef( "D_ADD" ) )
 					Dialog_Setup( CLIMODE_DIALOG, g_Cfg.ResourceGetIDType(RES_DIALOG, "D_ADD"), 0, this->GetChar() );
 				else
 					Menu_Setup( g_Cfg.ResourceGetIDType( RES_MENU, "MENU_ADDITEM"));
@@ -1172,10 +1186,10 @@ bool CClient::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command from
 				CObjBase * pObj = m_Targ_UID.ObjFind();
 				if ( pObj != nullptr )
 				{
-					CPointMap po = pObj->GetTopLevelObj()->GetTopPoint();
+					const CPointMap po(pObj->GetTopLevelObj()->GetTopPoint());
 					CPointMap pnt = po;
 					pnt.MoveN( DIR_W, 3 );
-					dword dwBlockFlags = m_pChar->GetMoveBlockFlags();
+					dword dwBlockFlags = m_pChar->GetCanMoveFlags(m_pChar->GetCanFlags());
 					pnt.m_z = CWorldMap::GetHeightPoint2( pnt, dwBlockFlags );	// ??? Get Area
 					m_pChar->m_dirFace = pnt.GetDir( po, m_pChar->m_dirFace ); // Face the player
 					m_pChar->Spell_Teleport( pnt, true, false );
@@ -1266,10 +1280,8 @@ bool CClient::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command from
 		{
 			CChar *pChar = m_pChar;
 			if ( s.HasArgs() )
-			{
-				CUID uid = s.GetArgVal();
-				pChar = uid.CharFind();
-			}
+				pChar = CUID::CharFindFromUID(s.GetArgVal());
+			
 			if ( pChar )
 				addCharPaperdoll(pChar);
 			break;
@@ -1521,6 +1533,9 @@ bool CClient::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command from
 					return true;
 				}
 			}
+
+			if (GetChar())
+				return false;	// In this case, we were called by CChar::r_Verb, which calls also the other r_Verb virtual (or not) methods.
 
 			return CScriptObj::r_Verb( s, pSrc );	// used in the case of web pages to access server level things..
 	}

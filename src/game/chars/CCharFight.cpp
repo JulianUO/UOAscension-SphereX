@@ -344,7 +344,7 @@ bool CChar::OnAttackedBy(CChar * pCharSrc, bool fCommandPet, bool fShouldReveal)
 	// Are they a criminal for it ? Is attacking me a crime ?
 	if ((Noto_GetFlag(pCharSrc) == NOTO_GOOD) && fAggreived)
 	{
-		if (IsClient())	// I decide if this is a crime.
+		if (IsClientActive())	// I decide if this is a crime.
 			OnNoticeCrime(pCharSrc, this);
 		else
 		{
@@ -885,6 +885,7 @@ effect_bounce:
 			attacker.elapsed = 0;
 			attacker.amountDone = maximum( 0, iDmg );
 			attacker.threat = maximum( 0, iDmg );
+			attacker.ignore = false;
 			m_lastAttackers.emplace_back(std::move(attacker));
 		}
 
@@ -919,21 +920,21 @@ effect_bounce:
 	// Apply damage
 	SoundChar(CRESND_GETHIT);
 	UpdateStatVal( STAT_STR, -iDmg);
-	if ( pSrc->IsClient() )
-		pSrc->GetClient()->addHitsUpdate( this );	// always send updates to src
+	if ( pSrc->IsClientActive() )
+		pSrc->GetClientActive()->addHitsUpdate( this );	// always send updates to src
 
 	if ( IsAosFlagEnabled( FEATURE_AOS_DAMAGE ) )
 	{
-		if ( IsClient() )
+		if ( IsClientActive() )
 			m_pClient->addShowDamage( iDmg, (dword)(GetUID()) );
-		if ( pSrc->IsClient() && (pSrc != this) )
+		if ( pSrc->IsClientActive() && (pSrc != this) )
 			pSrc->m_pClient->addShowDamage( iDmg, (dword)(GetUID()) );
 		else
 		{
 			CChar * pSrcOwner = pSrc->GetOwner();
 			if ( pSrcOwner != nullptr )
 			{
-				if ( pSrcOwner->IsClient() )
+				if ( pSrcOwner->IsClientActive() )
 					pSrcOwner->m_pClient->addShowDamage( iDmg, (dword)(GetUID()) );
 			}
 		}
@@ -1304,8 +1305,8 @@ bool CChar::Fight_Attack( CChar *pCharTarg, bool fToldByMaster )
 	{
 		StatFlag_Set(STATF_WAR);
 		UpdateModeFlag();
-		if ( IsClient() )
-			GetClient()->addPlayerWarMode();
+		if ( IsClientActive() )
+			GetClientActive()->addPlayerWarMode();
 	}
 
 	const SKILL_TYPE skillWeapon = Fight_GetWeaponSkill();
@@ -1558,7 +1559,7 @@ WAR_SWING_TYPE CChar::Fight_CanHit(CChar * pCharSrc, bool fSwingNoRange)
 	//  WAR_SWING_SWINGING	= taking my swing now
   
 	// We can't hit them. Char deleted? Target deleted? Am I dead or stoned? or Is target Dead, stone, invul, insub or slept?
-	if (IsDisconnected() || pCharSrc->IsDisconnected() || IsStatFlag(STATF_DEAD | STATF_STONE) || (pCharSrc->IsStatFlag(STATF_DEAD | STATF_STONE | STATF_INVUL | STATF_INSUBSTANTIAL)))
+	if (IsDisconnected() || pCharSrc->IsDisconnected() || IsStatFlag(STATF_DEAD | STATF_STONE) || (pCharSrc->IsStatFlag(STATF_DEAD | STATF_STONE | STATF_INVUL | STATF_INSUBSTANTIAL)) || (pCharSrc->IsSleeping()))
 	{
 		return WAR_SWING_INVALID;
 	}
@@ -1689,7 +1690,7 @@ WAR_SWING_TYPE CChar::Fight_Hit( CChar * pCharTarg )
 	}
 
     // Fix of the bounce back effect with dir update for clients to be able to run in combat easily
-    if ( IsClient() && IsSetCombatFlags(COMBAT_FACECOMBAT) )
+    if ( IsClientActive() && IsSetCombatFlags(COMBAT_FACECOMBAT) )
     {
         DIR_TYPE dirOpponent = GetDir(pCharTarg, m_dirFace);
         if ( (dirOpponent != m_dirFace) && (dirOpponent != GetDirTurn(m_dirFace, -1)) && (dirOpponent != GetDirTurn(m_dirFace, 1)) )
@@ -2126,7 +2127,7 @@ WAR_SWING_TYPE CChar::Fight_Hit( CChar * pCharTarg )
 			Sound(0x44d);
 
 		// Make blood effects
-		if ( pCharTarg->m_wBloodHue != (HUE_TYPE)(-1) )
+		if ( pCharTarg->_wBloodHue != (HUE_TYPE)(-1) )
 		{
 			static constexpr ITEMID_TYPE sm_Blood[] = { ITEMID_BLOOD1, ITEMID_BLOOD2, ITEMID_BLOOD3, ITEMID_BLOOD4, ITEMID_BLOOD5, ITEMID_BLOOD6, ITEMID_BLOOD_SPLAT };
 			const int iBloodQty = (g_Cfg.m_iFeatureSE & FEATURE_SE_UPDATE) ? Calc_GetRandVal2(4, 5) : Calc_GetRandVal2(1, 2);
@@ -2138,15 +2139,18 @@ WAR_SWING_TYPE CChar::Fight_Hit( CChar * pCharTarg )
 				/*
                 CItem *pBlood = CItem::CreateBase(iBloodID);
                 ASSERT(pBlood);
-                pBlood->SetHue(pCharTarg->m_wBloodHue);
+                pBlood->SetHue(pCharTarg->_wBloodHue);
                 pBlood->MoveNear(pCharTarg->GetTopPoint(), 1);
                 pBlood->Update();
                 pBlood->SetDecayTimeS(5);
-				*/
-				CPointMap pt = pCharTarg->GetTopPoint();
-				pt.m_x += (short)Calc_GetRandVal2(-1, 1);
-				pt.m_y += (short)Calc_GetRandVal2(-1, 1);
-				EffectLocation(EFFECT_XYZ, iBloodID, nullptr, &pt, 10, 40, true, pCharTarg->m_wBloodHue, 1, (word)iBloodID);
+
+                // Looks like the hues with index >= 1000 cause the blood to be black, instead of the right color
+                /*
+                CPointMap pt = pCharTarg->GetTopPoint();
+                pt.m_x += (short)Calc_GetRandVal2(-1, 1);
+                pt.m_y += (short)Calc_GetRandVal2(-1, 1);
+                EffectLocation(EFFECT_XYZ, iBloodID, nullptr, &pt, 50, 0, false, pCharTarg->_wBloodHue);
+                */
 			}
 		}
 

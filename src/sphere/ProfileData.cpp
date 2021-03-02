@@ -4,7 +4,7 @@
 #include "ProfileData.h"
 #include "threads.h"
 
-ProfileData::ProfileData()
+ProfileData::ProfileData() noexcept
 {
 	// we don't want to use SetActive here because ADDTOCALLSTACK will cause an infinite loop
 
@@ -116,9 +116,16 @@ void ProfileData::Count(PROFILE_TYPE id, dword dwVal)
 	++ m_CurrentTimes[id].m_iCount;
 }
 
-bool ProfileData::IsEnabled(PROFILE_TYPE id) const
+void ProfileData::EnableProfile(PROFILE_TYPE id) noexcept
 {
-	ADDTOCALLSTACK("ProfileData::IsEnabled");
+	if (id >= PROFILE_QTY)
+		return;
+
+	m_EnabledProfiles[id] = true;
+}
+
+bool ProfileData::IsEnabled(PROFILE_TYPE id) const noexcept
+{
 	if (id > PROFILE_QTY)
 		return false;
 
@@ -128,27 +135,19 @@ bool ProfileData::IsEnabled(PROFILE_TYPE id) const
 	// check all profiles
 	for (int i = PROFILE_OVERHEAD; i < PROFILE_QTY; ++i)
 	{
-		if (IsEnabled(static_cast<PROFILE_TYPE>(i)))
+		if (IsEnabled( PROFILE_TYPE(i) ))
 			return true;
 	}
 
 	return false;
 }
 
-void ProfileData::EnableProfile(PROFILE_TYPE id)
-{
-	if (id >= PROFILE_QTY)
-		return;
-
-	m_EnabledProfiles[id] = true;
-}
-
-PROFILE_TYPE ProfileData::GetCurrentTask() const
+PROFILE_TYPE ProfileData::GetCurrentTask() const noexcept
 {
 	return m_CurrentTask;
 }
 
-lpctstr ProfileData::GetName(PROFILE_TYPE id) const
+lpctstr ProfileData::GetName(PROFILE_TYPE id) const noexcept
 {
 	static lpctstr constexpr sm_pszProfileName[PROFILE_QTY] =
 	{
@@ -178,20 +177,21 @@ lpctstr ProfileData::GetName(PROFILE_TYPE id) const
 lpctstr ProfileData::GetDescription(PROFILE_TYPE id) const
 {
 	ADDTOCALLSTACK("ProfileData::GetDesc");
-	tchar * pszTmp = Str_GetTemp();
+	ASSERT(id < PROFILE_QTY);
 	const int iCount = m_PreviousTimes[id].m_iCount;
+	tchar* ptcTmp = Str_GetTemp();
 
 	if ( id >= PROFILE_DATA_QTY )
 	{
-		sprintf(pszTmp, "%lld (total: %lld) instances", m_PreviousTimes[id].m_Time, m_AverageTimes[id].m_Time);
+		snprintf(ptcTmp, STR_TEMPLENGTH, "%lld (total: %lld) instances", m_PreviousTimes[id].m_Time, m_AverageTimes[id].m_Time);
 	}
 	else if ( id >= PROFILE_TIME_QTY )
 	{
-		sprintf(pszTmp, "%lld (avg: %lld) bytes", m_PreviousTimes[id].m_Time, m_AverageTimes[id].m_Time);
+		snprintf(ptcTmp, STR_TEMPLENGTH, "%lld (avg: %lld) bytes", m_PreviousTimes[id].m_Time, m_AverageTimes[id].m_Time);
 	}
 	else
 	{
-		sprintf( pszTmp, "%.4fs  avg: %.4fs  [samples:%8i  avg:%7i]  adjusted runtime: %is",
+		snprintf(ptcTmp, STR_TEMPLENGTH, "%.4fs  avg: %.4fs  [samples:%8i  avg:%7i]  adjusted runtime: %is",
 			(m_PreviousTimes[id].m_Time    / 1000.0),
 			(m_AverageTimes[id].m_Time     / 1000.0),
 			iCount,
@@ -199,5 +199,5 @@ lpctstr ProfileData::GetDescription(PROFILE_TYPE id) const
 			m_iAverageCount );
 	}
 
-	return pszTmp;
+	return ptcTmp;
 }

@@ -68,7 +68,7 @@ bool CChar::NPC_OnHearPetCmd( lpctstr pszCmd, CChar *pSrc, bool fAllPets )
 	//  false = this is not a command we know.
 	//  if ( GetTargMode() == CLIMODE_TARG_PET_CMD ) it needs a target.
 
-	if ( !pSrc->IsClient() || Can(CAN_C_STATUE))
+	if ( !pSrc->IsClientActive() || Can(CAN_C_STATUE))
 		return false;
 
 	m_fIgnoreNextPetCmd = false;	// We clear this incase it's true from previous pet cmds.
@@ -221,17 +221,10 @@ bool CChar::NPC_OnHearPetCmd( lpctstr pszCmd, CChar *pSrc, bool fAllPets )
 			break;
 
 		case PC_RELEASE:
-			if ( IsStatFlag(STATF_CONJURED) || (m_pNPC->m_bonded && IsStatFlag(STATF_DEAD)) )
-			{
-				Effect(EFFECT_XYZ, ITEMID_FX_TELE_VANISH, this, 10, 15);
-				Sound(SOUND_TELEPORT);
-				Delete();
-				return true;
-			}
-			SoundChar(CRESND_NOTICE);
-			Skill_Start(SKILL_NONE);
-			NPC_PetClearOwners();
-			UpdatePropertyFlag();
+			if (IsValidResourceDef("d_pet_release"))
+				pSrc->m_pClient->Dialog_Setup(CLIMODE_DIALOG, g_Cfg.ResourceGetIDType(RES_DIALOG, "d_pet_release"), 0, this);
+			else
+				NPC_PetRelease();
 			break;
 
 		case PC_DROP:
@@ -326,7 +319,7 @@ bool CChar::NPC_OnHearPetCmd( lpctstr pszCmd, CChar *pSrc, bool fAllPets )
 			if ( !NPC_IsVendor() )
 				return false;
 			Speak(g_Cfg.GetDefaultMsg(DEFMSG_NPC_PET_ITEMS_BUY));
-			pSrc->GetClient()->addBankOpen(this, LAYER_VENDOR_EXTRA);
+			pSrc->GetClientActive()->addBankOpen(this, LAYER_VENDOR_EXTRA);
 			break;
 
 		case PC_PRICE:
@@ -339,7 +332,7 @@ bool CChar::NPC_OnHearPetCmd( lpctstr pszCmd, CChar *pSrc, bool fAllPets )
 			if ( !NPC_IsVendor() )
 				return false;
 			Speak(g_Cfg.GetDefaultMsg(DEFMSG_NPC_PET_ITEMS_SAMPLE));
-			pSrc->GetClient()->addBankOpen(this, LAYER_VENDOR_BUYS);
+			pSrc->GetClientActive()->addBankOpen(this, LAYER_VENDOR_BUYS);
 			break;
 
 		case PC_STOCK:
@@ -347,7 +340,7 @@ bool CChar::NPC_OnHearPetCmd( lpctstr pszCmd, CChar *pSrc, bool fAllPets )
 			if ( !NPC_IsVendor() )
 				return false;
 			Speak(g_Cfg.GetDefaultMsg(DEFMSG_NPC_PET_ITEMS_SELL));
-			pSrc->GetClient()->addBankOpen(this, LAYER_VENDOR_STOCK);
+			pSrc->GetClientActive()->addBankOpen(this, LAYER_VENDOR_STOCK);
 			break;
 
 		default:
@@ -514,12 +507,12 @@ bool CChar::NPC_OnHearPetCmdTarg( int iCmd, CChar *pSrc, CObjBase *pObj, const C
 			break;
 
 		case PC_TRANSFER:
-			if ( !pCharTarg || !pCharTarg->IsClient() )
+			if ( !pCharTarg || !pCharTarg->IsClientActive() )
 				break;
 			if ( IsSetOF(OF_PetSlots) )
 			{
-				short iFollowerSlots = (short)GetDefNum("FOLLOWERSLOTS", true);
-				if ( !pCharTarg->FollowersUpdate(this, (maximum(1, iFollowerSlots)), true) )
+				short iFollowerSlots = (short)GetDefNum("FOLLOWERSLOTS", true, 1);
+				if ( !pCharTarg->FollowersUpdate(this, (maximum(0, iFollowerSlots)), true) )
 				{
 					pSrc->SysMessageDefault(DEFMSG_PETSLOTS_TRY_TRANSFER);
 					break;
@@ -529,7 +522,7 @@ bool CChar::NPC_OnHearPetCmdTarg( int iCmd, CChar *pSrc, CObjBase *pObj, const C
 			break;
 
 		case PC_PRICE:	// "PRICE" the vendor item.
-			if ( !pItemTarg || !NPC_IsVendor() || !pSrc->IsClient() )
+			if ( !pItemTarg || !NPC_IsVendor() || !pSrc->IsClientActive() )
 				break;
 			if ( IsDigit(pszArgs[0]) )	// did they name a price
 				return NPC_SetVendorPrice(pItemTarg, atoi(pszArgs));
@@ -590,8 +583,8 @@ void CChar::NPC_PetClearOwners()
 
 	if ( pOwner && IsSetOF(OF_PetSlots) )
 	{
-		short iFollowerSlots = (short)GetDefNum("FOLLOWERSLOTS", true);
-		pOwner->FollowersUpdate(this, -maximum(1, iFollowerSlots));
+		short iFollowerSlots = (short)GetDefNum("FOLLOWERSLOTS", true, 1);
+		pOwner->FollowersUpdate(this, -maximum(0, iFollowerSlots));
 	}
 }
 
@@ -624,8 +617,8 @@ bool CChar::NPC_PetSetOwner( CChar * pChar )
 
 	if ( IsSetOF(OF_PetSlots) )
 	{
-		const short iFollowerSlots = (short)GetDefNum("FOLLOWERSLOTS", true);
-		pChar->FollowersUpdate(this, maximum(1, iFollowerSlots));
+		const short iFollowerSlots = (short)GetDefNum("FOLLOWERSLOTS", true, 1);
+		pChar->FollowersUpdate(this, maximum(0, iFollowerSlots));
 	}
 
 	return true;
@@ -690,7 +683,7 @@ bool CChar::NPC_CheckHirelingStatus()
 	return true;
 }
 
-void CChar::NPC_OnHirePayMore( CItem * pGold, int iWage, bool fHire )
+void CChar::NPC_OnHirePayMore( CItem * pGold, uint uiWage, bool fHire )
 {
 	ADDTOCALLSTACK("CChar::NPC_OnHirePayMore");
 	ASSERT(m_pNPC);
@@ -698,7 +691,7 @@ void CChar::NPC_OnHirePayMore( CItem * pGold, int iWage, bool fHire )
 	// similar to PC_STATUS
 
 	CItemContainer	*pBank = GetBank();
-	if ( !iWage || !pBank )
+	if ( !uiWage || !pBank )
 		return;
 
 	if ( pGold )
@@ -714,7 +707,7 @@ void CChar::NPC_OnHirePayMore( CItem * pGold, int iWage, bool fHire )
 	}
 
 	tchar *pszMsg = Str_GetTemp();
-	snprintf(pszMsg, STR_TEMPLENGTH, g_Cfg.GetDefaultMsg(DEFMSG_NPC_PET_HIRE_TIME), pBank->m_itEqBankBox.m_Check_Amount / iWage);
+	snprintf(pszMsg, STR_TEMPLENGTH, g_Cfg.GetDefaultMsg(DEFMSG_NPC_PET_HIRE_TIME), int(pBank->m_itEqBankBox.m_Check_Amount / uiWage));
 	Speak(pszMsg);
 }
 
@@ -726,7 +719,7 @@ bool CChar::NPC_OnHirePay( CChar * pCharSrc, CItemMemory * pMemory, CItem * pGol
 	if ( !pCharSrc || !pMemory )
 		return false;
 
-    int iWage = Char_GetDef()->GetHireDayWage();
+    uint uiWage = Char_GetDef()->GetHireDayWage();
 	if ( IsStatFlag( STATF_PET ))
 	{
 		if ( ! pMemory->IsMemoryTypes(MEMORY_IPET|MEMORY_FRIEND))
@@ -737,13 +730,13 @@ bool CChar::NPC_OnHirePay( CChar * pCharSrc, CItemMemory * pMemory, CItem * pGol
 	}
 	else
 	{
-		if ( iWage <= 0 )
+		if ( uiWage <= 0 )
 		{
 			Speak( g_Cfg.GetDefaultMsg( DEFMSG_NPC_PET_NOT_FOR_HIRE ) );
 			return false;
 		}
-        iWage = pCharSrc->PayGold(this, iWage, pGold, PAYGOLD_HIRE);
-		if ( pGold->GetAmount() < iWage )
+        uiWage = (uint)pCharSrc->PayGold(this, uiWage, pGold, PAYGOLD_HIRE);
+		if ( pGold->GetAmount() < uiWage )
 		{
 			Speak( g_Cfg.GetDefaultMsg( DEFMSG_NPC_PET_NOT_ENOUGH ) );
 			return false;
@@ -764,7 +757,7 @@ bool CChar::NPC_OnHirePay( CChar * pCharSrc, CItemMemory * pMemory, CItem * pGol
 	}
 
 	pMemory->m_itEqMemory.m_Action = NPC_MEM_ACT_NONE;
-	NPC_OnHirePayMore( pGold, iWage, true );
+	NPC_OnHirePayMore( pGold, uiWage, true );
 	return true;
 }
 
@@ -774,13 +767,13 @@ bool CChar::NPC_OnHireHear( CChar * pCharSrc )
 	ASSERT(m_pNPC);
 
 	CCharBase * pCharDef = Char_GetDef();
-	uint iWage = pCharDef->GetHireDayWage();
-	if ( ! iWage )
+	uint uiWage = pCharDef->GetHireDayWage();
+	if ( ! uiWage )
 	{
 		Speak( g_Cfg.GetDefaultMsg( DEFMSG_NPC_PET_NOT_FOR_HIRE ) );
 		return false;
 	}
-    iWage = pCharSrc->PayGold(this, iWage, nullptr, PAYGOLD_HIRE);
+    uiWage = (uint)pCharSrc->PayGold(this, uiWage, nullptr, PAYGOLD_HIRE);
 	CItemMemory * pMemory = Memory_FindObj( pCharSrc );
 	if ( pMemory )
 	{
@@ -788,7 +781,7 @@ bool CChar::NPC_OnHireHear( CChar * pCharSrc )
 		{
 			// Next gold i get goes toward hire.
 			pMemory->m_itEqMemory.m_Action = NPC_MEM_ACT_SPEAK_HIRE;
-			NPC_OnHirePayMore( nullptr, iWage, false );
+			NPC_OnHirePayMore( nullptr, uiWage, false );
 			return true;
 		}
 		if ( pMemory->IsMemoryTypes( MEMORY_FIGHT|MEMORY_HARMEDBY|MEMORY_IRRITATEDBY ))
@@ -806,7 +799,7 @@ bool CChar::NPC_OnHireHear( CChar * pCharSrc )
 	tchar *pszMsg = Str_GetTemp();
 	snprintf(pszMsg, STR_TEMPLENGTH, Calc_GetRandVal(2) ?
 		g_Cfg.GetDefaultMsg( DEFMSG_NPC_PET_HIRE_AMNT ) :
-		g_Cfg.GetDefaultMsg( DEFMSG_NPC_PET_HIRE_RATE ), iWage );
+		g_Cfg.GetDefaultMsg( DEFMSG_NPC_PET_HIRE_RATE ), (int)uiWage );
 	Speak(pszMsg);
 
 	pMemory = Memory_AddObjTypes( pCharSrc, MEMORY_SPEAK );
@@ -852,6 +845,26 @@ bool CChar::NPC_SetVendorPrice( CItem * pItem, int iPrice )
 	return true;
 }
 
+void CChar::NPC_PetRelease()
+{
+	ADDTOCALLSTACK("CChar::NPC_PetRelease");
+	if (!m_pNPC)
+		return;
+
+	if (IsStatFlag(STATF_CONJURED) || (m_pNPC->m_bonded && IsStatFlag(STATF_DEAD)))
+	{
+		Effect(EFFECT_XYZ, ITEMID_FX_TELE_VANISH, this, 10, 15);
+		Sound(SOUND_TELEPORT);
+		Delete();
+		return;
+	}
+
+	SoundChar(CRESND_NOTICE);
+	Skill_Start(SKILL_NONE);
+	NPC_PetClearOwners();
+	UpdatePropertyFlag();
+}
+
 void CChar::NPC_PetDesert()
 {
 	ADDTOCALLSTACK("CChar::NPC_PetDesert");
@@ -872,7 +885,6 @@ void CChar::NPC_PetDesert()
 			return;
 	}
 
-	NPC_PetClearOwners();
 	if ( ! pCharOwn->CanSee(this))
 		pCharOwn->SysMessagef(g_Cfg.GetDefaultMsg(DEFMSG_NPC_PET_DESERTED), GetName());
 
@@ -881,5 +893,5 @@ void CChar::NPC_PetDesert()
 	Speak(pszMsg);
 
 	// free to do as i wish !
-	Skill_Start( SKILL_NONE );
+	NPC_PetRelease();
 }

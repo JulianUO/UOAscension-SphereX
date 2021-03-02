@@ -109,8 +109,17 @@ private:
 
 public:
 	static const char *m_sClassName;
-	int m_iLineNum;					// for debug purposes if there is an error.
+
+	enum class ParseFlags
+	{
+		None,
+		IgnoreInvalidRef
+	} _eParseFlags;
+
+	int m_iLineNum;				// for debug purposes if there is an error.
 	int	m_iResourceFileIndex;	// index in g_Cfg.m_ResourceFiles of the CResourceScript (script file) where the CScript originated
+
+protected:
     bool _fCacheToBeUpdated;
 
 protected:
@@ -158,6 +167,8 @@ public:
 	CScript( lpctstr ptcKey );
 	CScript( lpctstr ptcKey, lpctstr pszVal );
 	virtual ~CScript() = default;
+
+	void CopyParseState(const CScript& other) noexcept;
 };
 
 #endif // CSCRIPT_H

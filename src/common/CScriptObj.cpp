@@ -56,6 +56,67 @@ static lpctstr const _ptcSRefKeys[SREF_QTY+1] =
     nullptr
 };
 
+CScriptObj::CScriptObj()
+{
+	_iParseScriptText_Reentrant = 0;
+	_fParseScriptText_Brackets = false;
+
+	_iEvaluate_Conditional_Reentrant = 0;
+}
+
+bool CScriptObj::ParseError_UndefinedKeyword(lpctstr ptcKey) // static
+{
+	g_Log.EventError("Undefined keyword '%s'.\n", ptcKey);
+	return false;
+}
+
+bool CScriptObj::IsValidRef(const CScriptObj* pRef) noexcept // static
+{
+	bool fValid = false;
+	if (pRef)
+	{
+		const CObjBase* pRefObj = dynamic_cast<const CObjBase*>(pRef);
+		fValid = (pRefObj == nullptr) ? true : pRefObj->IsValidUID();
+	}
+	return fValid;
+}
+
+bool CScriptObj::IsValidRef(const CUID& uidRef) noexcept // static
+{
+	return (nullptr != uidRef.ObjFind(true));
+}
+
+bool CScriptObj::r_GetRefFull(lpctstr& ptcKey, CScriptObj*& pRef)
+{
+	ADDTOCALLSTACK("CScriptObj::r_GetRefFull");
+	bool fRef = false;
+
+	// Special refs
+	CClient* pThisClient = nullptr;
+	if (CChar* pThisChar = dynamic_cast<CChar*>(this))
+	{
+		// r_GetRef is a virtual method, but if the Client is attached to a Char, its r_GetRef won't be called,
+		//	since CClient doesn't inherit from CChar and the pointer to the attached Client is stored in the Char's Class.
+		// For Webpages or other stuff CClient::r_GetRef will be called, since it's a parent class.
+		pThisClient = pThisChar->GetClientActive();
+		if (pThisClient)
+		{
+			fRef = pThisClient->r_GetRef(ptcKey, pRef);
+
+			if (fRef && (pRef == pThisClient))
+				pRef = this;	// Special handling of "I" ref.
+		}
+	}
+
+	// Standard Refs
+	if (!fRef)
+	{
+		fRef = r_GetRef(ptcKey, pRef);
+	}
+
+	return fRef;
+}
+
 bool CScriptObj::r_GetRef( lpctstr & ptcKey, CScriptObj * & pRef )
 {
 	ADDTOCALLSTACK("CScriptObj::r_GetRef");
@@ -74,25 +135,25 @@ bool CScriptObj::r_GetRef( lpctstr & ptcKey, CScriptObj * & pRef )
             if (ptcKey[3] != '.')
                 return false;
             ptcKey += 4;
-            pRef = CUID::ObjFind(Exp_GetDWVal(ptcKey));
+            pRef = CUID::ObjFindFromUID(Exp_GetDWVal(ptcKey));
             SKIP_SEPARATORS(ptcKey);
             return true;
         case SREF_OBJ:
             if (ptcKey[3] != '.')
                 return false;
             ptcKey += 4;
-            pRef = ( (dword)g_World.m_uidObj ) ? g_World.m_uidObj.ObjFind() : nullptr;
+            pRef = ( g_World.m_uidObj.IsValidUID() ? g_World.m_uidObj.ObjFind() : nullptr);
             return true;
         case SREF_NEW:
             if (ptcKey[3] != '.')
                 return false;
             ptcKey += 4;
-            pRef = ( (dword)g_World.m_uidNew ) ? g_World.m_uidNew.ObjFind() : nullptr;
+            pRef = ( g_World.m_uidNew.IsValidUID() ? g_World.m_uidNew.ObjFind() : nullptr);
             return true;
         case SREF_I:
-            if (ptcKey[1] != '.')
-                return false;
-            ptcKey += 2;
+			if (ptcKey[1] != '.')
+				return false;
+			ptcKey += 2;
             pRef = this;
             return true;
         case SREF_FILE:
@@ -172,6 +233,7 @@ bool CScriptObj::r_Call( lpctstr pszFunction, CTextConsole * pSrc, CScriptTrigge
 bool CScriptObj::r_Call( size_t uiFunctionIndex, CTextConsole * pSrc, CScriptTriggerArgs * pArgs, CSString * psVal, TRIGRET_TYPE * piRet )
 {
     ADDTOCALLSTACK("CScriptObj::r_Call (FunctionIndex)");
+	EXC_TRY("Call by index");
     ASSERT(r_CanCall(uiFunctionIndex));
 
     CResourceNamedDef * pFunction = static_cast <CResourceNamedDef *>( g_Cfg.m_Functions[uiFunctionIndex] );
@@ -244,6 +306,7 @@ bool CScriptObj::r_Call( size_t uiFunctionIndex, CTextConsole * pSrc, CScriptTri
         if ( piRet )
             *piRet	= iRet;
     }
+	EXC_CATCH;
     return true;
 }
 
@@ -260,20 +323,11 @@ bool CScriptObj::r_LoadVal( CScript & s )
 	EXC_TRY("LoadVal");
 	lpctstr ptcKey = s.GetKey();
 
-	if ( !strnicmp(ptcKey, "CLEARVARS", 9) )
-	{
-		ptcKey = s.GetArgStr();
-		SKIP_SEPARATORS(ptcKey);
-		g_Exp.m_VarGlobals.ClearKeys(ptcKey);
-		return true;
-	}
-
 	// ignore these.
 	int index = FindTableHeadSorted(ptcKey, sm_szLoadKeys, CountOf(sm_szLoadKeys)-1);
 	if ( index < 0 )
 	{
-		DEBUG_ERR(("Undefined keyword '%s'\n", s.GetKey()));
-		return false;
+		return ParseError_UndefinedKeyword(s.GetKey());
 	}
 
 	switch ( index )
@@ -284,7 +338,7 @@ bool CScriptObj::r_LoadVal( CScript & s )
             const bool fZero = (index == SSC_VAR0);
             bool fQuoted = false;
             lpctstr ptcArg = s.GetArgStr(&fQuoted);
-            g_Exp.m_VarGlobals.SetStr(ptcKey + (fZero ? 5 : 4), fQuoted, ptcArg, false);
+            g_Exp.m_VarGlobals.SetStr(ptcKey + (fZero ? 5 : 4), fQuoted, ptcArg, fZero);
             return true;
         }
 
@@ -355,9 +409,11 @@ bool CScriptObj::r_WriteVal( lpctstr ptcKey, CSString &sVal, CTextConsole * pSrc
 {
     UNREFERENCED_PARAMETER(fNoCallParent);
 	ADDTOCALLSTACK("CScriptObj::r_WriteVal");
-	EXC_TRY("WriteVal");
-	CScriptObj * pRef = nullptr;
-	bool fGetRef = r_GetRef( ptcKey, pRef );
+
+	EXC_TRY("WriteVal-Ref");
+
+	CScriptObj* pRef = nullptr;
+	bool fRef = r_GetRefFull(ptcKey, pRef);
 
 	if ( !strnicmp(ptcKey, "GetRefType", 10) )
 	{
@@ -419,21 +475,35 @@ bool CScriptObj::r_WriteVal( lpctstr ptcKey, CSString &sVal, CTextConsole * pSrc
 		return true;
 	}
 
-	if ( fGetRef )
+	if (fRef)
 	{
-		if ( pRef == nullptr )	// good command but bad link.
+		if ( ptcKey[0] == '\0' )	// we were just testing the ref.
 		{
-			sVal = "0";
-			return true;
-		}
-		if ( ptcKey[0] == '\0' )	// we where just testing the ref.
-		{
-            CObjBase *pObj = dynamic_cast<CObjBase*>(pRef);
-			if ( pObj )
-				sVal.FormatHex( (dword) pObj->GetUID() );
+			if (pRef == nullptr)
+			{
+				// Invalid ref: just return 0, it isn't an error.
+				sVal.FormatVal(0);
+				return true;
+			}
+
+            const CObjBase * pRefObj = dynamic_cast<const CObjBase*>(pRef);
+			if (pRefObj)
+				sVal.FormatHex( (dword)pRefObj->GetUID() );
 			else
 				sVal.FormatVal( 1 );
 			return true;
+		}
+
+		if (!strnicmp("ISVALID", ptcKey, 7))
+		{
+			sVal.FormatVal(IsValidRef(pRef));
+			return true;
+		}
+
+		if (pRef == nullptr)	// good command but bad reference.
+		{
+			sVal.FormatVal(0);
+			return false;
 		}
 		return pRef->r_WriteVal( ptcKey, sVal, pSrc );
 	}
@@ -445,6 +515,7 @@ bool CScriptObj::r_WriteVal( lpctstr ptcKey, CSString &sVal, CTextConsole * pSrc
         return false;
     }
 
+	EXC_SET_BLOCK("Writeval-Statement");
 	int index = FindTableHeadSorted( ptcKey, sm_szLoadKeys, CountOf( sm_szLoadKeys )-1 );
 	if ( index < 0 )
 	{
@@ -504,24 +575,24 @@ badcmd:
 	switch ( index )
 	{
         case SSC_RESOURCEINDEX:
-            sVal.FormatVal(RES_GET_INDEX(Exp_GetVal(ptcKey)));
+            sVal.FormatHex(RES_GET_INDEX(Exp_GetVal(ptcKey)));
             break;
         case SSC_RESOURCETYPE:
-            sVal.FormatVal(RES_GET_TYPE(Exp_GetVal(ptcKey)));
+            sVal.FormatHex(RES_GET_TYPE(Exp_GetVal(ptcKey)));
             break;
 
 		case SSC_LISTCOL:
 			// Set the alternating color.
-			sVal = (CWebPageDef::sm_iListIndex&1) ? "bgcolor=\"#E8E8E8\"" : "";
+			sVal = (CWebPageDef::sm_iListIndex & 1) ? "bgcolor=\"#E8E8E8\"" : "";
 			return true;
 		case SSC_OBJ:
 			if ( !g_World.m_uidObj.ObjFind() )
-				g_World.m_uidObj = 0;
+				g_World.m_uidObj.ClearUID();
 			sVal.FormatHex((dword)g_World.m_uidObj);
 			return true;
 		case SSC_NEW:
 			if ( !g_World.m_uidNew.ObjFind() )
-				g_World.m_uidNew = 0;
+				g_World.m_uidNew.ClearUID();
 			sVal.FormatHex((dword)g_World.m_uidNew);
 			return true;
 		case SSC_SRC:
@@ -552,10 +623,7 @@ badcmd:
 			// "VAR." = get/set a system wide variable.
 			{
 				const CVarDefCont * pVar = g_Exp.m_VarGlobals.GetKey(ptcKey);
-				if ( pVar )
-					sVal	= pVar->GetValStr();
-				else if ( fZero )
-					sVal	= "0";
+				sVal = CVarDefCont::GetValStrZeroed(pVar, fZero);
 			}
 			return true;
 		case SSC_DEFLIST:
@@ -572,9 +640,9 @@ badcmd:
 			{
 				const CVarDefCont * pVar = g_Exp.m_VarDefs.GetKey(ptcKey);
 				if ( pVar )
-					sVal	= pVar->GetValStr();
+					sVal = pVar->GetValStr();
 				else if ( fZero )
-					sVal	= "0";
+					sVal = "0";
 			}
 			return true;
         case SSC_RESDEF0:
@@ -584,9 +652,9 @@ badcmd:
         {
             const CVarDefCont * pVar = g_Exp.m_VarResDefs.GetKey(ptcKey);
             if ( pVar )
-                sVal	= pVar->GetValStr();
+                sVal = pVar->GetValStr();
             else if ( fZero )
-                sVal	= "0";
+                sVal = "0";
         }
         return true;
 		case SSC_DEFMSG:
@@ -646,32 +714,20 @@ badcmd:
 			}
 //FLOAT STUFF ENDS HERE
 
-		case SSC_QVAL:
-			{	// Do a switch ? type statement <QVAL conditional ? option1 : option2>
-				tchar * ppCmds[3];
-				ppCmds[0] = const_cast<tchar*>(ptcKey);
-				Str_Parse( ppCmds[0], &(ppCmds[1]), "?" );
-				Str_Parse( ppCmds[1], &(ppCmds[2]), ":" );
-				sVal = ppCmds[ Exp_GetVal( ppCmds[0] ) ? 1 : 2 ];
-				if ( sVal.IsEmpty())
-					sVal = "";
-			}
-			return true;
-
 		case SSC_ISBIT:
 		case SSC_SETBIT:
 		case SSC_CLRBIT:
 			{
-				int64 val = Exp_GetLLVal(ptcKey);
+				const int64 val = Exp_GetLLVal(ptcKey);
 				SKIP_ARGSEP(ptcKey);
-				int64 bit = Exp_GetLLVal(ptcKey);
+				const uint bit = Exp_GetUVal(ptcKey);
 
 				if ( index == SSC_ISBIT )
-					sVal.FormatLLVal(val & (1LL << bit));
+					sVal.FormatLLVal(val & (1ULL << bit));
 				else if ( index == SSC_SETBIT )
-					sVal.FormatLLVal(val | (1LL << bit));
+					sVal.FormatLLVal(val | (1ULL << bit));
 				else
-					sVal.FormatLLVal(val & (~ (1LL << bit)));
+					sVal.FormatLLVal(val & (~ (1ULL << bit)));
 				break;
 			}
 
@@ -695,8 +751,10 @@ badcmd:
 				GETNONWHITESPACE( ptcKey );
 				int64 iPos = Exp_GetVal( ptcKey );
 				tchar ch;
-				if ( IsDigit(*ptcKey) && IsDigit( *(ptcKey+1) ) )
+				if (IsDigit(*ptcKey) && IsDigit(*(ptcKey + 1)))
+				{
 					ch = static_cast<tchar>(Exp_GetVal(ptcKey));
+				}
 				else
 				{
 					ch = *ptcKey;
@@ -712,44 +770,57 @@ badcmd:
 				else if ( iPos > iLen )
 					iPos	= iLen;
 
-				tchar *	pszPos	= const_cast<tchar*>(strchr( ptcKey + iPos, ch ));
+				lpctstr pszPos = strchr( ptcKey + iPos, ch );
 				if ( !pszPos )
 					sVal.FormatVal( -1 );
 				else
 					sVal.FormatVal((int)( pszPos - ptcKey ) );
 			}
 			return true;
-		case SSC_StrSub:
-			{
-				tchar * ppArgs[3];
-				int iQty = Str_ParseCmds(const_cast<tchar *>(ptcKey), ppArgs, CountOf(ppArgs));
-				if ( iQty < 3 )
-					return false;
+        case SSC_StrSub:
+        {
+            tchar * ppArgs[3];
+            int iQty = Str_ParseCmds(const_cast<tchar *>(ptcKey), ppArgs, CountOf(ppArgs));
+            if ( iQty < 3 )
+                return false;
+                
+            int64 iPos = Exp_GetVal( ppArgs[0] );
+            int64 iCnt = Exp_GetVal( ppArgs[1] );
+            if (iCnt < 0)
+                return false;
+            
+            if ( *ppArgs[2] == '"')
+                ++ppArgs[2];
+                
+            for (tchar *pEnd = ppArgs[2] + strlen(ppArgs[2]) - 1; pEnd >= ppArgs[2]; --pEnd)
+            {
+                if ( *pEnd == '"')
+                {
+                    *pEnd = '\0';
+                    break;
+                }
+            }
+            int64 iLen = strlen(ppArgs[2]);
+            
+			const bool fBackwards = (iPos < 0);
+			if (fBackwards)
+				iPos = iLen - iCnt;
 
-				int64 iPos = Exp_GetVal( ppArgs[0] );
-				int64 iCnt = Exp_GetVal( ppArgs[1] );
-				if ( iCnt < 0 )
-					return false;
+			if ((iPos > iLen) || (iPos < 0))
+				iPos = 0;
 
-				int64 iLen = strlen( ppArgs[2] );
-                const bool fBackwards = (iPos < 0);
-				if ( fBackwards )
-                    iPos = iLen - iCnt;
-				if ( (iPos > iLen) || (iPos < 0) )
-                    iPos = 0;
+			if ((iPos + iCnt > iLen) || (iCnt == 0))
+				iCnt = iLen - iPos;
 
-				if ( (iPos + iCnt > iLen) || (iCnt == 0) )
-					iCnt = iLen - iPos;
+			tchar* buf = Str_GetTemp();
+			Str_CopyLimitNull(buf, ppArgs[2] + iPos, (size_t)(iCnt + 1));
 
-				tchar *buf = Str_GetTemp();
-				Str_CopyLimitNull( buf, ppArgs[2] + iPos, (size_t)(iCnt + 1) );
-
-				if ( g_Cfg.m_iDebugFlags & DEBUGF_SCRIPTS )
-					g_Log.EventDebug("SCRIPT: strsub(%" PRId64 ",%" PRId64 ",'%s') -> '%s'\n", iPos, iCnt, ppArgs[2], buf);
-
-				sVal = buf;
-			}
-			return true;
+			if (g_Cfg.m_iDebugFlags & DEBUGF_SCRIPTS)
+				g_Log.EventDebug("SCRIPT: strsub(%" PRId64 ",%" PRId64 ",'%s') -> '%s'\n", iPos, iCnt, ppArgs[2], buf);
+            
+			sVal = buf;
+            }
+            return true;
 		case SSC_StrArg:
 			{
 				tchar * buf = Str_GetTemp();
@@ -894,83 +965,58 @@ badcmd:
 				g_Log.EventDebug("Process execution finished.\n");
 				return true;
 			}
-			
-		case SSC_StrToken:
-			{
-				tchar *ppArgs[3];
-				int iQty = Str_ParseCmds(const_cast<tchar *>(ptcKey), ppArgs, CountOf(ppArgs), ",");
-				if ( iQty < 3 )
-					return false;
-				
-				if ( *ppArgs[2] == '"')
-					++ppArgs[2];
-					
-                const size_t uiArgs2Len = strlen(ppArgs[2]);
-				for (tchar *pEnd = ppArgs[2] + uiArgs2Len - 1; pEnd >= ppArgs[2]; --pEnd)
-				{
-					if ( *pEnd == '"')
-					{
-						*pEnd = '\0';
-						break;
-					}
-				}
-				tchar *iSep = ppArgs[2];
-				for (tchar *iSeperator = ppArgs[2] + uiArgs2Len - 1; iSeperator > ppArgs[2]; --iSeperator)
-				{
-					*iSeperator = '\0';
-				}
-				
-				if ( *ppArgs[0] == '"')
-					++ppArgs[0];
-					
-				for (tchar *pEnd = ppArgs[0] + strlen(ppArgs[0]) - 1; pEnd >= ppArgs[0]; --pEnd)
-				{
-					if ( *pEnd == '"')
-					{
-						*pEnd = '\0';
-						break;
-					}
-				}
-				sVal = "";
-				tchar *ppCmd[255];
-				int count = Str_ParseCmds(ppArgs[0], ppCmd, CountOf(ppCmd), iSep);
-				tchar *ppArrays[2];
-				int iArrays = Str_ParseCmds(ppArgs[1], ppArrays, CountOf(ppArrays), "-");
-				llong iValue = Exp_GetLLVal(ppArgs[1]);
-				llong iValueEnd = iValue;
-				
-				if (iArrays > 1)
-				{
-					iValue = Exp_GetLLVal(ppArrays[0]);
-					iValueEnd = Exp_GetLLVal(ppArrays[1]);
-					if (iValueEnd <= 0 || iValueEnd > count)
-						iValueEnd = count;
-				}
-				
-				if (iValue < 0)
-					return false;
-				else if (iValue > 0)
-				{
-					if (iValue > count)
-						return false;
-					else if (iValue == iValueEnd)
-						sVal = ppCmd[iValue - 1];
-					else
-					{
-						sVal.Add(ppCmd[iValue - 1]);
-						int64 i = iValue + 1;
-						for ( ; i <= iValueEnd; ++i)
-						{
-							sVal.Add(iSep);
-							sVal.Add(ppCmd[i - 1]);
-						}
-					}
-				}
-				else
-					sVal.FormatVal(count);
-			} return true;
-			
-
+        case SSC_StrToken:
+        {
+            tchar *ppArgs[3];
+            int iQty = Str_ParseCmdsAdv(const_cast<tchar *>(ptcKey), ppArgs, CountOf(ppArgs), ",");
+            if ( iQty < 3 )
+                return false;
+                
+            tchar *iSep = Str_UnQuote(ppArgs[2]); //New function, trim (") and (') chars directly.
+            for (tchar *iSeperator = iSep + strlen(iSep) - 1; iSeperator > iSep; --iSeperator)
+                *iSeperator = '\0';
+            
+            tchar *pArgs = Str_UnQuote(ppArgs[0]);
+            sVal = "";
+            tchar *ppCmd[255];
+            int count = Str_ParseCmdsAdv(pArgs, ppCmd, CountOf(ppCmd), iSep); //Remove unnecessary chars from seperator to avoid issues.
+            tchar *ppArrays[2];
+            
+            //Getting range of array index...
+            int iArrays = Str_ParseCmdsAdv(ppArgs[1], ppArrays, CountOf(ppArrays), "-");
+            llong iValue = Exp_GetLLVal(ppArgs[1]);
+            llong iValueEnd = iValue;
+            if (iArrays > 1)
+            {
+                iValue = Exp_GetLLVal(ppArrays[0]);
+                iValueEnd = Exp_GetLLVal(ppArrays[1]);
+                if (iValueEnd <= 0 || iValueEnd > count)
+                    iValueEnd = count;
+            }
+            
+            if (iValue < 0)
+                return false;
+            else if (iValue > 0)
+            {
+                if (iValue > count)
+                    return false;
+                else if (iValue == iValueEnd) {
+                    sVal.Format(ppCmd[iValue - 1]);
+                }
+                else
+                {
+                    sVal.Add(ppCmd[iValue - 1]);
+                    int64 i = iValue + 1;
+                    for ( ; i <= iValueEnd; ++i)
+                    {
+                        sVal.Add(iSep);
+                        sVal.Add(ppCmd[i - 1]);
+                    }
+                }
+            }
+            else
+                sVal.FormatVal(count);
+        } return true;
 		case SSC_EXPLODE:
 			{
 				char separators[16];
@@ -1120,22 +1166,42 @@ lpctstr const CScriptObj::sm_szVerbKeys[SSV_QTY+1] =
 bool CScriptObj::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command from script
 {
 	ADDTOCALLSTACK("CScriptObj::r_Verb");
-	EXC_TRY("Verb");
-	int	index;
+	ASSERT( pSrc );
 	lpctstr ptcKey = s.GetKey();
 
-	ASSERT( pSrc );
+	EXC_TRY("Verb-Ref");
+
 	CScriptObj * pRef = nullptr;
-	if ( r_GetRef( ptcKey, pRef ))
+	bool fRef = r_GetRefFull(ptcKey, pRef);
+
+	if (fRef)
 	{
-		if ( ptcKey[0] )
+		if (pRef == this)
 		{
-			if ( !pRef )
-				return true;
+			// "I." ref. For players, *this (so pRef) is the CClient instance.
+
+			if (ptcKey[0] == '\0')
+			{
+				return ParseError_UndefinedKeyword(s.GetKey()); // We can't change the UID via the I ref.
+			}
+
+			//fRef = false;
+			//pRef = nullptr;
+			CScript script(ptcKey, s.GetArgStr());
+			script.CopyParseState(s);
+			return r_Verb(script, pSrc);
+		}
+		else if ( ptcKey[0] )
+		{
+			if (!pRef)
+			{
+				if (s._eParseFlags == CScript::ParseFlags::IgnoreInvalidRef)
+					return true;
+				return ParseError_UndefinedKeyword(s.GetKey());
+			}
 
 			CScript script(ptcKey, s.GetArgStr());
-			script.m_iResourceFileIndex = s.m_iResourceFileIndex;	// Index in g_Cfg.m_ResourceFiles of the CResourceScript (script file) where the CScript originated
-			script.m_iLineNum = s.m_iLineNum;						// Line in the script file where Key/Arg were read
+			script.CopyParseState(s);
 
 			if ( dynamic_cast<CAccount*>(pRef) != nullptr)
 			{
@@ -1161,7 +1227,7 @@ bool CScriptObj::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command f
 	if ( s.IsKeyHead("SRC.", 4 ))
 	{
 		ptcKey += 4;
-		pRef = dynamic_cast <CScriptObj*> (pSrc->GetChar());	// if it can be converted .
+		pRef = dynamic_cast <CScriptObj*> (pSrc->GetChar());	// if it can be converted.
 		if ( ! pRef )
 		{
 			pRef = dynamic_cast <CScriptObj*> (pSrc);
@@ -1170,25 +1236,34 @@ bool CScriptObj::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command f
 		}
 
 		CScript script(ptcKey, s.GetArgStr());
-		script.m_iResourceFileIndex = s.m_iResourceFileIndex;	// Index in g_Cfg.m_ResourceFiles of the CResourceScript (script file) where the CScript originated
-		script.m_iLineNum = s.m_iLineNum;						// Line in the script file where Key/Arg were read
+		script.CopyParseState(s);
 		return pRef->r_Verb(script, pSrc);
 	}
 
-	index = FindTableSorted( s.GetKey(), sm_szVerbKeys, CountOf( sm_szVerbKeys )-1 );
 
+	EXC_SET_BLOCK("Verb-Statement");
+
+	if (!strnicmp(ptcKey, "CLEARVARS", 9))
+	{
+		ptcKey = s.GetArgStr();
+		SKIP_SEPARATORS(ptcKey);
+		g_Exp.m_VarGlobals.ClearKeys(ptcKey);
+		return true;
+	}
+
+	int index = FindTableSorted( s.GetKey(), sm_szVerbKeys, CountOf( sm_szVerbKeys )-1 );
 	switch (index)
 	{
 		case SSV_OBJ:
-			g_World.m_uidObj = s.GetArgVal();
+			g_World.m_uidObj.SetObjUID(s.GetArgVal());
 			if ( !g_World.m_uidObj.ObjFind() )
-				g_World.m_uidObj = 0;
+				g_World.m_uidObj.ClearUID();
 			break;
 
 		case SSV_NEW:
-			g_World.m_uidNew = s.GetArgVal();
+			g_World.m_uidNew.SetObjUID(s.GetArgVal());
 			if ( !g_World.m_uidNew.ObjFind() )
-				g_World.m_uidNew = 0;
+				g_World.m_uidNew.ClearUID();
 			break;
 
 		case SSV_NEWDUPE:
@@ -1197,14 +1272,13 @@ bool CScriptObj::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command f
 				CObjBase *pObj = uid.ObjFind();
 				if (pObj == nullptr)
 				{
-					g_World.m_uidNew = 0;
+					g_World.m_uidNew.ClearUID();
 					return false;
 				}
 
 				g_World.m_uidNew = uid;
 				CScript script("DUPE");
-				script.m_iResourceFileIndex = s.m_iResourceFileIndex;
-				script.m_iLineNum = s.m_iLineNum;
+				script.CopyParseState(s);
 				bool bRc = pObj->r_Verb(script, pSrc);
 
 				if (this != &g_Serv)
@@ -1232,7 +1306,7 @@ bool CScriptObj::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command f
 				CItem *pItem = CItem::CreateHeader(ppCmd[0], nullptr, false, pSrc->GetChar());
 				if ( !pItem )
 				{
-					g_World.m_uidNew = (dword)0;
+					g_World.m_uidNew.ClearUID();
 					return false;
 				}
 				pItem->_iCreatedResScriptIdx = s.m_iResourceFileIndex;
@@ -1243,14 +1317,16 @@ bool CScriptObj::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command f
 
 				if ( ppCmd[2] )
 				{
-					CUID uidEquipper = Exp_GetVal(ppCmd[2]);
-					bool bTriggerEquip = ppCmd[3] != nullptr ? (Exp_GetVal(ppCmd[3]) != 0) : false;
+					CUID uidEquipper(Exp_GetVal(ppCmd[2]));
+					const bool fTriggerEquip = (ppCmd[3] != nullptr) ? (Exp_GetVal(ppCmd[3]) != 0) : false;
 
-					if ( !bTriggerEquip || uidEquipper.IsItem() )
+					if (!fTriggerEquip || uidEquipper.IsItem())
+					{
 						pItem->LoadSetContainer(uidEquipper, LAYER_NONE);
+					}
 					else
 					{
-						if ( bTriggerEquip )
+						if ( fTriggerEquip )
 						{
 							CChar * pCharEquipper = uidEquipper.CharFind();
 							if ( pCharEquipper != nullptr )
@@ -1259,7 +1335,7 @@ bool CScriptObj::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command f
 					}
 				}
 
-				g_World.m_uidNew = pItem->GetUID();
+				g_World.m_uidNew.SetObjUID(pItem->GetUID());
 
 				if ( this != &g_Serv )
 				{
@@ -1278,18 +1354,18 @@ bool CScriptObj::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command f
 
 		case SSV_NEWNPC:
 			{
-				CREID_TYPE id = static_cast<CREID_TYPE>(g_Cfg.ResourceGetIndexType(RES_CHARDEF, s.GetArgRaw()));
+				CREID_TYPE id = CREID_TYPE(g_Cfg.ResourceGetIndexType(RES_CHARDEF, s.GetArgRaw()));
 				CChar * pChar = CChar::CreateNPC(id);
 				if ( !pChar )
 				{
-					g_World.m_uidNew = (dword)0;
+					g_World.m_uidNew.ClearUID();
 					return false;
 				}
 
 				pChar->_iCreatedResScriptIdx = s.m_iResourceFileIndex;
 				pChar->_iCreatedResScriptLine = s.m_iLineNum;
 
-				g_World.m_uidNew = pChar->GetUID();
+				g_World.m_uidNew.SetObjUID(pChar->GetUID());
 
 				if ( this != &g_Serv )
 				{
@@ -1312,12 +1388,12 @@ bool CScriptObj::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command f
 	            if (iQty <= 0)
 	                return false;
 
-	            CREID_TYPE id = static_cast<CREID_TYPE>(g_Cfg.ResourceGetIndexType(RES_CHARDEF, ppCmd[0]));
+	            CREID_TYPE id = CREID_TYPE(g_Cfg.ResourceGetIndexType(RES_CHARDEF, ppCmd[0]));
 	            CChar * pChar = CChar::CreateNPC(id);
 	            CChar * pCharSrc = nullptr;
 	            if (!pChar)
 	            {
-	                g_World.m_uidNew = (dword)0;
+	                g_World.m_uidNew.ClearUID();
 	                return false;
 	            }
 
@@ -1338,7 +1414,7 @@ bool CScriptObj::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command f
 	            }
 
 	            pChar->OnSpellEffect(SPELL_Summon, pCharSrc, pChar->Skill_GetAdjusted(SKILL_MAGERY), nullptr, false);
-	            g_World.m_uidNew = pChar->GetUID();
+	            g_World.m_uidNew.SetObjUID(pChar->GetUID());
 	            llong iDuration = Exp_GetVal(ppCmd[1]);
 	            if (iDuration)
 	            {
@@ -1383,479 +1459,640 @@ bool CScriptObj::r_Load( CScript & s )
 	return true;
 }
 
-size_t CScriptObj::ParseText( tchar * pszResponse, CTextConsole * pSrc, int iFlags, CScriptTriggerArgs * pArgs )
+
+bool CScriptObj::_Evaluate_Conditional_EvalSingle(const SubexprData& sdata, CTextConsole* pSrc, CScriptTriggerArgs* pArgs)
 {
-	ADDTOCALLSTACK("CScriptObj::ParseText");
+	ADDTOCALLSTACK("CScriptObj::_Evaluate_Conditional_EvalSingle");
+	ASSERT(sdata.ptcStart);
+	ASSERT(sdata.ptcEnd);
+	using SType = SubexprData::Type;
+	bool fVal;
+	lptstr ptcSubexpr;
+
+	// Evaluate the subexpression body
+	if (_iEvaluate_Conditional_Reentrant >= 16)
+	{
+		g_Log.EventError("Exceeding the limit of 16 subexpressions. Further parsing is halted.\n");
+		return false;
+	}
+	++_iEvaluate_Conditional_Reentrant;
+
+	// Length to copy: +1 to include the last valid char (i'm not copying the subsequent char, which can be another char or '\0'
+	const size_t len = std::min(STR_TEMPLENGTH - 1U, size_t(sdata.ptcEnd - sdata.ptcStart + 1U));
+
+	ptcSubexpr = Str_GetTemp();
+	memcpy(ptcSubexpr, sdata.ptcStart, len);
+	ptcSubexpr[len] = '\0';
+
+	const bool fNested = (sdata.uiType & SType::MaybeNestedSubexpr);
+	if (fNested)
+	{
+		fVal = Evaluate_Conditional(ptcSubexpr, pSrc, pArgs);
+	}
+	else
+	{
+		ParseScriptText(ptcSubexpr, pSrc, 0, pArgs);
+		fVal = bool(Exp_GetVal(ptcSubexpr));
+	}
+
+	--_iEvaluate_Conditional_Reentrant;
+
+
+	// Apply non-associative operators preceding the subexpression
+	if (sdata.uiNonAssociativeOffset)
+	{
+		ptcSubexpr = sdata.ptcStart - sdata.uiNonAssociativeOffset;
+		ASSERT(!ISWHITESPACE(*ptcSubexpr));
+		while (const tchar chOperator = *ptcSubexpr)
+		{
+			if (chOperator == '!')
+				fVal = !fVal;
+			else if (ISWHITESPACE(chOperator))
+				; // Allowed, skip it
+			else
+				break;
+			++ptcSubexpr;
+		}
+	}
+
+	return fVal;
+}
+
+bool CScriptObj::Evaluate_Conditional(lptstr ptcExpr, CTextConsole* pSrc, CScriptTriggerArgs* pArgs)
+{
+	ADDTOCALLSTACK("CScriptObj::Evaluate_Conditional");
+
+	SubexprData psSubexprData[32]{};
+	const int iQty = CExpression::GetConditionalSubexpressions(ptcExpr, psSubexprData, CountOf(psSubexprData));	// number of arguments
+
+	if (iQty == 0)
+		return 0;
+
+	using SType = SubexprData::Type;
+
+	if (iQty == 1)
+	{
+		// We don't have subexpressions, but only a simple expression.
+		const SubexprData& sCur = psSubexprData[0];
+		ASSERT(sCur.uiType & SType::None);
+
+		const bool fVal = _Evaluate_Conditional_EvalSingle(sCur, pSrc, pArgs);
+		return fVal;
+	}
+
+	// We have some subexpressions, connected between them by logical operators.
+	
+	bool fWholeExprVal = false;
+	for (int i = 0; i < iQty; ++i)
+	{
+		const SubexprData& sCur = psSubexprData[i];
+		ASSERT(sCur.uiType != SType::Unknown);
+
+		if (i == 0)
+		{
+			fWholeExprVal = _Evaluate_Conditional_EvalSingle(sCur, pSrc, pArgs);
+			continue;
+		}
+
+		const SubexprData& sPrev = psSubexprData[i - 1];
+		if (sPrev.uiType & SType::Or)
+		{
+			if (fWholeExprVal)
+				return true;
+
+			const bool fVal = _Evaluate_Conditional_EvalSingle(sCur, pSrc, pArgs);
+			fWholeExprVal = fWholeExprVal || fVal;
+		}
+		else if (sPrev.uiType & SType::And)
+		{
+			if (!fWholeExprVal)
+				return false;
+
+			const bool fVal = _Evaluate_Conditional_EvalSingle(sCur, pSrc, pArgs);
+			fWholeExprVal = (i == 1) ? fVal : (fWholeExprVal && fVal);
+		}
+		
+		if (sCur.uiType & SType::None)
+		{
+			ASSERT(i == iQty - 1);	// It should be the last subexpression
+
+			const bool fVal = _Evaluate_Conditional_EvalSingle(sCur, pSrc, pArgs);
+
+			if (sPrev.uiType & SType::Or)
+			{
+				fWholeExprVal = fWholeExprVal || fVal;
+			}
+			else
+			{
+				ASSERT(sPrev.uiType & SType::And);
+				ASSERT(iQty > 1);
+				fWholeExprVal = (fWholeExprVal && fVal);
+			}
+		}
+		
+	}
+
+	return fWholeExprVal;
+}
+
+static void Evaluate_QvalConditional_ParseArg(tchar* ptcSrc, tchar** ptcDest, lpctstr ptcSep)
+{
+	ASSERT(ptcSep && *ptcSep);
+
+	// Check if we are encountering a a nested QVAL?
+	tchar* ptcBracketPos = nullptr;
+	tchar* ptcSepPos = nullptr;
+	for (tchar* ptcLine = ptcSrc; *ptcLine != '\0';)
+	{
+		const tchar ch = *ptcLine;
+		if ((ch != '<') && (ch != *ptcSep))
+		{
+			++ptcLine;
+			continue;
+		}
+
+		if ((ch == '<') && !ptcBracketPos)
+		{
+			tchar* ptcTest = ptcLine + 1;
+			GETNONWHITESPACE(ptcTest);
+			if (!strnicmp("QVAL", ptcTest, 4))
+			{
+				ptcBracketPos = ptcLine;
+				ptcLine = ptcTest + 3;
+			}
+		}
+		else if ((ch == *ptcSep) && !ptcSepPos)
+		{
+			ptcSepPos = ptcLine;
+		}
+
+		if (!ptcBracketPos || !ptcSepPos)
+		{
+			++ptcLine;
+			continue;
+		}
+
+		if (ptcSepPos < ptcBracketPos)
+		{
+			// The separator we have found is before the nested QVAL.
+			ptcSrc = ptcSepPos;
+			break; 
+		}
+
+		// Found a nested QVAL. Skip it, otherwise we'll catch the wrong separator
+		Str_SkipEnclosedAngularBrackets(ptcBracketPos);
+		if (ptcBracketPos <= ptcLine)
+			++ptcLine;
+		else
+			ptcSrc = ptcLine = ptcBracketPos;
+
+		ptcBracketPos = ptcSepPos = nullptr;
+	}
+
+	Str_Parse(ptcSrc, ptcDest, ptcSep);
+}
+
+bool CScriptObj::Evaluate_QvalConditional(lpctstr ptcKey, CSString& sVal, CTextConsole* pSrc, CScriptTriggerArgs* pArgs)
+{
+	ADDTOCALLSTACK("CScriptObj::Evaluate_QvalConditional");
+	// Do a switch ? type statement <QVAL condition ? option1 : option2>
+
+	// Do NOT work on the original arguments, it WILL fuck up the original string!
+	tchar* ptcArgs = Str_GetTemp();
+	Str_CopyLimitNull(ptcArgs, ptcKey, STR_TEMPLENGTH);
+
+	// We only partially evaluated the QVAL parameters (it's a special case), so we need to parse the expressions (still have angular brackets at this stage)
+	tchar* ppCmds[3];
+	ppCmds[0] = ptcArgs;
+
+	// Get the condition
+	Evaluate_QvalConditional_ParseArg(ppCmds[0], &(ppCmds[1]), "?");
+
+	// Get the first and second retvals
+	Evaluate_QvalConditional_ParseArg(ppCmds[1], &(ppCmds[2]), ":");
+
+	// Complete evaluation of the condition
+	//  (do that in another string, since it may overwrite the arguments, which are written later in the same string).
+	tchar* ptcTemp = Str_GetTemp();
+	Str_CopyLimitNull(ptcTemp, ppCmds[0], STR_TEMPLENGTH);
+	ParseScriptText(ptcTemp, pSrc, 0, pArgs);
+	const bool fCondition = Exp_GetVal(ptcTemp);
+
+	// Get the retval we want
+	//	(we might as well work on the transformed original string, since at this point we don't care if we corrupt other arguments)
+	ptcTemp = ppCmds[(fCondition ? 1 : 2)];
+	ParseScriptText(ptcTemp, pSrc, 0, pArgs);
+
+	sVal = ptcTemp;
+	if (sVal.IsEmpty())
+		sVal = "";
+	return true;
+}
+
+size_t CScriptObj::ParseScriptText( tchar * ptcResponse, CTextConsole * pSrc, int iFlags, CScriptTriggerArgs * pArgs )
+{
+	ADDTOCALLSTACK("CScriptObj::ParseScriptText");
+	//ASSERT(ptcResponse[0] != ' ');	// Not needed: i remove whitespaces and invalid characters here.
+
 	// Take in a line of text that may have fields that can be replaced with operators here.
 	// ARGS:
-	// iFlags = 2=Allow recusive bracket count. 1=use HTML %% as the delimiters.
+	// iFlags & 1: Use HTML-compatible delimiters (%). Inside those, angular brackets are allowed to do nested evaluations.
+	// iFlags & 2: Don't allow recusive bracket count.
+	// iFlags & 4: Just parsing a nested QVAL.
 	// NOTE:
 	//  html will have opening <script language="SPHERE_FILE"> and then closing </script>
 	// RETURN:
-	//  New length of the string.
-	//
-	// Parsing flags
-	lpctstr ptcKey; // temporary, set below
-	bool fRes;
+	//  iFlags & 4: Position of the ending bracket/delimiter of a QVAL statement.
+	//  Otherwise: New length of the string.
 
-	static int sm_iReentrant = 0;
-	static bool sm_fBrackets = false;	// allowed to span multi lines.
+	// Recursion control variables.
+	//  _iParseScriptText_Reentrant = 0;
+	//  _fParseScriptText_Brackets = false;	// Am i evaluating a statement? (Am i inside < > brackets of a statement i am currently evaluating?)
 
-	//***Qval Fix***
-	bool fQvalCondition = false;
-	const tchar chQval = '?';
+	ASSERT(_fParseScriptText_Brackets == false);
+	const bool fNoRecurseBrackets = ((iFlags & 2) != 0);
 
-	if ((iFlags & 2) == 0)
-		sm_fBrackets = false;
+	// General purpose variables.
+	const bool fHTML = ((iFlags & 1) != 0);
+
+	// If we are parsing a string from a HTML file, we are using '%' as a delimiter for Sphere expressions, since < > are reserved characters in HTML.
+	const tchar chBegin = fHTML ? '%' : '<';
+	const tchar chEnd	= fHTML ? '%' : '>';
+
+	// Variables used to handle the QVAL special case and do lazy evaluation, instead of fully evaluating the whole string on the first pass.
+	enum class QvalStatus { None, Condition, Returns, End } eQval = QvalStatus::None;
+	int iQvalOpenBrackets = 0;
 
 	size_t iBegin = 0;
-	tchar chBegin = '<';
-	tchar chEnd = '>';
-
-	const bool fHTML = (iFlags & 1) != 0;
-	if ( fHTML )
-	{
-		chBegin = '%';
-		chEnd = '%';
-	}
-
 	size_t i = 0;
-	EXC_TRY("ParseText");
-	for ( i = 0; pszResponse[i]; ++i )
+	EXC_TRY("ParseScriptText Main Loop");
+	for ( i = 0; ptcResponse[i]; ++i )
 	{
-		const tchar ch = pszResponse[i];
+		const tchar ch = ptcResponse[i];
 
-		if ( ! sm_fBrackets )	// not in brackets
+		// Are we looking for the current statement start?
+		if ( !_fParseScriptText_Brackets)	// not in brackets
 		{
 			if ( ch == chBegin )	// found the start !
 			{
-				 if ( !( IsAlnum( pszResponse[i + 1] ) || pszResponse[i + 1] == '<' ) ) // ignore this.
-					continue;
+                const tchar chNext = ptcResponse[i + 1];
+				if ((chNext != '<') && !IsAlnum(chNext))
+					continue;	// Ignore this
+
+				// Set the statement start
 				iBegin = i;
-				sm_fBrackets = true;
+				_fParseScriptText_Brackets = true;
+
+				// Set-up to process special statements: is it a QVAL?
+				const bool fIsQval = !strnicmp(ptcResponse + i + 1, "QVAL", 4);
+				if (fIsQval)
+				{
+					++iQvalOpenBrackets;
+					eQval = QvalStatus::Condition;
+
+					i += 4;
+				}
 			}
+
 			continue;
 		}
 
-		if ( ch == '<' )	// recursive brackets
+		// Are we inside a QVAL and are we searching where its condition end?
+		if ((ch == '?') && (eQval == QvalStatus::Condition))
 		{
-			if ( !( IsAlnum( pszResponse[i + 1] ) || pszResponse[i + 1] == '<' ) ) // ignore this.
-				continue;
+			// Now we keep the bracket count to find the closing bracket for the QVAL statement.
+			eQval = QvalStatus::Returns;
+			continue;
+		}
 
-			if (sm_iReentrant > 32 )
+		// Handle possibly recursive angular brackets (i'm already inside an open bracket)
+		if (_fParseScriptText_Brackets && (ch == '<'))
+		{
+			const tchar chNext = ptcResponse[i + 1];
+			if (chNext == '<')
 			{
-				EXC_SET_BLOCK("reentrant limit");
-				ASSERT( sm_iReentrant < 32 );
+				// Nested angular brackets? like: <<SKILL>>
+				lptstr ptcTestNested = ptcResponse + i;
+				lpctstr ptcTestOrig = ptcTestNested;
+				Str_SkipEnclosedAngularBrackets(ptcTestNested);
+				// If i have matching closing brackets, so it must be nested angular brackets.
+				if (ptcTestNested == ptcTestOrig)
+				{
+					// Otherwise, it might be the << operator.
+					++i;
+					continue;
+				}
 			}
-			++sm_iReentrant;
-			sm_fBrackets = false;
-			size_t ilen = ParseText( pszResponse + i, pSrc, 2, pArgs );
-			sm_fBrackets = true;
-			--sm_iReentrant;
+
+			// Detect nested QVALs
+			if (eQval != QvalStatus::None)
+			{
+				const bool fIsQval = !strnicmp(ptcResponse + i + 1, "QVAL", 4);
+				if (fIsQval)
+				{
+					// Nested QVAL... Needs to be evaluated separately, but we only want to know where it ends.
+					ASSERT(_fParseScriptText_Brackets == true);
+					++_iParseScriptText_Reentrant;
+					_fParseScriptText_Brackets = false;
+
+					tchar* ptcRecurseParse = ptcResponse + i;
+					const size_t iLen = ParseScriptText(ptcRecurseParse, pSrc, 4, pArgs);
+
+					_fParseScriptText_Brackets = true;
+					--_iParseScriptText_Reentrant;
+
+					i += iLen;
+					continue;
+				}
+
+				// At this point, we shouldn't face nested QVALs.
+
+				// I'm inside a QVAL. I can be parsing the condition or the return values.
+				if (eQval == QvalStatus::Returns)	// I'm after its condition (so after '?'), thus i'm parsing the return values.
+					++iQvalOpenBrackets;
+
+				// Halt here the evaluation of the stuff inside this open bracket, since i don't want to know what's inside.
+				continue;
+			}
+
+			if (_iParseScriptText_Reentrant > 32 )
+			{
+				EXC_SET_BLOCK("recursive brackets limit");
+				PERSISTANT_ASSERT( _iParseScriptText_Reentrant < 32 );
+			}
+
+			ASSERT(_fParseScriptText_Brackets == true);
+			++_iParseScriptText_Reentrant;
+			_fParseScriptText_Brackets = false;
+
+			// Parse what's inside the open bracket
+			tchar* ptcRecurseParse = ptcResponse + i;
+			const size_t ilen = ParseScriptText(ptcRecurseParse, pSrc, 2, pArgs );
+
+			_fParseScriptText_Brackets = true;
+			--_iParseScriptText_Reentrant;
+
 			i += ilen;
 			continue;
 		}
-		//***Qval Fix***
-		if ( ch == chQval )
-		{
-			if ( !strnicmp( static_cast<lpctstr>(pszResponse) + iBegin + 1, "QVAL", 4 ) )
-                fQvalCondition = true;
-		}
 
+		// At this point i'm sure that ahead we won't find other open angular brackets, we may find their closing one or just plain text.
 		if ( ch == chEnd )
 		{
-			if ( !strnicmp( static_cast<lpctstr>(pszResponse) + iBegin + 1, "QVAL", 4 ) && !fQvalCondition)
-				continue;
-			//***Qval Fix End***
-			sm_fBrackets = false;
-			pszResponse[i] = '\0';
+			// Closing bracket found: should we evaluate what's inside the brackets?
+			if (eQval != QvalStatus::None)
+			{
+				// Special handling for QVAL
+				if (eQval == QvalStatus::Returns)
+				{
+					// I'm after the '?' symbol in QVAL. We are searching for the closing bracket.
+					--iQvalOpenBrackets;
+
+					if (iQvalOpenBrackets == 0)
+					{
+						// End of the QVAL statement.
+						if (iFlags & 04)
+						{
+							// I was just checking for the QVAL statement end.
+							ASSERT(_fParseScriptText_Brackets == true);
+							_fParseScriptText_Brackets = false;
+							return i;
+						}
+
+						// Proceed, so we can execute it (do not 'continue').
+						eQval = QvalStatus::End;
+					}
+					else
+					{
+						// Still inside QVAL, just go ahead.
+						continue;
+					}
+				}
+				else
+				{
+					// I'm before the '?' symbol in QVAL and i'm still searching for it, so we know when the conditional expression ends
+					continue;	// Ignore brackets, i want only the ? symbol.
+				}
+			}
+
+
+			// If i'm here it means that finally i'm at the end of the statement inside brackets.
+			_fParseScriptText_Brackets = false; // Close the statement.
+	
+			if ((eQval == QvalStatus::End) && (iQvalOpenBrackets != 0))
+			{
+				// I had an incomplete QVAL statement.
+				g_Log.EventError("QVAL parameters after '?' have unmatched '%c'.\n", ((iQvalOpenBrackets < 0) ? '<' : '>'));
+			}
+
+			// Complete the evaluation of our string
+			//-- Write to our temporary sVal the evaluated script
+			EXC_SET_BLOCK("writeval");
+
+			ptcResponse[i] = '\0'; // Needed for r_WriteVal
+			lpctstr ptcKey = ptcResponse + iBegin + 1; // move past the opening bracket
 
 			CSString sVal;
-			ptcKey = static_cast<lpctstr>(pszResponse) + iBegin + 1;
-
-			EXC_SET_BLOCK("writeval");
-			fRes = r_WriteVal( ptcKey, sVal, pSrc );
-			if ( fRes == false )
+			bool fRes;
+			if (eQval != QvalStatus::None)
 			{
-				EXC_SET_BLOCK("writeval");
-				// write the value of functions or triggers variables/objects like ARGO, ARGN1/2/3, LOCALs...
-				if ( pArgs != nullptr && pArgs->r_WriteVal( ptcKey, sVal, pSrc ) )
-					fRes = true;
+				// Separate evaluation for QVAL. I may need additional script context for it (pArgs isn't available in r_WriteVal).
+				EXC_SET_BLOCK("writeval qval");
+				ptcKey += 4; // Skip the letters QVAL and pass only the arguments
+				fRes = Evaluate_QvalConditional(ptcKey, sVal, pSrc, pArgs);
+				eQval = QvalStatus::None;
 			}
+			else
+			{
+				// Standard evaluation for everything else
+				EXC_SET_BLOCK("writeval generic");
+				fRes = r_WriteVal(ptcKey, sVal, pSrc);
+				if (fRes == false)
+				{
+					EXC_SET_BLOCK("writeval args");
+					// write the value of functions or triggers variables/objects like ARGO, ARGN1/2/3, LOCALs...
+					if ((pArgs != nullptr) && pArgs->r_WriteVal(ptcKey, sVal, pSrc))
+						fRes = true;
+				}
+			}
+			
 
 			if ( fRes == false )
 			{
-				DEBUG_ERR(( "Can't resolve <%s>\n", ptcKey ));
+				DEBUG_ERR(( "Can't resolve <%s>.\n", ptcKey ));
 				// Just in case this really is a <= operator ?
-				pszResponse[i] = chEnd;
+				ptcResponse[i] = chEnd; // it's the char we overwrote with '\0'
 			}
 
-			if ( sVal.IsEmpty() && fHTML )
+			if (fHTML && sVal.IsEmpty())
 			{
 				sVal = "&nbsp";
 			}
 
-			size_t len = sVal.GetLength();
-
+			//-- In the output string, substitute the raw substring with its parsed value
 			EXC_SET_BLOCK("mem shifting");
 
-			memmove( pszResponse + iBegin + len, pszResponse + i + 1, strlen( pszResponse + i + 1 ) + 1 );
-			memcpy( pszResponse + iBegin, static_cast<lpctstr>(sVal), len );
-			i = iBegin + len - 1;
+			const size_t iWriteValLen = sVal.GetLength();
 
-			if ((iFlags & 2) != 0) // just do this one then bail out.
+			// Make room for the obtained value, moving to left (if it's shorter than the scripted statement) or right (if longer) the string characters after it.
+			tchar* ptcDest = ptcResponse + iBegin + iWriteValLen; // + iWriteValLen because we need to leave the space for the replacing keyword
+			const tchar * const ptcLeftover = ptcResponse + i + 1;	// End of the statement we just evaluated
+			const size_t iLeftoverLen = strlen(ptcLeftover) + 1;
+			memmove(ptcDest, ptcLeftover, iLeftoverLen);
+
+			// Insert the obtained value in the room we created.
+			ptcDest = ptcResponse + iBegin;
+			memcpy(ptcDest, sVal.GetBuffer(), iWriteValLen);
+
+			i = iBegin + iWriteValLen - 1;
+
+			if (fNoRecurseBrackets) // just do this one then bail out.
+			{
+				_fParseScriptText_Brackets = false;
 				return i;
+			}
 		}
 	}
 	EXC_CATCH;
 
 	EXC_DEBUG_START;
-	g_Log.EventDebug("response '%s' source addr '0%p' flags '%d' args '%p'\n", pszResponse, static_cast<void *>(pSrc), iFlags, static_cast<void *>(pArgs));
+	g_Log.EventDebug("response '%s' source addr '0%p' flags '%d' args '%p'\n", ptcResponse, static_cast<void *>(pSrc), iFlags, static_cast<void *>(pArgs));
 	EXC_DEBUG_END;
+	
+	_fParseScriptText_Brackets = false;
 	return i;
 }
 
-
-TRIGRET_TYPE CScriptObj::OnTriggerForLoop( CScript &s, int iType, CTextConsole * pSrc, CScriptTriggerArgs * pArgs, CSString * pResult )
+bool CScriptObj::Execute_Call(CScript& s, CTextConsole* pSrc, CScriptTriggerArgs* pArgs)
 {
-	ADDTOCALLSTACK("CScriptObj::OnTriggerForLoop");
-	// loop from start here to the ENDFOR
-	// See WebPageScriptList for dealing with Arrays.
+	ADDTOCALLSTACK("CScriptObj::Execute_Call");
+	bool fRes = false;
 
-	CScriptLineContext StartContext = s.GetContext();
-	CScriptLineContext EndContext = StartContext;
-	int LoopsMade = 0;
+	CSString sVal;
+	tchar* argRaw = s.GetArgRaw();
+	CScriptObj* pRef = this;
 
-	if ( iType & 8 )		// WHILE
+	// Parse object references, src.* is not parsed
+	// by r_GetRef so do it manually
+	r_GetRef(const_cast<lpctstr&>(static_cast<lptstr&>(argRaw)), pRef);
+	if (!strnicmp("SRC.", argRaw, 4))
 	{
-		tchar * ptcCond;
-		CSString sOrig;
-		CSString sTemp;
-		int iWhile	= 0;
-
-		sOrig.Copy( s.GetArgStr() );
-		for (;;)
-		{
-			++LoopsMade;
-			if ( g_Cfg.m_iMaxLoopTimes && ( LoopsMade >= g_Cfg.m_iMaxLoopTimes ))
-				goto toomanyloops;
-			
-			sTemp.Copy(sOrig);
-			ptcCond	= sTemp.GetBuffer();
-			ParseText(ptcCond, pSrc, 0, pArgs );
-			if ( !Exp_GetVal(ptcCond) )
-				break;
-
-            pArgs->m_VarsLocal.SetNum( "_WHILE", iWhile, false );
-            ++iWhile;
-
-			TRIGRET_TYPE iRet = OnTriggerRun( s, TRIGRUN_SECTION_TRUE, pSrc, pArgs, pResult );
-			if ( iRet == TRIGRET_BREAK )
-			{
-				EndContext = StartContext;
-				break;
-			}
-			if (( iRet != TRIGRET_ENDIF ) && ( iRet != TRIGRET_CONTINUE ))
-				return iRet;
-			if ( iRet == TRIGRET_CONTINUE )
-				EndContext = StartContext;
-			else
-				EndContext = s.GetContext();
-			s.SeekContext( StartContext );
-		}
-	}
-	else
-    {
-		ParseText( s.GetArgStr(), pSrc, 0, pArgs );
-    }
-
-
-	if ( iType & 4 )		// FOR
-	{
-		bool fCountDown = false;
-		int iMin = 0;
-		int iMax = 0;
-		int i;
-		tchar * ppArgs[3];
-		int iQty = Str_ParseCmds( s.GetArgStr(), ppArgs, CountOf(ppArgs), ", " );
-		CSString sLoopVar = "_FOR";
-
-		switch( iQty )
-		{
-		case 1:		// FOR x
-			iMin = 1;
-			iMax = Exp_GetSingle( ppArgs[0] );
-			break;
-		case 2:
-            if ( IsDigit(*ppArgs[0]) || ((*ppArgs[0] == '-') && IsDigit(*(ppArgs[0] + 1))) )
-			{
-				iMin = Exp_GetSingle( ppArgs[0] );
-				iMax = Exp_GetSingle( ppArgs[1] );
-			}
-			else
-			{
-                sLoopVar = ppArgs[0];
-				iMin = 1;
-				iMax = Exp_GetSingle( ppArgs[1] );
-			}
-			break;
-		case 3:
-			sLoopVar = ppArgs[0];
-			iMin = Exp_GetSingle( ppArgs[1] );
-			iMax = Exp_GetSingle( ppArgs[2] );
-			break;
-		default:
-			iMin = iMax = 1;
-			break;
-		}
-
-		if ( iMin > iMax )
-			fCountDown	= true;
-
-		if ( fCountDown )
-			for ( i = iMin; i >= iMax; --i )
-			{
-				++LoopsMade;
-				if ( g_Cfg.m_iMaxLoopTimes && ( LoopsMade >= g_Cfg.m_iMaxLoopTimes ))
-					goto toomanyloops;
-
-				pArgs->m_VarsLocal.SetNum( sLoopVar, i, false );
-				TRIGRET_TYPE iRet = OnTriggerRun( s, TRIGRUN_SECTION_TRUE, pSrc, pArgs, pResult );
-				if ( iRet == TRIGRET_BREAK )
-				{
-					EndContext = StartContext;
-					break;
-				}
-				if (( iRet != TRIGRET_ENDIF ) && ( iRet != TRIGRET_CONTINUE ))
-					return iRet;
-
-				if ( iRet == TRIGRET_CONTINUE )
-					EndContext = StartContext;
-				else
-					EndContext = s.GetContext();
-				s.SeekContext( StartContext );
-			}
-		else
-			for ( i = iMin; i <= iMax; ++i )
-			{
-				++LoopsMade;
-				if ( g_Cfg.m_iMaxLoopTimes && ( LoopsMade >= g_Cfg.m_iMaxLoopTimes ))
-					goto toomanyloops;
-
-				pArgs->m_VarsLocal.SetNum( sLoopVar, i, false );
-				TRIGRET_TYPE iRet = OnTriggerRun( s, TRIGRUN_SECTION_TRUE, pSrc, pArgs, pResult );
-				if ( iRet == TRIGRET_BREAK )
-				{
-					EndContext = StartContext;
-					break;
-				}
-				if (( iRet != TRIGRET_ENDIF ) && ( iRet != TRIGRET_CONTINUE ))
-					return iRet;
-
-				if ( iRet == TRIGRET_CONTINUE )
-					EndContext = StartContext;
-				else
-					EndContext = s.GetContext();
-				s.SeekContext( StartContext );
-			}
+		argRaw += 4;
+		pRef = pSrc->GetChar();
 	}
 
-	if ( (iType & 1) || (iType & 2) )
+	// Check that an object is referenced
+	if (pRef != nullptr)
 	{
-		int iDist;
-		if ( s.HasArgs() )
-			iDist = s.GetArgVal();
-		else
-			iDist = UO_MAP_VIEW_SIZE_DEFAULT;
+		// Locate arguments for the called function
+		tchar* z = strchr(argRaw, ' ');
 
-		CObjBaseTemplate * pObj = dynamic_cast <CObjBaseTemplate *>(this);
-		if ( pObj == nullptr )
+		if (z)
 		{
-			iType = 0;
-			DEBUG_ERR(( "FOR Loop trigger on non-world object '%s'\n", GetName()));
+			*z = 0;
+			++z;
+			GETNONWHITESPACE(z);
+		}
+
+		if (z && *z)
+		{
+			int64 iN1 = pArgs->m_iN1;
+			int64 iN2 = pArgs->m_iN2;
+			int64 iN3 = pArgs->m_iN3;
+			CScriptObj* pO1 = pArgs->m_pO1;
+			CSString s1 = pArgs->m_s1;
+			CSString s1_raw = pArgs->m_s1_buf_vec;
+			pArgs->m_v.clear();
+			pArgs->Init(z);
+
+			fRes = pRef->r_Call(argRaw, pSrc, pArgs, &sVal);
+
+			pArgs->m_iN1 = iN1;
+			pArgs->m_iN2 = iN2;
+			pArgs->m_iN3 = iN3;
+			pArgs->m_pO1 = pO1;
+			pArgs->m_s1 = s1;
+			pArgs->m_s1_buf_vec = s1_raw;
+			pArgs->m_v.clear();
 		}
 		else
-		{
-			CObjBaseTemplate * pObjTop = pObj->GetTopLevelObj();
-			CPointMap pt = pObjTop->GetTopPoint();
-			if ( iType & 1 )		// FORITEM, FOROBJ
-			{
-				CWorldSearch AreaItems( pt, iDist );
-				for (;;)
-				{
-					++LoopsMade;
-					if ( g_Cfg.m_iMaxLoopTimes && ( LoopsMade >= g_Cfg.m_iMaxLoopTimes ))
-						goto toomanyloops;
-
-					CItem * pItem = AreaItems.GetItem();
-					if ( pItem == nullptr )
-						break;
-					TRIGRET_TYPE iRet = pItem->OnTriggerRun( s, TRIGRUN_SECTION_TRUE, pSrc, pArgs, pResult );
-					if ( iRet == TRIGRET_BREAK )
-					{
-						EndContext = StartContext;
-						break;
-					}
-					if (( iRet != TRIGRET_ENDIF ) && ( iRet != TRIGRET_CONTINUE ))
-						return( iRet );
-					if ( iRet == TRIGRET_CONTINUE )
-						EndContext = StartContext;
-					else
-						EndContext = s.GetContext();
-					s.SeekContext( StartContext );
-				}
-			}
-			if ( iType & 2 )		// FORCHAR, FOROBJ
-			{
-				CWorldSearch AreaChars( pt, iDist );
-				AreaChars.SetAllShow((iType & 0x20) ? true : false);
-				for (;;)
-				{
-					++LoopsMade;
-					if ( g_Cfg.m_iMaxLoopTimes && ( LoopsMade >= g_Cfg.m_iMaxLoopTimes ))
-						goto toomanyloops;
-
-					CChar * pChar = AreaChars.GetChar();
-					if ( pChar == nullptr )
-						break;
-					if ( ( iType & 0x10 ) && ( ! pChar->IsClient() ) )	// FORCLIENTS
-						continue;
-					if ( ( iType & 0x20 ) && ( pChar->m_pPlayer == nullptr ) )	// FORPLAYERS
-						continue;
-					TRIGRET_TYPE iRet = pChar->OnTriggerRun( s, TRIGRUN_SECTION_TRUE, pSrc, pArgs, pResult );
-					if ( iRet == TRIGRET_BREAK )
-					{
-						EndContext = StartContext;
-						break;
-					}
-					if (( iRet != TRIGRET_ENDIF ) && ( iRet != TRIGRET_CONTINUE ))
-						return( iRet );
-					if ( iRet == TRIGRET_CONTINUE )
-						EndContext = StartContext;
-					else
-						EndContext = s.GetContext();
-					s.SeekContext( StartContext );
-				}
-			}
-		}
+			fRes = pRef->r_Call(argRaw, pSrc, pArgs, &sVal);
 	}
-
-	if ( iType & 0x40 )	// FORINSTANCES
-	{
-		CResourceID rid;
-		tchar * pArg = s.GetArgStr();
-		Str_Parse(pArg, nullptr, " \t,");
-
-		if (*pArg != '\0')
-		{
-			rid = g_Cfg.ResourceGetID(RES_UNKNOWN, pArg);
-		}
-		else
-		{
-            g_Log.EventError("FORINSTANCES called without argument.\n");
-
-            // This usage is not allowed anymore, it's an ambiguous and error prone usage
-			/*
-            const CObjBase * pObj = dynamic_cast <CObjBase*>(this);
-			if ( pObj && pObj->Base_GetDef() )
-			{
-				rid = pObj->Base_GetDef()->GetResourceID();
-			}
-            */
-		}
-
-		// No need to loop if there is no valid resource id
-		if ( rid.IsValidUID() )
-		{
-			const dword dwTotal = g_World.GetUIDCount();
-			dword dwCount = dwTotal - 1;
-			dword dwTotalInstances = 0; // Will acquire the correct value for this during the loop
-			dword dwUID = 0;
-			dword dwFound = 0;
-
-			while ( dwCount-- )
-			{
-				// Check the current UID to test is within our range
-				if ( ++dwUID >= dwTotal )
-					break;
-
-				// Acquire the object with this UID and check it exists
-				CObjBase * pObj = g_World.FindUID( dwUID );
-				if ( pObj == nullptr )
-					continue;
-
-				const CBaseBaseDef* pBase = pObj->Base_GetDef();
-				ASSERT(pBase);
-				// Check to see if the object resource id matches what we're looking for
-				if (pBase->GetResourceID() != rid)
-					continue;
-
-				// Check we do not loop too many times
-				++LoopsMade;
-				if ( g_Cfg.m_iMaxLoopTimes && ( LoopsMade >= g_Cfg.m_iMaxLoopTimes ))
-					goto toomanyloops;
-
-				// Execute script on this object
-				TRIGRET_TYPE iRet = pObj->OnTriggerRun( s, TRIGRUN_SECTION_TRUE, pSrc, pArgs, pResult );
-				if ( iRet == TRIGRET_BREAK )
-				{
-					EndContext = StartContext;
-					break;
-				}
- 				if (( iRet != TRIGRET_ENDIF ) && ( iRet != TRIGRET_CONTINUE ))
-					return( iRet );
-				if ( iRet == TRIGRET_CONTINUE )
-					EndContext = StartContext;
-				else
-					EndContext = s.GetContext();
-				s.SeekContext( StartContext );
-
-				// Acquire the total instances that exist for this item if we can
-				if ( dwTotalInstances == 0 )
-					dwTotalInstances = pBase->GetRefInstances();
-
-				++dwFound;
-
-				// If we know how many instances there are, abort the loop once we've found them all
-				if ( (dwTotalInstances > 0) && (dwFound >= dwTotalInstances) )
-					break;
-			}
-		}
-	}
-
-	if (iType & 0x100)	// FORTIMERF
-	{
-		tchar* ptcArgs;
-		if (Str_Parse(s.GetArgStr(), &ptcArgs, " \t,"))
-		{
-			char funcname[1024];
-			Str_CopyLimitNull(funcname, ptcArgs, sizeof(funcname));
-
-			TRIGRET_TYPE iRet = CTimedFunctions::Loop(funcname, LoopsMade, StartContext, s, pSrc, pArgs, pResult);
-			if ((iRet != TRIGRET_ENDIF) && (iRet != TRIGRET_CONTINUE))
-				return iRet;
-		}
-	}
-
-	if ( g_Cfg.m_iMaxLoopTimes )
-	{
-toomanyloops:
-		if ( LoopsMade >= g_Cfg.m_iMaxLoopTimes )
-			g_Log.EventError("Terminating loop cycle since it seems being dead-locked (%d iterations already passed)\n", LoopsMade);
-	}
-
-	if ( EndContext.m_iOffset <= StartContext.m_iOffset )
-	{
-		// just skip to the end.
-		TRIGRET_TYPE iRet = OnTriggerRun( s, TRIGRUN_SECTION_FALSE, pSrc, pArgs, pResult );
-		if ( iRet != TRIGRET_ENDIF )
-			return iRet;
-	}
-	else
-		s.SeekContext( EndContext );
-
-	return TRIGRET_ENDIF;
+	
+	return fRes;
 }
+
+bool CScriptObj::Execute_FullTrigger(CScript& s, CTextConsole* pSrc, CScriptTriggerArgs* pArgs)
+{
+	ADDTOCALLSTACK("CScriptObj::Execute_FullTrigger");
+	bool fRes = false;
+
+	tchar* piCmd[7];
+	tchar* ptcTmp = Str_GetTemp();
+	Str_CopyLimitNull(ptcTmp, s.GetArgRaw(), STR_TEMPLENGTH);
+	int iArgQty = Str_ParseCmds(ptcTmp, piCmd, CountOf(piCmd), " ,\t");
+	CScriptObj* pRef = this;
+	if (iArgQty == 2)
+	{
+		CChar* pCharFound = CUID::CharFindFromUID(Str_ToI(piCmd[1]));
+		if (pCharFound)
+			pRef = pCharFound;
+	}
+
+	// Parse object references, src.* is not parsed
+	// by r_GetRef so do it manually
+	//r_GetRef(const_cast<lpctstr &>(static_cast<lptstr &>(argRaw)), pRef);
+	if (!strnicmp("SRC.", ptcTmp, 4))
+	{
+		ptcTmp += 4;
+		pRef = pSrc->GetChar();
+	}
+
+	// Check that an object is referenced
+	if (pRef != nullptr)
+	{
+		// Locate arguments for the called function
+		TRIGRET_TYPE tRet;
+		tchar* z = strchr(ptcTmp, ' ');
+
+		if (z)
+		{
+			*z = 0;
+			++z;
+			GETNONWHITESPACE(z);
+		}
+
+		if (z && *z)
+		{
+			int64 iN1 = pArgs->m_iN1;
+			int64 iN2 = pArgs->m_iN2;
+			int64 iN3 = pArgs->m_iN3;
+			CScriptObj* pO1 = pArgs->m_pO1;
+			CSString s1 = pArgs->m_s1;
+			CSString s1_raw = pArgs->m_s1_buf_vec;
+			pArgs->m_v.clear();
+			pArgs->Init(z);
+
+			tRet = pRef->OnTrigger(ptcTmp, pSrc, pArgs);
+
+			pArgs->m_iN1 = iN1;
+			pArgs->m_iN2 = iN2;
+			pArgs->m_iN3 = iN3;
+			pArgs->m_pO1 = pO1;
+			pArgs->m_s1 = s1;
+			pArgs->m_s1_buf_vec = s1_raw;
+			pArgs->m_v.clear();
+		}
+		else
+			tRet = pRef->OnTrigger(ptcTmp, pSrc, pArgs);
+
+		pArgs->m_VarsLocal.SetNum("return", tRet, false);
+		fRes = (tRet > 0) ? 1 : 0;
+	}
+
+	return fRes;
+}
+
 
 bool CScriptObj::OnTriggerFind( CScript & s, lpctstr pszTrigName )
 {
@@ -1955,7 +2192,7 @@ TRIGRET_TYPE CScriptObj::OnTrigger( lpctstr pszTrigName, CTextConsole * pSrc, CS
 }
 
 
-enum SK_TYPE
+enum SK_TYPE : int
 {
 	SK_BEGIN,
 	SK_BREAK,
@@ -2029,6 +2266,497 @@ lpctstr const CScriptObj::sm_szScriptKeys[SK_QTY+1] =
 	nullptr
 };
 
+TRIGRET_TYPE CScriptObj::OnTriggerLoopGeneric(CScript& s, int iType, CTextConsole* pSrc, CScriptTriggerArgs* pArgs, CSString* pResult)
+{
+	ADDTOCALLSTACK("CScriptObj::OnTriggerLoopGeneric");
+	// loop from start here to the ENDFOR
+	// See WebPageScriptList for dealing with Arrays.
+
+	CScriptLineContext StartContext = s.GetContext();
+	CScriptLineContext EndContext = StartContext;
+	int LoopsMade = 0;
+
+	if (iType & 8)		// WHILE
+	{
+		TemporaryString tsConditionBuf;
+		TemporaryString tsOrig;
+		Str_CopyLimitNull(tsOrig.buffer(), s.GetArgStr(), tsOrig.capacity());
+
+		int iWhile = 0;
+		for (;;)
+		{
+			++LoopsMade;
+			if (g_Cfg.m_iMaxLoopTimes && (LoopsMade >= g_Cfg.m_iMaxLoopTimes))
+				goto toomanyloops;
+
+			tchar* ptcCond = tsConditionBuf.buffer();
+			Str_CopyLimitNull(ptcCond, tsOrig.buffer(), tsConditionBuf.capacity());
+			ParseScriptText(ptcCond, pSrc, 0, pArgs);
+			if (!Exp_GetLLVal(ptcCond))
+				break;
+
+			pArgs->m_VarsLocal.SetNum("_WHILE", iWhile, false);
+			++iWhile;
+
+			TRIGRET_TYPE iRet = OnTriggerRun(s, TRIGRUN_SECTION_TRUE, pSrc, pArgs, pResult);
+			if (iRet == TRIGRET_BREAK)
+			{
+				EndContext = StartContext;
+				break;
+			}
+			if ((iRet != TRIGRET_ENDIF) && (iRet != TRIGRET_CONTINUE))
+				return iRet;
+			if (iRet == TRIGRET_CONTINUE)
+				EndContext = StartContext;
+			else
+				EndContext = s.GetContext();
+			s.SeekContext(StartContext);
+		}
+	}
+	else
+	{
+		ParseScriptText(s.GetArgStr(), pSrc, 0, pArgs);
+	}
+
+
+	if (iType & 4)		// FOR
+	{
+		bool fCountDown = false;
+		int iMin = 0;
+		int iMax = 0;
+		tchar* ppArgs[3];
+		int iQty = Str_ParseCmds(s.GetArgStr(), ppArgs, CountOf(ppArgs), ", ");
+		CSString sLoopVar("_FOR");
+
+		switch (iQty)
+		{
+		case 1:		// FOR x
+			iMin = 1;
+			iMax = Exp_GetSingle(ppArgs[0]);
+			break;
+		case 2:
+			if (IsDigit(*ppArgs[0]) || ((*ppArgs[0] == '-') && IsDigit(*(ppArgs[0] + 1))))
+			{
+				iMin = Exp_GetSingle(ppArgs[0]);
+				iMax = Exp_GetSingle(ppArgs[1]);
+			}
+			else
+			{
+				sLoopVar = ppArgs[0];
+				iMin = 1;
+				iMax = Exp_GetSingle(ppArgs[1]);
+			}
+			break;
+		case 3:
+			sLoopVar = ppArgs[0];
+			iMin = Exp_GetSingle(ppArgs[1]);
+			iMax = Exp_GetSingle(ppArgs[2]);
+			break;
+		default:
+			iMin = iMax = 1;
+			break;
+		}
+
+		if (iMin > iMax)
+			fCountDown = true;
+
+		if (fCountDown)
+			for (int i = iMin; i >= iMax; --i)
+			{
+				++LoopsMade;
+				if (g_Cfg.m_iMaxLoopTimes && (LoopsMade >= g_Cfg.m_iMaxLoopTimes))
+					goto toomanyloops;
+
+				pArgs->m_VarsLocal.SetNum(sLoopVar, i, false);
+				TRIGRET_TYPE iRet = OnTriggerRun(s, TRIGRUN_SECTION_TRUE, pSrc, pArgs, pResult);
+				if (iRet == TRIGRET_BREAK)
+				{
+					EndContext = StartContext;
+					break;
+				}
+				if ((iRet != TRIGRET_ENDIF) && (iRet != TRIGRET_CONTINUE))
+					return iRet;
+
+				if (iRet == TRIGRET_CONTINUE)
+					EndContext = StartContext;
+				else
+					EndContext = s.GetContext();
+				s.SeekContext(StartContext);
+			}
+		else
+			for (int i = iMin; i <= iMax; ++i)
+			{
+				++LoopsMade;
+				if (g_Cfg.m_iMaxLoopTimes && (LoopsMade >= g_Cfg.m_iMaxLoopTimes))
+					goto toomanyloops;
+
+				pArgs->m_VarsLocal.SetNum(sLoopVar, i, false);
+				TRIGRET_TYPE iRet = OnTriggerRun(s, TRIGRUN_SECTION_TRUE, pSrc, pArgs, pResult);
+				if (iRet == TRIGRET_BREAK)
+				{
+					EndContext = StartContext;
+					break;
+				}
+				if ((iRet != TRIGRET_ENDIF) && (iRet != TRIGRET_CONTINUE))
+					return iRet;
+
+				if (iRet == TRIGRET_CONTINUE)
+					EndContext = StartContext;
+				else
+					EndContext = s.GetContext();
+				s.SeekContext(StartContext);
+			}
+	}
+
+	if ((iType & 1) || (iType & 2))
+	{
+		int iDist;
+		if (s.HasArgs())
+			iDist = s.GetArgVal();
+		else
+			iDist = UO_MAP_VIEW_SIZE_DEFAULT;
+
+		CObjBaseTemplate* pObj = dynamic_cast <CObjBaseTemplate*>(this);
+		if (pObj == nullptr)
+		{
+			iType = 0;
+			DEBUG_ERR(("FOR Loop trigger on non-world object '%s'\n", GetName()));
+		}
+		else
+		{
+			CObjBaseTemplate* pObjTop = pObj->GetTopLevelObj();
+			CPointMap pt = pObjTop->GetTopPoint();
+			if (iType & 1)		// FORITEM, FOROBJ
+			{
+				CWorldSearch AreaItems(pt, iDist);
+				for (;;)
+				{
+					++LoopsMade;
+					if (g_Cfg.m_iMaxLoopTimes && (LoopsMade >= g_Cfg.m_iMaxLoopTimes))
+						goto toomanyloops;
+
+					CItem* pItem = AreaItems.GetItem();
+					if (pItem == nullptr)
+						break;
+					TRIGRET_TYPE iRet = pItem->OnTriggerRun(s, TRIGRUN_SECTION_TRUE, pSrc, pArgs, pResult);
+					if (iRet == TRIGRET_BREAK)
+					{
+						EndContext = StartContext;
+						break;
+					}
+					if ((iRet != TRIGRET_ENDIF) && (iRet != TRIGRET_CONTINUE))
+						return(iRet);
+					if (iRet == TRIGRET_CONTINUE)
+						EndContext = StartContext;
+					else
+						EndContext = s.GetContext();
+					s.SeekContext(StartContext);
+				}
+			}
+			if (iType & 2)		// FORCHAR, FOROBJ
+			{
+				CWorldSearch AreaChars(pt, iDist);
+				AreaChars.SetAllShow((iType & 0x20) ? true : false);
+				for (;;)
+				{
+					++LoopsMade;
+					if (g_Cfg.m_iMaxLoopTimes && (LoopsMade >= g_Cfg.m_iMaxLoopTimes))
+						goto toomanyloops;
+
+					CChar* pChar = AreaChars.GetChar();
+					if (pChar == nullptr)
+						break;
+					if ((iType & 0x10) && (!pChar->IsClientActive()))	// FORCLIENTS
+						continue;
+					if ((iType & 0x20) && (pChar->m_pPlayer == nullptr))	// FORPLAYERS
+						continue;
+					TRIGRET_TYPE iRet = pChar->OnTriggerRun(s, TRIGRUN_SECTION_TRUE, pSrc, pArgs, pResult);
+					if (iRet == TRIGRET_BREAK)
+					{
+						EndContext = StartContext;
+						break;
+					}
+					if ((iRet != TRIGRET_ENDIF) && (iRet != TRIGRET_CONTINUE))
+						return(iRet);
+					if (iRet == TRIGRET_CONTINUE)
+						EndContext = StartContext;
+					else
+						EndContext = s.GetContext();
+					s.SeekContext(StartContext);
+				}
+			}
+		}
+	}
+
+	if (iType & 0x40)	// FORINSTANCES
+	{
+		CResourceID rid;
+		tchar* pArg = s.GetArgStr();
+		Str_Parse(pArg, nullptr, " \t,");
+
+		if (*pArg != '\0')
+		{
+			rid = g_Cfg.ResourceGetID(RES_UNKNOWN, pArg);
+		}
+		else
+		{
+			g_Log.EventError("FORINSTANCES called without argument.\n");
+
+			// This usage is not allowed anymore, it's an ambiguous and error prone usage
+			/*
+			const CObjBase * pObj = dynamic_cast <CObjBase*>(this);
+			if ( pObj && pObj->Base_GetDef() )
+			{
+				rid = pObj->Base_GetDef()->GetResourceID();
+			}
+			*/
+		}
+
+		// No need to loop if there is no valid resource id
+		if (rid.IsValidUID())
+		{
+			const dword dwTotal = g_World.GetUIDCount();
+			dword dwCount = dwTotal - 1;
+			dword dwTotalInstances = 0; // Will acquire the correct value for this during the loop
+			dword dwUID = 0;
+			dword dwFound = 0;
+
+			while (dwCount--)
+			{
+				// Check the current UID to test is within our range
+				if (++dwUID >= dwTotal)
+					break;
+
+				// Acquire the object with this UID and check it exists
+				CObjBase* pObj = g_World.FindUID(dwUID);
+				if (pObj == nullptr)
+					continue;
+
+				const CBaseBaseDef* pBase = pObj->Base_GetDef();
+				ASSERT(pBase);
+				// Check to see if the object resource id matches what we're looking for
+				if (pBase->GetResourceID() != rid)
+					continue;
+
+				// Check we do not loop too many times
+				++LoopsMade;
+				if (g_Cfg.m_iMaxLoopTimes && (LoopsMade >= g_Cfg.m_iMaxLoopTimes))
+					goto toomanyloops;
+
+				// Execute script on this object
+				TRIGRET_TYPE iRet = pObj->OnTriggerRun(s, TRIGRUN_SECTION_TRUE, pSrc, pArgs, pResult);
+				if (iRet == TRIGRET_BREAK)
+				{
+					EndContext = StartContext;
+					break;
+				}
+				if ((iRet != TRIGRET_ENDIF) && (iRet != TRIGRET_CONTINUE))
+					return(iRet);
+				if (iRet == TRIGRET_CONTINUE)
+					EndContext = StartContext;
+				else
+					EndContext = s.GetContext();
+				s.SeekContext(StartContext);
+
+				// Acquire the total instances that exist for this item if we can
+				if (dwTotalInstances == 0)
+					dwTotalInstances = pBase->GetRefInstances();
+
+				++dwFound;
+
+				// If we know how many instances there are, abort the loop once we've found them all
+				if ((dwTotalInstances > 0) && (dwFound >= dwTotalInstances))
+					break;
+			}
+		}
+	}
+
+	if (iType & 0x100)	// FORTIMERF
+	{
+		tchar* ptcArgs;
+		if (Str_Parse(s.GetArgStr(), &ptcArgs, " \t,"))
+		{
+			char funcname[1024];
+			Str_CopyLimitNull(funcname, ptcArgs, sizeof(funcname));
+
+			TRIGRET_TYPE iRet = CTimedFunctions::Loop(funcname, LoopsMade, StartContext, s, pSrc, pArgs, pResult);
+			if ((iRet != TRIGRET_ENDIF) && (iRet != TRIGRET_CONTINUE))
+				return iRet;
+		}
+	}
+
+	if (g_Cfg.m_iMaxLoopTimes)
+	{
+	toomanyloops:
+		if (LoopsMade >= g_Cfg.m_iMaxLoopTimes)
+			g_Log.EventError("Terminating loop cycle since it seems being dead-locked (%d iterations already passed)\n", LoopsMade);
+	}
+
+	if (EndContext.m_iOffset <= StartContext.m_iOffset)
+	{
+		// just skip to the end.
+		TRIGRET_TYPE iRet = OnTriggerRun(s, TRIGRUN_SECTION_FALSE, pSrc, pArgs, pResult);
+		if (iRet != TRIGRET_ENDIF)
+			return iRet;
+	}
+	else
+		s.SeekContext(EndContext);
+
+	return TRIGRET_ENDIF;
+}
+
+TRIGRET_TYPE CScriptObj::OnTriggerLoopForCharSpecial(CScript& s, SK_TYPE iCmd, CTextConsole* pSrc, CScriptTriggerArgs* pArgs, CSString* pResult)
+{
+	ADDTOCALLSTACK("CScriptObj::OnTriggerLoopForCharSpecial");
+	TRIGRET_TYPE iRet = TRIGRET_RET_DEFAULT;
+	CChar* pCharThis = dynamic_cast <CChar*> (this);
+
+	if (pCharThis)
+	{
+		if (s.HasArgs())
+		{
+			ParseScriptText(s.GetArgRaw(), pSrc, 0, pArgs);
+			if (iCmd == SK_FORCHARLAYER)
+				iRet = pCharThis->OnCharTrigForLayerLoop(s, pSrc, pArgs, pResult, (LAYER_TYPE)s.GetArgVal());
+			else
+				iRet = pCharThis->OnCharTrigForMemTypeLoop(s, pSrc, pArgs, pResult, s.GetArgWVal());
+		}
+		else
+		{
+			g_Log.EventError("FORCHAR[layer/memorytype] called on char 0%" PRIx32 " (%s) without arguments.\n", (dword)(pCharThis->GetUID()), pCharThis->GetName());
+			iRet = OnTriggerRun(s, TRIGRUN_SECTION_FALSE, pSrc, pArgs, pResult);
+		}
+	}
+	else
+	{
+		g_Log.EventError("FORCHAR[layer/memorytype] called on non-char object '%s'.\n", GetName());
+		iRet = OnTriggerRun(s, TRIGRUN_SECTION_FALSE, pSrc, pArgs, pResult);
+	}
+
+	return iRet;
+}
+
+TRIGRET_TYPE CScriptObj::OnTriggerLoopForCont(CScript& s, CTextConsole* pSrc, CScriptTriggerArgs* pArgs, CSString* pResult)
+{
+	ADDTOCALLSTACK("CScriptObj::OnTriggerLoopForCont");
+	TRIGRET_TYPE iRet = TRIGRET_RET_DEFAULT;
+
+	if (s.HasArgs())
+	{
+		tchar* ppArgs[2];
+		int iArgQty = Str_ParseCmds(const_cast<tchar*>(s.GetArgRaw()), ppArgs, CountOf(ppArgs), " \t,");
+
+		if (iArgQty >= 1)
+		{
+			TemporaryString tsOrigValue;
+			tchar* ptcOrigValue = tsOrigValue.buffer();
+			Str_ConcatLimitNull(ptcOrigValue, ppArgs[0], tsOrigValue.capacity());
+			ParseScriptText(ptcOrigValue, pSrc, 0, pArgs);
+
+			CUID pCurUid(Exp_GetDWVal(ptcOrigValue));
+			if (pCurUid.IsValidUID())
+			{
+				CObjBase* pObj = pCurUid.ObjFind();
+				if (pObj && pObj->IsContainer())
+				{
+					CContainer* pContThis = dynamic_cast<CContainer*>(pObj);
+					ASSERT(pContThis);
+
+					CScriptLineContext StartContext = s.GetContext();
+					CScriptLineContext EndContext = StartContext;
+					iRet = pContThis->OnGenericContTriggerForLoop(s, pSrc, pArgs, pResult, StartContext, EndContext, ppArgs[1] != nullptr ? Exp_GetVal(ppArgs[1]) : 255);
+				}
+				else
+				{
+					g_Log.EventError("FORCONT called on invalid uid/invalid container (UID: 0%x).\n", pCurUid.GetObjUID());
+					iRet = OnTriggerRun(s, TRIGRUN_SECTION_FALSE, pSrc, pArgs, pResult);
+				}
+			}
+			else
+			{
+				g_Log.EventError("FORCONT called with invalid arguments (UID: 0%x, LEVEL: %s).\n", pCurUid.GetObjUID(), (ppArgs[1] && *ppArgs[1]) ? ppArgs[1] : "255");
+				iRet = OnTriggerRun(s, TRIGRUN_SECTION_FALSE, pSrc, pArgs, pResult);
+			}
+		}
+		else
+		{
+			g_Log.EventError("FORCONT called without arguments.\n");
+			iRet = OnTriggerRun(s, TRIGRUN_SECTION_FALSE, pSrc, pArgs, pResult);
+		}
+	}
+	else
+	{
+		g_Log.EventError("FORCONT called without arguments.\n");
+		iRet = OnTriggerRun(s, TRIGRUN_SECTION_FALSE, pSrc, pArgs, pResult);
+	}
+
+	return iRet;
+}
+
+TRIGRET_TYPE CScriptObj::OnTriggerLoopForContSpecial(CScript& s, SK_TYPE iCmd, CTextConsole* pSrc, CScriptTriggerArgs* pArgs, CSString* pResult)
+{
+	ADDTOCALLSTACK("CScriptObj::OnTriggerLoopForContSpecial");
+	TRIGRET_TYPE iRet = TRIGRET_RET_DEFAULT;
+
+	CObjBase* pObjCont = dynamic_cast <CObjBase*> (this);
+	CContainer* pCont = dynamic_cast <CContainer*> (this);
+	if (pObjCont && pCont)
+	{
+		if (s.HasArgs())
+		{
+			lpctstr ptcKey = s.GetArgRaw();
+			SKIP_SEPARATORS(ptcKey);
+
+			tchar* ppArgs[2];
+
+			if (Str_ParseCmds(const_cast<tchar*>(ptcKey), ppArgs, CountOf(ppArgs), " \t,") >= 1)
+			{
+				TemporaryString tsParsedArg0;
+				Str_CopyLimitNull(tsParsedArg0.buffer(), ppArgs[0], tsParsedArg0.capacity());
+				if ((ParseScriptText(tsParsedArg0.buffer(), pSrc, 0, pArgs) > 0))
+				{
+					TemporaryString tsParsedArg1;
+					if (ppArgs[1] != nullptr)
+					{
+						Str_CopyLimitNull(tsParsedArg1.buffer(), ppArgs[1], tsParsedArg0.capacity());
+						if (ParseScriptText(tsParsedArg1.buffer(), pSrc, 0, pArgs) <= 0)
+							goto forcont_incorrect_args;
+					}
+
+					CScriptLineContext StartContext = s.GetContext();
+					CScriptLineContext EndContext = StartContext;
+					lpctstr ptcParsedArg1 = tsParsedArg1.buffer();
+					iRet = pCont->OnContTriggerForLoop(s, pSrc, pArgs, pResult, StartContext, EndContext,
+						g_Cfg.ResourceGetID(((iCmd == SK_FORCONTID) ? RES_ITEMDEF : RES_TYPEDEF), tsParsedArg0.buffer()),
+						0, ((ppArgs[1] != nullptr) ? Exp_GetVal(ptcParsedArg1) : 255));
+				}
+				else
+				{
+				forcont_incorrect_args:
+					g_Log.EventError("FORCONT[id/type] called on container 0%x with incorrect arguments.\n", (dword)pObjCont->GetUID());
+					iRet = OnTriggerRun(s, TRIGRUN_SECTION_FALSE, pSrc, pArgs, pResult);
+				}
+			}
+			else
+			{
+				g_Log.EventError("FORCONT[id/type] called on container 0%x with incorrect arguments.\n", (dword)pObjCont->GetUID());
+				iRet = OnTriggerRun(s, TRIGRUN_SECTION_FALSE, pSrc, pArgs, pResult);
+			}
+		}
+		else
+		{
+			g_Log.EventError("FORCONT[id/type] called on container 0%x without arguments.\n", (dword)pObjCont->GetUID());
+			iRet = OnTriggerRun(s, TRIGRUN_SECTION_FALSE, pSrc, pArgs, pResult);
+		}
+	}
+	else
+	{
+		g_Log.EventError("FORCONT[id/type] called on non-container object '%s'.\n", GetName());
+		iRet = OnTriggerRun(s, TRIGRUN_SECTION_FALSE, pSrc, pArgs, pResult);
+	}
+
+	return iRet;
+}
 
 TRIGRET_TYPE CScriptObj::OnTriggerRun( CScript &s, TRIGRUN_TYPE trigrun, CTextConsole * pSrc, CScriptTriggerArgs * pArgs, CSString * pResult )
 {
@@ -2131,6 +2859,8 @@ jump_in:
 			continue;	// just ignore it.
 		}
 
+		// At this point i should be in a new section and i want to parse it fully.
+		// Start by parsing the arguments and/or executing special statements.
 		switch ( iCmd )
 		{
 			case SK_BREAK:
@@ -2139,155 +2869,42 @@ jump_in:
 			case SK_CONTINUE:
 				return TRIGRET_CONTINUE;
 
-			case SK_FORITEM:		EXC_SET_BLOCK("foritem");		iRet = OnTriggerForLoop(s, 1,    pSrc, pArgs, pResult); break;
-			case SK_FORCHAR:		EXC_SET_BLOCK("forchar");		iRet = OnTriggerForLoop(s, 2,    pSrc, pArgs, pResult);	break;
-			case SK_FORCLIENTS:		EXC_SET_BLOCK("forclients");	iRet = OnTriggerForLoop(s, 0x12, pSrc, pArgs, pResult);	break;
-			case SK_FOROBJ:			EXC_SET_BLOCK("forobjs");		iRet = OnTriggerForLoop(s, 3,    pSrc, pArgs, pResult);	break;
-			case SK_FORPLAYERS:		EXC_SET_BLOCK("forplayers");	iRet = OnTriggerForLoop(s, 0x22, pSrc, pArgs, pResult);	break;
-			case SK_FOR:			EXC_SET_BLOCK("for");			iRet = OnTriggerForLoop(s, 4,    pSrc, pArgs, pResult);	break;
-			case SK_WHILE:			EXC_SET_BLOCK("while");		    iRet = OnTriggerForLoop(s, 8,    pSrc, pArgs, pResult);	break;
-			case SK_FORINSTANCE:	EXC_SET_BLOCK("forinstance");	iRet = OnTriggerForLoop(s, 0x40, pSrc, pArgs, pResult);	break;
-			case SK_FORTIMERF:		EXC_SET_BLOCK("fortimerf");	    iRet = OnTriggerForLoop(s, 0x100,pSrc, pArgs, pResult);	break;
+			case SK_FORITEM:	EXC_SET_BLOCK("foritem");		iRet = OnTriggerLoopGeneric(s, 1,    pSrc, pArgs, pResult); break;
+			case SK_FORCHAR:	EXC_SET_BLOCK("forchar");		iRet = OnTriggerLoopGeneric(s, 2,    pSrc, pArgs, pResult);	break;
+			case SK_FORCLIENTS:	EXC_SET_BLOCK("forclients");	iRet = OnTriggerLoopGeneric(s, 0x12, pSrc, pArgs, pResult);	break;
+			case SK_FOROBJ:		EXC_SET_BLOCK("forobjs");		iRet = OnTriggerLoopGeneric(s, 3,    pSrc, pArgs, pResult);	break;
+			case SK_FORPLAYERS:	EXC_SET_BLOCK("forplayers");	iRet = OnTriggerLoopGeneric(s, 0x22, pSrc, pArgs, pResult);	break;
+			case SK_FOR:		EXC_SET_BLOCK("for");			iRet = OnTriggerLoopGeneric(s, 4,    pSrc, pArgs, pResult);	break;
+			case SK_WHILE:		EXC_SET_BLOCK("while");		    iRet = OnTriggerLoopGeneric(s, 8,    pSrc, pArgs, pResult);	break;
+			case SK_FORINSTANCE:EXC_SET_BLOCK("forinstance");	iRet = OnTriggerLoopGeneric(s, 0x40, pSrc, pArgs, pResult);	break;
+			case SK_FORTIMERF:	EXC_SET_BLOCK("fortimerf");	    iRet = OnTriggerLoopGeneric(s, 0x100,pSrc, pArgs, pResult);	break;
+
 			case SK_FORCHARLAYER:
 			case SK_FORCHARMEMORYTYPE:
 				{
 					EXC_SET_BLOCK("forchar[layer/memorytype]");
-					CChar * pCharThis = dynamic_cast <CChar *> (this);
-					if ( pCharThis )
-					{
-						if ( s.HasArgs() )
-						{
-							ParseText(s.GetArgRaw(), pSrc, 0, pArgs);
-							if ( iCmd == SK_FORCHARLAYER )
-								iRet = pCharThis->OnCharTrigForLayerLoop(s, pSrc, pArgs, pResult, (LAYER_TYPE)s.GetArgVal() );
-							else
-								iRet = pCharThis->OnCharTrigForMemTypeLoop(s, pSrc, pArgs, pResult, s.GetArgWVal() );
-						}
-						else
-						{
-							DEBUG_ERR(( "FORCHAR[layer/memorytype] called on char 0%" PRIx32 " (%s) without arguments.\n", (dword)(pCharThis->GetUID()), pCharThis->GetName() ));
-							iRet = OnTriggerRun( s, TRIGRUN_SECTION_FALSE, pSrc, pArgs, pResult );
-						}
-					}
-					else
-					{
-						DEBUG_ERR(( "FORCHAR[layer/memorytype] called on non-char object '%s'.\n", GetName() ));
-						iRet = OnTriggerRun( s, TRIGRUN_SECTION_FALSE, pSrc, pArgs, pResult );
-					}
+					iRet = OnTriggerLoopForCharSpecial(s, iCmd, pSrc, pArgs, pResult);
 				} break;
+
 			case SK_FORCONT:
 				{
 					EXC_SET_BLOCK("forcont");
-					if ( s.HasArgs() )
-					{
-						tchar * ppArgs[2];
-						int iArgQty = Str_ParseCmds(const_cast<tchar *>(s.GetArgRaw()), ppArgs, CountOf(ppArgs), " \t,");
-
-						if ( iArgQty >= 1 )
-						{
-							TemporaryString tsOrigValue;
-							tchar* ptcOrigValue = tsOrigValue.buffer();
-							Str_ConcatLimitNull(ptcOrigValue, ppArgs[0], tsOrigValue.capacity());
-							ParseText(ptcOrigValue, pSrc, 0, pArgs);
-
-							CUID pCurUid(Exp_GetDWVal(ptcOrigValue));
-							if ( pCurUid.IsValidUID() )
-							{
-								CObjBase * pObj = pCurUid.ObjFind();
-								if ( pObj && pObj->IsContainer() )
-								{
-									CContainer * pContThis = dynamic_cast<CContainer *>(pObj);
-									ASSERT(pContThis);
-
-									CScriptLineContext StartContext = s.GetContext();
-									CScriptLineContext EndContext = StartContext;
-									iRet = pContThis->OnGenericContTriggerForLoop(s, pSrc, pArgs, pResult, StartContext, EndContext, ppArgs[1] != nullptr ? Exp_GetVal(ppArgs[1]) : 255);
-								}
-								else
-								{
-									DEBUG_ERR(( "FORCONT called on invalid uid/invalid container (UID: 0%x).\n", pCurUid.GetObjUID() ));
-									iRet = OnTriggerRun( s, TRIGRUN_SECTION_FALSE, pSrc, pArgs, pResult );
-								}
-							}
-							else
-							{
-								DEBUG_ERR(( "FORCONT called with invalid arguments (UID: 0%x, LEVEL: %s).\n", pCurUid.GetObjUID(), (ppArgs[1] && *ppArgs[1]) ? ppArgs[1] : "255" ));
-								iRet = OnTriggerRun( s, TRIGRUN_SECTION_FALSE, pSrc, pArgs, pResult );
-							}
-						}
-						else
-						{
-							DEBUG_ERR(( "FORCONT called without arguments.\n" ));
-							iRet = OnTriggerRun( s, TRIGRUN_SECTION_FALSE, pSrc, pArgs, pResult );
-						}
-					}
-					else
-					{
-						DEBUG_ERR(( "FORCONT called without arguments.\n" ));
-						iRet = OnTriggerRun( s, TRIGRUN_SECTION_FALSE, pSrc, pArgs, pResult );
-					}
+					iRet = OnTriggerLoopForCont(s, pSrc, pArgs, pResult);
 				} break;
+
 			case SK_FORCONTID:
 			case SK_FORCONTTYPE:
 				{
 					EXC_SET_BLOCK("forcont[id/type]");
-					CObjBase * pObjCont = dynamic_cast <CObjBase *> (this);
-					CContainer * pCont = dynamic_cast <CContainer *> (this);
-					if ( pObjCont && pCont )
-					{
-						if ( s.HasArgs() )
-						{
-							lpctstr ptcKey = s.GetArgRaw();
-							SKIP_SEPARATORS(ptcKey);
-
-							tchar * ppArgs[2];
-
-							if ( Str_ParseCmds(const_cast<tchar *>(ptcKey), ppArgs, CountOf(ppArgs), " \t," ) >= 1 )
-							{
-								TemporaryString tsParsedArg0;
-								Str_CopyLimitNull(tsParsedArg0.buffer(), ppArgs[0], tsParsedArg0.capacity());
-								if ( (ParseText(tsParsedArg0.buffer(), pSrc, 0, pArgs ) > 0 ) )
-								{
-									TemporaryString tsParsedArg1;
-                                    if (ppArgs[1] != nullptr)
-                                    {
-										Str_CopyLimitNull(tsParsedArg1.buffer(), ppArgs[1], tsParsedArg0.capacity());
-                                        if (ParseText(tsParsedArg1.buffer(), pSrc, 0, pArgs) <= 0)
-                                            goto forcont_incorrect_args;
-                                    }
-									
-									CScriptLineContext StartContext = s.GetContext();
-									CScriptLineContext EndContext = StartContext;
-									lpctstr ptcParsedArg1 = tsParsedArg1.buffer();
-									iRet = pCont->OnContTriggerForLoop( s, pSrc, pArgs, pResult, StartContext, EndContext,
-										g_Cfg.ResourceGetID(((iCmd == SK_FORCONTID) ? RES_ITEMDEF : RES_TYPEDEF), tsParsedArg0.buffer()),
-										0, ((ppArgs[1] != nullptr) ? Exp_GetVal(ptcParsedArg1) : 255) );
-								}
-								else
-								{
-								forcont_incorrect_args:
-									DEBUG_ERR(( "FORCONT[id/type] called on container 0%x with incorrect arguments.\n", (dword)pObjCont->GetUID() ));
-									iRet = OnTriggerRun( s, TRIGRUN_SECTION_FALSE, pSrc, pArgs, pResult );
-								}
-							}
-							else
-							{
-								DEBUG_ERR(( "FORCONT[id/type] called on container 0%x with incorrect arguments.\n", (dword)pObjCont->GetUID() ));
-								iRet = OnTriggerRun( s, TRIGRUN_SECTION_FALSE, pSrc, pArgs, pResult );
-							}
-						}
-						else
-						{
-							DEBUG_ERR(( "FORCONT[id/type] called on container 0%x without arguments.\n", (dword)pObjCont->GetUID() ));
-							iRet = OnTriggerRun( s, TRIGRUN_SECTION_FALSE, pSrc, pArgs, pResult );
-						}
-					}
-					else
-					{
-						DEBUG_ERR(( "FORCONT[id/type] called on non-container object '%s'.\n", GetName() ));
-						iRet = OnTriggerRun( s, TRIGRUN_SECTION_FALSE, pSrc, pArgs, pResult );
-					}
+					iRet = OnTriggerLoopForContSpecial(s, iCmd, pSrc, pArgs, pResult);
 				} break;
+
+			case SK_IF:
+			case SK_ELIF:
+			case SK_ELSEIF:
+				// We want to do a lazy evaluation of the arguments. Don't parse this stuff now.
+				break;
+
 			default:
 				{
 					// Parse out any variables in it. (may act like a verb sometimes?)
@@ -2299,13 +2916,13 @@ jump_in:
                         Str_CopyLimitNull(tsBuf.buffer(), s.GetKey(), tsBuf.capacity());
                         Str_ConcatLimitNull(tsBuf.buffer(), " ", tsBuf.capacity());
                         Str_ConcatLimitNull(tsBuf.buffer(), s.GetArgRaw(), tsBuf.capacity());
-						ParseText(tsBuf.buffer(), pSrc, 0, pArgs);
+						ParseScriptText(tsBuf.buffer(), pSrc, 0, pArgs);
 
 						s.ParseKey(tsBuf.buffer());
 					}
 					else
 					{
-						ParseText( s.GetArgRaw(), pSrc, 0, pArgs );
+						ParseScriptText( s.GetArgRaw(), pSrc, 0, pArgs );
 					}
 				}
 		}
@@ -2329,6 +2946,7 @@ jump_in:
 				if ( iRet != TRIGRET_ENDIF )
 					return iRet;
 				break;
+
 			case SK_DORAND:	// Do a random line in here.
 			case SK_DOSWITCH:
 				{
@@ -2347,6 +2965,7 @@ jump_in:
 					}
 				}
 				break;
+
 			case SK_RETURN:		// Process the trigger.
 				EXC_SET_BLOCK("return");
 				if ( pResult )
@@ -2354,19 +2973,22 @@ jump_in:
 					pResult->Copy( s.GetArgStr() );
 					return TRIGRET_RET_TRUE;
 				}
-				return static_cast<TRIGRET_TYPE>(s.GetArgVal());
+				return TRIGRET_TYPE(s.GetArgVal());
+
 			case SK_IF:
 				{
 					EXC_SET_BLOCK("if statement");
-					bool fTrigger = s.GetArgLLVal() ? true : false;
+					// At this point, we have to parse the conditional expression
+					bool fTrigger = Evaluate_Conditional(s.GetArgStr(), pSrc, pArgs);
 					bool fBeenTrue = false;
 					for (;;)
 					{
 						iRet = OnTriggerRun( s, fTrigger ? TRIGRUN_SECTION_TRUE : TRIGRUN_SECTION_FALSE, pSrc, pArgs, pResult );
 						if (( iRet < TRIGRET_ENDIF ) || ( iRet >= TRIGRET_RET_HALFBAKED ))
-							return iRet ;
+							return iRet;
 						if ( iRet == TRIGRET_ENDIF )
 							break;
+
 						fBeenTrue |= fTrigger;
 						if ( fBeenTrue )
 							fTrigger = false;
@@ -2374,8 +2996,7 @@ jump_in:
 							fTrigger = true;
 						else if ( iRet == TRIGRET_ELSEIF )
 						{
-							ParseText( s.GetArgStr(), pSrc, 0, pArgs );
-							fTrigger = s.GetArgLLVal() ? true : false;
+							fTrigger = Evaluate_Conditional(s.GetArgStr(), pSrc, pArgs);
 						}
 					}
 				}
@@ -2392,133 +3013,19 @@ jump_in:
 				break;
 
 			default:
-				EXC_SET_BLOCK("parsing");
+				EXC_SET_BLOCK("parsing standard statement");
 				if ( !pArgs->r_Verb(s, pSrc) )
 				{
-					bool	fRes;
-					if ( !strnicmp(s.GetKey(), "call", 4 ) )
+					bool fRes;
+					if (!strnicmp(s.GetKey(), "CALL", 4))
 					{
 						EXC_SET_BLOCK("call");
-						CSString sVal;
-						tchar * argRaw = s.GetArgRaw();
-						CScriptObj *pRef = this;
-
-						// Parse object references, src.* is not parsed
-						// by r_GetRef so do it manually
-						r_GetRef(const_cast<lpctstr &>(static_cast<lptstr &>(argRaw)), pRef);
-						if ( !strnicmp("SRC.", argRaw, 4) )
-						{
-							argRaw += 4;
-							pRef = pSrc->GetChar();
-						}
-
-						// Check that an object is referenced
-						if (pRef != nullptr)
-						{
-							// Locate arguments for the called function
-							tchar *z = strchr(argRaw, ' ');
-
-							if( z )
-							{
-								*z = 0;
-								++z;
-								GETNONWHITESPACE(z);
-							}
-
-							if ( z && *z )
-							{
-								int64 iN1 = pArgs->m_iN1;
-								int64 iN2 = pArgs->m_iN2;
-								int64 iN3 = pArgs->m_iN3;
-								CScriptObj *pO1 = pArgs->m_pO1;
-								CSString s1 = pArgs->m_s1;
-								CSString s1_raw = pArgs->m_s1_raw;
-								pArgs->m_v.clear();
-								pArgs->Init(z);
-
-								fRes = pRef->r_Call(argRaw, pSrc, pArgs, &sVal);
-
-								pArgs->m_iN1 = iN1;
-								pArgs->m_iN2 = iN2;
-								pArgs->m_iN3 = iN3;
-								pArgs->m_pO1 = pO1;
-								pArgs->m_s1 = s1;
-								pArgs->m_s1_raw = s1_raw;
-								pArgs->m_v.clear();
-							}
-							else
-								fRes = pRef->r_Call(argRaw, pSrc, pArgs, &sVal);
-						}
-						else
-							fRes = false;
+						fRes = Execute_Call(s, pSrc, pArgs);
 					}
 					else if ( !strnicmp(s.GetKey(), "FullTrigger", 11 ) )
 					{
 						EXC_SET_BLOCK("FullTrigger");
-						tchar * piCmd[7];
-						tchar *ptcTmp = Str_GetTemp();
-						Str_CopyLimitNull(ptcTmp, s.GetArgRaw(), STR_TEMPLENGTH);
-						int iArgQty = Str_ParseCmds(ptcTmp, piCmd, CountOf( piCmd ), " ,\t" );
-						CScriptObj *pRef = this;
-						if ( iArgQty == 2 )
-						{
-                            CChar *pCharFound = CUID::CharFind(Str_ToI(piCmd[1]));
-							if ( pCharFound )
-								pRef = pCharFound;
-						}
-
-						// Parse object references, src.* is not parsed
-						// by r_GetRef so do it manually
-						//r_GetRef(const_cast<lpctstr &>(static_cast<lptstr &>(argRaw)), pRef);
-						if ( !strnicmp("SRC.", ptcTmp, 4) )
-						{
-							ptcTmp += 4;
-							pRef = pSrc->GetChar();
-						}
-
-						// Check that an object is referenced
-						if (pRef != nullptr)
-						{
-							// Locate arguments for the called function
-							TRIGRET_TYPE tRet;
-							tchar *z = strchr(ptcTmp, ' ');
-
-							if( z )
-							{
-								*z = 0;
-								++z;
-								GETNONWHITESPACE(z);
-							}
-
-							if ( z && *z )
-							{
-								int64 iN1 = pArgs->m_iN1;
-								int64 iN2 = pArgs->m_iN2;
-								int64 iN3 = pArgs->m_iN3;
-								CScriptObj *pO1 = pArgs->m_pO1;
-								CSString s1 = pArgs->m_s1;
-								CSString s1_raw = pArgs->m_s1_raw;
-								pArgs->m_v.clear();
-								pArgs->Init(z);
-
-								tRet = pRef->OnTrigger(ptcTmp, pSrc, pArgs);
-
-								pArgs->m_iN1 = iN1;
-								pArgs->m_iN2 = iN2;
-								pArgs->m_iN3 = iN3;
-								pArgs->m_pO1 = pO1;
-								pArgs->m_s1 = s1;
-								pArgs->m_s1_raw = s1_raw;
-								pArgs->m_v.clear();
-							}
-							else
-								tRet = pRef->OnTrigger(ptcTmp, pSrc, pArgs);
-
-							pArgs->m_VarsLocal.SetNum("return",tRet,false);
-							fRes = (tRet > 0) ? 1 : 0;
-						}
-						else
-							fRes = false;
+						fRes = Execute_FullTrigger(s, pSrc, pArgs);
 					}
 					else
 					{

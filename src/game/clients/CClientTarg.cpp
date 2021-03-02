@@ -160,6 +160,11 @@ bool CClient::Cmd_Control( CChar * pChar2 )
 	ASSERT(m_pChar);
 	CChar * pChar1 = m_pChar;
 
+	//Switch their home position to avoid the pChar1 corpse teleport to his home(far away)
+	CPointMap homeP1 = pChar1->m_ptHome;
+	pChar1->m_ptHome.Set(pChar2->m_ptHome);
+	pChar2->m_ptHome.Set(homeP1);
+
 	// Put my newbie equipped items on it.
 	for (CSObjContRec* pObjRec : pChar1->GetIterationSafeContReverse())
 	{
@@ -197,7 +202,7 @@ bool CClient::Cmd_Control( CChar * pChar2 )
 
 	pChar1->ClientDetach();
 	m_pChar = nullptr;
-	CClient * pClient2 = pChar2->GetClient();
+	CClient * pClient2 = pChar2->GetClientActive();
 	if ( pClient2 )	// controled char is a player/client.
 	{
 		pChar2->ClientDetach();
@@ -849,7 +854,7 @@ int CClient::OnSkill_ItemID( CUID uid, int iSkillLevel, bool fTest )
 	else
 	{
 		SysMessagef( g_Cfg.GetDefaultMsg( DEFMSG_ITEMID_GOLD ),
-			(pItemVend->GetVendorPrice(-15) * pItem->GetAmount()), pItemVend->GetNameFull(true));
+			(pItemVend->GetVendorPrice(-15,0) * pItem->GetAmount()), pItemVend->GetNameFull(true));
 	}
 
 	// Whats it made of ?
@@ -1458,11 +1463,11 @@ bool CClient::OnTarg_Skill_Magery( CObjBase * pObj, const CPointMap & pt )
 	m_pChar->m_atMagery.m_iSummonID		= m_tmSkillMagery.m_iSummonID;
 
 	m_pChar->m_Act_Prv_UID				= m_Targ_Prv_UID;	// Source (wand or you?)
-	m_pChar->m_Act_UID					= pObj ? (dword) pObj->GetUID() : UID_CLEAR ;
+	m_pChar->m_Act_UID					= pObj ? pObj->GetUID() : CUID(UID_CLEAR);
 	m_pChar->m_Act_p					= pt;
 	m_Targ_p							= pt;
 
-	if ( IsSetMagicFlags( MAGICF_PRECAST ) && !pSpell->IsSpellType( SPELLFLAG_NOPRECAST ) && m_pChar->IsClient() )
+	if ( IsSetMagicFlags( MAGICF_PRECAST ) && !pSpell->IsSpellType( SPELLFLAG_NOPRECAST ) && m_pChar->IsClientActive() )
 	{
 		if ( g_Cfg.IsSkillFlag(m_pChar->m_Act_SkillCurrent, SKF_MAGIC) )
 		{
@@ -1577,7 +1582,7 @@ bool CClient::OnTarg_Pet_Stable( CChar * pCharPet )
 	if ( IsSetOF(OF_PetSlots) )
 	{
 		short iFollowerSlots =  (short)pCharPet->GetDefNum("FOLLOWERSLOTS", true);
-		m_pChar->FollowersUpdate(pCharPet,(-maximum(1, iFollowerSlots)));
+		m_pChar->FollowersUpdate(pCharPet,(-maximum(0, iFollowerSlots)));
 	}
 
 	pCharMaster->GetBank()->ContentAdd( pPetItem );
@@ -1607,7 +1612,7 @@ bool CClient::OnTarg_Use_Deed( CItem * pDeed, CPointMap & pt )
         return false;
     }
 
-	pDeed->Delete();	// consume the deed.
+	pDeed->ConsumeAmount(1);	// consume the deed.
 	return true;
 }
 
@@ -2363,7 +2368,7 @@ bool CClient::OnTarg_Party_Add( CChar * pChar )
 		return false;
 	}
 
-	if ( !pChar->IsClient() )
+	if ( !pChar->IsClientActive() )
 	{
 		SysMessageDefault( DEFMSG_PARTY_NONPCADD );
 		return false;
@@ -2384,7 +2389,7 @@ bool CClient::OnTarg_Party_Add( CChar * pChar )
 		}
 	}
 
-	if (IsPriv(PRIV_GM) && (pChar->GetClient()->GetPrivLevel() < GetPrivLevel()))
+	if (IsPriv(PRIV_GM) && (pChar->GetClientActive()->GetPrivLevel() < GetPrivLevel()))
 	{
 		CPartyDef::AcceptEvent(pChar, m_pChar->GetUID(), true);
 		return true;
@@ -2432,7 +2437,7 @@ bool CClient::OnTarg_Party_Add( CChar * pChar )
 	m_pChar->SetKeyNum("PARTY_LASTINVITE", (dword)(pChar->GetUID()));
 	m_pChar->SetKeyNum("PARTY_LASTINVITETIME", CWorldGameTime::GetCurrentTime().GetTimeRaw() + (Calc_GetRandVal2(2,5) * MSECS_PER_SEC));
 
-	new PacketPartyInvite(pChar->GetClient(), m_pChar);
+	new PacketPartyInvite(pChar->GetClientActive(), m_pChar);
 
 	// Now up to them to decide to accept.
 	return true;

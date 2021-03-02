@@ -391,7 +391,7 @@ void CClient::addItem_Equipped( const CItem * pItem )
 		return;
 
 	new PacketItemEquipped(this, pItem);
-	
+
 	//addAOSTooltip(pItem);		// tooltips for equipped items are handled on packet 0x78 (PacketCharacter)
 }
 
@@ -742,12 +742,14 @@ void CClient::addBarkParse( lpctstr pszText, const CObjBaseTemplate * pSrc, HUE_
 				defaultUnicode = g_Exp.m_VarDefs.GetKeyNum("IMSG_DEF_UNICODE") > 0 ? true : false;
 			}
 		}
+		break;
+
 		default:
 			break;
 	}
 
 	word Args[] = { (word)wHue, (word)font, (word)fUnicode };
-    CSString sBarkBuffer;
+    lptstr ptcBarkBuffer = Str_GetTemp();  // Be sure to init this before the goto instruction
 
 	if ( *pszText == '@' )
 	{
@@ -796,7 +798,7 @@ void CClient::addBarkParse( lpctstr pszText, const CObjBaseTemplate * pSrc, HUE_
 	else if (mode <= TALKMODE_YELL)
 	I removed else from the beginning of the condition, because if pSrcChar->m_SpeechHueOverride or pSrcChar->m_EmoteHueOverride not set, we still need to set default value.
 	It should not block the overrides, because Args[0] changed another value from "HUE_TEXT_DEF".
-	
+
 	- xwerswoodx
 	*/
     if (mode <= TALKMODE_YELL)
@@ -814,14 +816,15 @@ void CClient::addBarkParse( lpctstr pszText, const CObjBaseTemplate * pSrc, HUE_
 	if ( Args[2] == 0 )
 		Args[2] = (word)defaultUnicode;
 
-    sBarkBuffer.Format( "%s%s", name, pszText);
+	Str_CopyLimitNull(	ptcBarkBuffer, name,	STR_TEMPLENGTH);
+	Str_ConcatLimitNull(ptcBarkBuffer, pszText, STR_TEMPLENGTH);
 
 	switch ( Args[2] )
 	{
 		case 3:	// Extended localized message (with affixed ASCII text)
 		{
             tchar * ppArgs[256];
-			int iQty = Str_ParseCmds(sBarkBuffer.GetBuffer(), ppArgs, CountOf(ppArgs), "," );
+			int iQty = Str_ParseCmds(ptcBarkBuffer, ppArgs, CountOf(ppArgs), "," );
 			int iClilocId = Exp_GetVal( ppArgs[0] );
 			int iAffixType = Exp_GetVal( ppArgs[1] );
 			CSString CArgs;
@@ -839,7 +842,7 @@ void CClient::addBarkParse( lpctstr pszText, const CObjBaseTemplate * pSrc, HUE_
 		case 2:	// Localized
 		{
             tchar * ppArgs[256];
-			int iQty = Str_ParseCmds(sBarkBuffer.GetBuffer(), ppArgs, CountOf(ppArgs), "," );
+			int iQty = Str_ParseCmds(ptcBarkBuffer, ppArgs, CountOf(ppArgs), "," );
 			int iClilocId = Exp_GetVal( ppArgs[0] );
 			CSString CArgs;
 			for ( int i = 1; i < iQty; ++i )
@@ -856,7 +859,7 @@ void CClient::addBarkParse( lpctstr pszText, const CObjBaseTemplate * pSrc, HUE_
 		case 1:	// Unicode
 		{
 			nchar szBuffer[ MAX_TALK_BUFFER ];
-			CvtSystemToNUNICODE( szBuffer, CountOf(szBuffer), sBarkBuffer.GetBuffer(), -1 );
+			CvtSystemToNUNICODE( szBuffer, CountOf(szBuffer), ptcBarkBuffer, -1 );
 			addBarkUNICODE( szBuffer, pSrc, (HUE_TYPE)(Args[0]), mode, (FONT_TYPE)(Args[1]), 0 );
 			break;
 		}
@@ -865,10 +868,13 @@ void CClient::addBarkParse( lpctstr pszText, const CObjBaseTemplate * pSrc, HUE_
 		default:
 		{
 bark_default:
-			if ( sBarkBuffer.IsEmpty())
-                sBarkBuffer.Format("%s%s", name, pszText);
+			if (ptcBarkBuffer[0] == '\0')
+			{
+				Str_CopyLimitNull(ptcBarkBuffer, name, STR_TEMPLENGTH);
+				Str_ConcatLimitNull(ptcBarkBuffer, pszText, STR_TEMPLENGTH);
+			}
 
-			addBark( sBarkBuffer.GetBuffer(), pSrc, (HUE_TYPE)(Args[0]), mode, (FONT_TYPE)(Args[1]));
+			addBark(ptcBarkBuffer, pSrc, (HUE_TYPE)(Args[0]), mode, (FONT_TYPE)(Args[1]));
 			break;
 		}
 	}
@@ -991,10 +997,19 @@ void CClient::GetAdjustedItemID( const CChar * pChar, const CItem * pItem, ITEMI
 
 	if ( m_pChar->IsStatFlag( STATF_HALLUCINATING ))
 		wHue = (HUE_TYPE)(Calc_GetRandVal( HUE_DYE_HIGH ));
-	else if ( pChar->IsStatFlag(STATF_STONE))
+
+	else if ( pChar->IsStatFlag(STATF_STONE)) //Client do not have stone state. So we must send the hue we want. (Affect the paperdoll hue as well)
 		wHue = HUE_STONE;
-	else if ( pChar->IsStatFlag(STATF_INSUBSTANTIAL))
+
+	// Normaly, client automaticly change the anim color in grey when someone is insubtantial, hidden or invisible. Paperdoll are never affected by this.
+	// The next 3 state overwrite the client process and force ITEM color to have a specific color. It cause that Paperdoll AND anim get the color.
+	else if ( pChar->IsStatFlag(STATF_INSUBSTANTIAL) && g_Cfg.m_iColorInvis)
 		wHue = g_Cfg.m_iColorInvis;
+	else if (pChar->IsStatFlag(STATF_HIDDEN) && g_Cfg.m_iColorHidden)
+		wHue = g_Cfg.m_iColorHidden;
+	else if (pChar->IsStatFlag(STATF_INVISIBLE) && g_Cfg.m_iColorInvisSpell)
+		wHue = g_Cfg.m_iColorInvisSpell;
+
 	else
 	{
 		if ( pItemDef && (uiResDisp < pItemDef->GetResLevel() ) )
@@ -1049,13 +1064,16 @@ void CClient::GetAdjustedCharID( const CChar * pChar, CREID_TYPE &id, HUE_TYPE &
 	}
 	else
 	{
-		if ( pChar->IsStatFlag(STATF_STONE) )	// turned to stone.
+		if ( pChar->IsStatFlag(STATF_STONE) )	//Client do not have stone state. So we must send the hue we want. (Affect the paperdoll hue as well)
 			wHue = HUE_STONE;
-		else if ( pChar->IsStatFlag(STATF_INSUBSTANTIAL) )	// turned to stone.
+
+		// Normaly, client automaticly change the anim color in grey when someone is insubtantial, hidden or invisible. Paperdoll are never affected by this.
+		// The next 3 state overwrite the client process and force SKIN color to have a specific color. It cause that Paperdoll AND anim get the color.
+		else if ( pChar->IsStatFlag(STATF_INSUBSTANTIAL) && g_Cfg.m_iColorInvis)
 			wHue = g_Cfg.m_iColorInvis;
-		else if ( pChar->IsStatFlag(STATF_HIDDEN) )	// turned to stone.
+		else if ( pChar->IsStatFlag(STATF_HIDDEN) && g_Cfg.m_iColorHidden)
 			wHue = g_Cfg.m_iColorHidden;
-		else if ( pChar->IsStatFlag(STATF_INVISIBLE) )	// turned to stone.
+		else if ( pChar->IsStatFlag(STATF_INVISIBLE) && g_Cfg.m_iColorInvisSpell)
 			wHue = g_Cfg.m_iColorInvisSpell;
 		else
 		{
@@ -1098,7 +1116,7 @@ void CClient::addChar( CChar * pChar, bool fFull )
 	ADDTOCALLSTACK("CClient::addChar");
 	// Full update about a char.
 	EXC_TRY("addChar");
-    
+
     if (fFull)
 	    new PacketCharacter(this, pChar);
     else
@@ -1385,8 +1403,8 @@ void CClient::addPlayerStart( CChar * pChar )
 	{
 		// This must be a CONTROL command ?
 		CharDisconnect();
-		if ( pChar->IsClient())	// not sure why this would happen but take care of it anyhow.
-			pChar->GetClient()->CharDisconnect();
+		if ( pChar->IsClientActive())	// not sure why this would happen but take care of it anyhow.
+			pChar->GetClientActive()->CharDisconnect();
 		m_pChar = pChar;
 		m_pChar->ClientAttach( this );
 	}
@@ -1874,12 +1892,12 @@ void CClient::addPlayerSee( const CPointMap & ptOld )
 		if ( !pItem )
 			break;
 
-        const CPointMap& ptItemTop = pItem->GetTopLevelObj()->GetTopPoint();       
+        const CPointMap& ptItemTop = pItem->GetTopLevelObj()->GetTopPoint();
         if ( pItem->IsTypeMulti() )		// incoming multi on radar view
 		{
             const DIR_TYPE dirFace = pItem->GetDir(pCharThis);
             const CItemMulti* pMulti = static_cast<const CItemMulti*>(pItem);
-            
+
             // This looks like the only way to make this thing work. Even if i send the worldobj packet with the commented code, the client
             //  will ignore it (and SpyUO 2 doesn't show that packet ?! it only shows packets that actually result in the generation of a world item, how weird)
             const int iOldDist = ptOld.GetDistSight(ptItemTop);  // handles also the case of an invalid point
@@ -1903,7 +1921,7 @@ void CClient::addPlayerSee( const CPointMap & ptOld )
             }
             */
 
-            continue;            
+            continue;
 		}
 
 		if ( (iSeeCurrent > iSeeMax) || !pCharThis->CanSee(pItem) )
@@ -1918,7 +1936,7 @@ void CClient::addPlayerSee( const CPointMap & ptOld )
             {
                 bSee = true;    // item is in same house as me
             }
-            else if ((ptOld.GetDistSight(ptItemTop) > iViewDist) && (ptCharThis.GetDistSight(ptItemTop) <= iViewDist))	// item just came into view 
+            else if ((ptOld.GetDistSight(ptItemTop) > iViewDist) && (ptCharThis.GetDistSight(ptItemTop) <= iViewDist))	// item just came into view
             {
                 if (!ptItemTop.GetRegion(REGION_TYPE_HOUSE)		// item is not in a house (ships are ok)
                     || (pItem->m_uidLink.IsValidUID() && pItem->m_uidLink.IsItem() && pItem->m_uidLink.ItemFind()->IsTypeMulti())	// item is linked to a multi
@@ -2900,32 +2918,35 @@ byte CClient::LogIn( CAccount * pAccount, CSString & sMsg )
 		// Only if it's from a diff ip ?
 		ASSERT( pClientPrev != this );
 
-		bool bInUse = false;
+		bool fInUse = false;
 
 		//	different ip - no reconnect
-		if ( ! GetPeer().IsSameIP( pClientPrev->GetPeer() )) bInUse = true;
+		if ( ! GetPeer().IsSameIP( pClientPrev->GetPeer() ))
+			fInUse = true;
 		else
 		{
 			//	from same ip - allow reconnect if the old char is lingering out
 			CChar *pCharOld = pClientPrev->GetChar();
 			if ( pCharOld )
 			{
-				CItem	*pItem = pCharOld->LayerFind(LAYER_FLAG_ClientLinger);
-				if ( !pItem ) bInUse = true;
+				CItem *pItem = pCharOld->LayerFind(LAYER_FLAG_ClientLinger);
+				if ( !pItem )
+					fInUse = true;
 			}
 
-			if ( !bInUse )
+			if ( !fInUse )
 			{
 				if ( IsConnectTypePacket() && pClientPrev->IsConnectTypePacket())
 				{
 					pClientPrev->CharDisconnect();
 					pClientPrev->GetNetState()->markReadClosed();
 				}
-				else if ( GetConnectType() == pClientPrev->GetConnectType() ) bInUse = true;
+				else if ( GetConnectType() == pClientPrev->GetConnectType() )
+					fInUse = true;
 			}
 		}
 
-		if ( bInUse )
+		if ( fInUse )
 		{
 			g_Log.Event(LOGM_CLIENTS_LOG, "%x: Account '%s' already in use.\n", GetSocketID(), pAccount->GetName());
 			sMsg = "Account already in use.";
@@ -2954,8 +2975,8 @@ byte CClient::LogIn( CAccount * pAccount, CSString & sMsg )
 			return( PacketLoginError::MaxClients );
 		}
 	}
-	if ( pAccount->GetPrivLevel() < PLEVEL_GM &&
-		(llong)g_Serv.StatGet(SERV_STAT_CLIENTS) > g_Cfg.m_iClientsMax )
+	if ( (pAccount->GetPrivLevel() < PLEVEL_GM) &&
+		((llong)g_Serv.StatGet(SERV_STAT_CLIENTS) > g_Cfg.m_iClientsMax) )
 	{
 		// Give them a polite goodbye.
 		g_Log.Event(LOGM_CLIENTS_LOG, "%x: Account '%s', maximum clients reached.\n", GetSocketID(), pAccount->GetName());
@@ -2983,7 +3004,7 @@ byte CClient::LogIn( CAccount * pAccount, CSString & sMsg )
 	return( PacketLoginError::Success );
 }
 
-byte CClient::LogIn( lpctstr pszAccName, lpctstr pszPassword, CSString & sMsg )
+byte CClient::LogIn( lpctstr ptcAccName, lpctstr ptcPassword, CSString & sMsg )
 {
 	ADDTOCALLSTACK("CClient::LogIn");
 	// Try to validate this account.
@@ -2994,38 +3015,38 @@ byte CClient::LogIn( lpctstr pszAccName, lpctstr pszPassword, CSString & sMsg )
 		return( PacketLoginError::Success );
 
 	char szTmp[ MAX_NAME_SIZE ];
-	size_t iLen1 = strlen( pszAccName );
-	size_t iLen2 = strlen( pszPassword );
-	size_t iLen3 = Str_GetBare( szTmp, pszAccName, MAX_NAME_SIZE );
-	if ( iLen1 == 0 || iLen1 != iLen3 || iLen1 > MAX_NAME_SIZE )	// a corrupt message.
+	size_t iLen1 = strlen( ptcAccName );
+	size_t iLen2 = strlen( ptcPassword );
+	size_t iLen3 = Str_GetBare( szTmp, ptcAccName, MAX_NAME_SIZE );
+	if ( (iLen1 == 0) || (iLen1 != iLen3) || (iLen1 > MAX_NAME_SIZE) )	// a corrupt message.
 	{
-		char ptcVersion[ 256 ];
-		sMsg.Format( g_Cfg.GetDefaultMsg( DEFMSG_MSG_ACC_WCLI ), m_Crypt.WriteClientVer(ptcVersion, sizeof(ptcVersion)));
+		char pcVersion[ 256 ];
+		sMsg.Format( g_Cfg.GetDefaultMsg( DEFMSG_MSG_ACC_WCLI ), m_Crypt.WriteClientVer(pcVersion, sizeof(pcVersion)));
 		return( PacketLoginError::BadAccount );
 	}
 
-	iLen3 = Str_GetBare( szTmp, pszPassword, MAX_NAME_SIZE );
+	iLen3 = Str_GetBare( szTmp, ptcPassword, MAX_NAME_SIZE );
 	if ( iLen2 != iLen3 )	// a corrupt message.
 	{
-		char ptcVersion[ 256 ];
-		sMsg.Format( g_Cfg.GetDefaultMsg( DEFMSG_MSG_ACC_WCLI ), m_Crypt.WriteClientVer(ptcVersion, sizeof(ptcVersion)));
+		char pcVersion[ 256 ];
+		sMsg.Format( g_Cfg.GetDefaultMsg( DEFMSG_MSG_ACC_WCLI ), m_Crypt.WriteClientVer(pcVersion, sizeof(pcVersion)));
 		return( PacketLoginError::BadPassword );
 	}
 
 
-	char szName[ MAX_ACCOUNT_NAME_SIZE ];
-	if ( !CAccount::NameStrip(szName, pszAccName) || Str_Check(pszAccName) )
+	tchar ptcName[ MAX_ACCOUNT_NAME_SIZE ];
+	if ( !CAccount::NameStrip(ptcName, ptcAccName) || Str_Check(ptcAccName) )
 		return( PacketLoginError::BadAccount );
-	else if ( Str_Check(pszPassword) )
+	else if ( Str_Check(ptcPassword) )
 		return( PacketLoginError::BadPassword );
 
-	const bool fGuestAccount = ! strnicmp( pszAccName, "GUEST", 5 );
+	const bool fGuestAccount = ! strnicmp( ptcAccName, "GUEST", 5 );
 	if ( fGuestAccount )
 	{
 		// trying to log in as some sort of guest.
 		// Find or create a new guest account.
-		char *pszTemp = Str_GetTemp();
-		for ( int i = 0; ; i++ )
+		tchar *ptcTemp = Str_GetTemp();
+		for ( int i = 0; ; ++i )
 		{
 			if ( i>=g_Cfg.m_iGuestsMax )
 			{
@@ -3033,20 +3054,20 @@ byte CClient::LogIn( lpctstr pszAccName, lpctstr pszPassword, CSString & sMsg )
 				return( PacketLoginError::MaxGuests );
 			}
 
-			sprintf(pszTemp, "GUEST%d", i);
-			CAccount * pAccount = g_Accounts.Account_FindCreate(pszTemp, true );
+			sprintf(ptcTemp, "GUEST%d", i);
+			CAccount * pAccount = g_Accounts.Account_FindCreate(ptcTemp, true );
 			ASSERT( pAccount );
 
 			if ( pAccount->FindClient() == nullptr )
 			{
-				pszAccName = pAccount->GetName();
+				ptcAccName = pAccount->GetName();
 				break;
 			}
 		}
 	}
 	else
 	{
-		if ( pszPassword[0] == '\0' )
+		if ( ptcPassword[0] == '\0' )
 		{
 			sMsg = g_Cfg.GetDefaultMsg( DEFMSG_MSG_ACC_NEEDPASS );
 			return( PacketLoginError::BadPassword );
@@ -3054,11 +3075,11 @@ byte CClient::LogIn( lpctstr pszAccName, lpctstr pszPassword, CSString & sMsg )
 	}
 
 	bool fAutoCreate = ( g_Serv.m_eAccApp == ACCAPP_Free || g_Serv.m_eAccApp == ACCAPP_GuestAuto || g_Serv.m_eAccApp == ACCAPP_GuestTrial );
-	CAccount * pAccount = g_Accounts.Account_FindCreate(pszAccName, fAutoCreate);
+	CAccount * pAccount = g_Accounts.Account_FindCreate(ptcAccName, fAutoCreate);
 	if ( ! pAccount )
 	{
-		g_Log.Event(LOGM_CLIENTS_LOG, "%x: Account '%s' does not exist\n", GetSocketID(), pszAccName);
-		sMsg.Format(g_Cfg.GetDefaultMsg(DEFMSG_MSG_ACC_UNK), pszAccName);
+		g_Log.Event(LOGM_CLIENTS_LOG, "%x: Account '%s' does not exist\n", GetSocketID(), ptcAccName);
+		sMsg.Format(g_Cfg.GetDefaultMsg(DEFMSG_MSG_ACC_UNK), ptcAccName);
 		return PacketLoginError::Invalid;
 	}
 
@@ -3071,7 +3092,7 @@ byte CClient::LogIn( lpctstr pszAccName, lpctstr pszPassword, CSString & sMsg )
 
 	if ( ! fGuestAccount && ! pAccount->IsPriv(PRIV_BLOCKED) )
 	{
-		if ( ! pAccount->CheckPassword(pszPassword))
+		if ( ! pAccount->CheckPassword(ptcPassword))
 		{
 			g_Log.Event(LOGM_CLIENTS_LOG, "%x: '%s' bad password\n", GetSocketID(), pAccount->GetName());
 			sMsg = g_Cfg.GetDefaultMsg(DEFMSG_MSG_ACC_BADPASS);

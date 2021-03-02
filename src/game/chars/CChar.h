@@ -83,7 +83,7 @@ private:
 
 	ushort m_Skill[SKILL_QTY];	// List of skills ( skill * 10 )
 
-	CClient * m_pClient;	// is the char a logged in m_pPlayer ?
+	CClient * m_pClient;	// is the char a currently logged in m_pPlayer ?
 
 public:
 	struct LastAttackers
@@ -147,9 +147,9 @@ public:
 	HUE_TYPE m_EmoteHueOverride;	// emote hue to use
 
 	// In order to revert to original Hue and body.
-	CREID_TYPE m_prev_id;		// Backup of body type for ghosts and poly
-	HUE_TYPE m_prev_Hue;		// Backup of skin color. in case of polymorph etc.
-	HUE_TYPE m_wBloodHue;		// Replicating CharDef's BloodColor on the char, or overriding it.
+	CREID_TYPE _iPrev_id;		// Backup of body type for ghosts and poly
+	HUE_TYPE _wPrev_Hue;		// Backup of skin color. in case of polymorph etc.
+	HUE_TYPE _wBloodHue;		// Replicating CharDef's BloodColor on the char, or overriding it.
 
 
 	// Skills, Stats and health
@@ -457,7 +457,7 @@ public:
 	bool MoveToRegionReTest( dword dwType );
 	bool MoveToChar(const CPointMap& pt, bool fStanding = true, bool fCheckLocation = true, bool fForceFix = false, bool fAllowReject = true);
 	bool MoveTo(const CPointMap& pt, bool fForceFix = false);
-	virtual void SetTopZ( char z );
+	virtual void SetTopZ( char z ) noexcept override;
 	bool MoveToValidSpot(DIR_TYPE dir, int iDist, int iDistStart = 1, bool fFromShip = false);
 	virtual bool MoveNearObj( const CObjBaseTemplate *pObj, ushort iSteps = 0 ) override;
 
@@ -467,23 +467,29 @@ public:
 
 public:
 	// Client Player specific stuff. -------------------------
+	bool IsPlayer() const noexcept			{ return nullptr != m_pPlayer; }
+	bool IsClientActive() const noexcept	{ return nullptr != m_pClient; }
+	bool IsClientType() const noexcept;
+	CClient* GetClientActive() const noexcept { return m_pClient; }
+
 	void ClientAttach( CClient * pClient );
 	void ClientDetach();
-	bool IsClient() const;
-	CClient * GetClient() const;
 
 	bool SetPrivLevel( CTextConsole * pSrc, lpctstr pszFlags );
 	bool CanDisturb( const CChar * pChar ) const;
 	void SetDisconnected( CSector *pNewSector = nullptr );
 	bool SetPlayerAccount( CAccount * pAccount );
 	bool SetPlayerAccount( lpctstr pszAccount );
+
+	void ClearPlayer();
+
     bool IsNPC() const;
 	bool SetNPCBrain( NPCBRAIN_TYPE NPCBrain );
 	NPCBRAIN_TYPE GetNPCBrain() const;
-    NPCBRAIN_TYPE GetNPCBrainGroup() const;     // Return NPCBRAIN_ANIMAL for animals, _HUMAN for NPC human and PCs, >= _MONSTER for monsters
-    NPCBRAIN_TYPE GetNPCBrainAuto() const;    // Guess default NPC brain
+    NPCBRAIN_TYPE GetNPCBrainGroup() const;	// Return NPCBRAIN_ANIMAL for animals, _HUMAN for NPC human and PCs, >= _MONSTER for monsters
+	NPCBRAIN_TYPE GetNPCBrainAuto() const;	// Guess default NPC brain
 	void ClearNPC();
-	void ClearPlayer();
+	
 
 public:
 	void ObjMessage( lpctstr pMsg, const CObjBase * pSrc ) const;
@@ -513,7 +519,7 @@ public:
 	lpctstr GetPossessPronoun() const;	// his
 	byte GetModeFlag( const CClient *pViewer = nullptr ) const;
 	byte GetDirFlag(bool fSquelchForwardStep = false) const;
-	dword GetMoveBlockFlags(bool fIgnoreGM = false) const;
+	dword GetCanMoveFlags(dword dwCanFlags, bool fIgnoreGM = false) const;
 
 	int FixWeirdness();
 	void CreateNewCharCheck();
@@ -547,21 +553,14 @@ public:
 
 public:
     /**
-    * @fn  bool CObjBase::IsTriggerActive(lpctstr trig);
-    *
     * @brief   Queries if a trigger is active ( m_RunningTrigger ) .
-    *
     * @param   trig    The trig.
-    *
     * @return  true if the trigger is active, false if not.
     */
     bool IsTriggerActive(lpctstr trig) const;
 
     /**
-    * @fn  void CObjBase::SetTriggerActive(lpctstr trig = nullptr);
-    *
     * @brief   Sets trigger active ( m_RunningTrigger ).
-    *
     * @param   trig    The trig.
     */
     void SetTriggerActive(lpctstr trig = nullptr);
@@ -1072,9 +1071,9 @@ public:
 	int		Attacker_GetThreat(int attackerIndex) const;
 	void	Attacker_SetThreat(const CChar * pChar, int value);
 	void	Attacker_SetThreat(int attackerIndex, int value);
-	bool	Attacker_GetIgnore(int pChar) const;
+	bool	Attacker_GetIgnore(int iChar) const;
 	bool	Attacker_GetIgnore(const CChar * pChar) const;
-	void	Attacker_SetIgnore(size_t pChar, bool fIgnore);
+	void	Attacker_SetIgnore(int iChar, bool fIgnore);
 	void	Attacker_SetIgnore(const CChar * pChar, bool fIgnore);
 	int		Attacker_GetHighestThreat() const;
 	int		Attacker_GetID(const CChar * pChar) const;
@@ -1085,8 +1084,8 @@ public:
 	void InitPlayer( CClient * pClient, const char * pszCharname, bool fFemale, RACE_TYPE rtRace, ushort wStr, ushort wDex, ushort wInt,
 		PROFESSION_TYPE iProf, SKILL_TYPE skSkill1, ushort uiSkillVal1, SKILL_TYPE skSkill2, ushort uiSkillVal2, SKILL_TYPE skSkill3, ushort uiSkillVal3, SKILL_TYPE skSkill4, ushort uiSkillVal4,
 		HUE_TYPE wSkinHue, ITEMID_TYPE idHair, HUE_TYPE wHairHue, ITEMID_TYPE idBeard, HUE_TYPE wBeardHue, HUE_TYPE wShirtHue, HUE_TYPE wPantsHue, ITEMID_TYPE idFace, int iStartLoc );
-	bool ReadScriptTrig(CCharBase * pCharDef, CTRIG_TYPE trig, bool fVendor = false);
-	bool ReadScript(CResourceLock &s, bool fVendor = false);
+	bool ReadScriptReducedTrig(CCharBase * pCharDef, CTRIG_TYPE trig, bool fVendor = false);
+	bool ReadScriptReduced(CResourceLock &s, bool fVendor = false);
 	void NPC_LoadScript( bool fRestock );
 	void NPC_CreateTrigger();
 
@@ -1213,7 +1212,7 @@ private:
 	ushort NPC_GetTrainMax( const CChar * pStudent, SKILL_TYPE Skill ) const;
 
 	bool NPC_OnVerb( CScript &s, CTextConsole * pSrc = nullptr );
-	void NPC_OnHirePayMore( CItem * pGold, int iWage, bool fHire = false );
+	void NPC_OnHirePayMore( CItem * pGold, uint uiWage, bool fHire = false );
 public:
 	bool NPC_OnHirePay( CChar * pCharSrc, CItemMemory * pMemory, CItem * pGold );
 	bool NPC_OnHireHear( CChar * pCharSrc );
@@ -1221,7 +1220,7 @@ public:
 	bool NPC_OnTrainPay( CChar * pCharSrc, CItemMemory * pMemory, CItem * pGold );
 	bool NPC_OnTrainHear( CChar * pCharSrc, lpctstr pCmd );
 	bool NPC_TrainSkill( CChar * pCharSrc, SKILL_TYPE skill, ushort uiAmountToTrain );
-    int PayGold(CChar * pCharSrc, int iGold, CItem * pGold, ePayGold iReason);
+    int64 PayGold(CChar * pCharSrc, int64 iGold, CItem * pGold, ePayGold iReason);
 private:
 	bool NPC_CheckWalkHere( const CPointMap & pt, const CRegion * pArea ) const;
 	void NPC_OnNoticeSnoop( const CChar * pCharThief, const CChar * pCharMark );
@@ -1265,6 +1264,7 @@ public:
 	void NPC_ExtraAI();			//	NPC thread AI - some general extra operations
 	void NPC_AddSpellsFromBook(CItem * pBook);
 
+	void NPC_PetRelease();
 	void NPC_PetDesert();
 	void NPC_PetClearOwners();
 	bool NPC_PetSetOwner( CChar * pChar );

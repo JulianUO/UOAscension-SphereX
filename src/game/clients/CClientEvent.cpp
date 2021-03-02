@@ -215,7 +215,7 @@ void CClient::Event_Item_Pickup(CUID uid, word amount) // Client grabs an item
 
 	EXC_SET_BLOCK("FastLoot");
 	//	fastloot (,emptycontainer) protection
-	const int64 iCurTime = GetPreciseSysTimeMilli();
+	const int64 iCurTime = CSTime::GetPreciseSysTimeMilli();
 	if ( m_tNextPickup > iCurTime)
 	{
 		EXC_SET_BLOCK("FastLoot - addItemDragCancel(0)");
@@ -729,71 +729,95 @@ void CClient::Event_Skill_Use( SKILL_TYPE skill ) // Skill is clicked on the ski
 
 
 
-bool CClient::Event_CheckWalkBuffer()
+bool CClient::Event_CheckWalkBuffer(byte rawdir)
 {
 	ADDTOCALLSTACK("CClient::Event_CheckWalkBuffer");
+	//Return False: block the step
 	// Check if the client is trying to walk too fast.
 	// Direction changes don't count.
+	//NOTE: If WalkBuffer=20 in ini, it's egal 2000 here
 
-	if ( !g_Cfg.m_iWalkBuffer )
-		return true;
-	if ( (m_iWalkStepCount % 7) != 0 )	// only check when we have taken 8 steps
-		return true;
 
-	// Client only allows 4 steps of walk ahead.
-	const int64 iCurTime = GetPreciseSysTimeMilli();
+	const int64 iCurTime = CSTime::GetPreciseSysTimeMilli();
     int64 iTimeDiff = (int64)llabs(iCurTime - m_timeWalkStep);	// use absolute value to prevent overflows
-    int64 iTimeMin = m_pChar->IsStatFlag(STATF_ONHORSE|STATF_HOVERING) ? 700 : 1400; // minimum time to move 8 steps in milliseconds
+	int64 iTimeMin = 0;  // minimum time to move 1 step in milliseconds
+	m_timeWalkStep = iCurTime; //Take the time of step for the next time we enter here
 
-	if ( m_pChar->m_pPlayer && (m_pChar->m_pPlayer->m_speedMode != 0) )
+	if (m_lastDir != rawdir) //Changing direction create some strange timer we only evaluate when going straight
 	{
-		// Speed Modes:
-		// 0 = Foot=Normal, Mount=Normal                         1,4s - 0,7s
-		// 1 = Foot=Double Speed, Mount=Normal                   0,7s - 0,7s = 0,7s
-		// 2 = Foot=Always Walk, Mount=Always Walk (Half Speed)  2,8s - 1,4s = x2
-		// 3 = Foot=Always Run, Mount=Always Walk                1,4s - 1,4  = 0,7|x2 (1|2)
-		// 4 = No Movement                                       N/A  - N/A  = (handled by OnFreezeCheck)
-
-		if ( m_pChar->m_pPlayer->m_speedMode & 0x01 )
-			iTimeMin = 70;
-		if ( m_pChar->m_pPlayer->m_speedMode & 0x02 )
-			iTimeMin *= 2;
+		m_lastDir = rawdir;
+		return true;
 	}
 
-	if ( iTimeDiff > iTimeMin )
+	
+	// First step is to determine the theoric time(iTimeMin) to take the last step(s)
+	/*		RUN /Walk
+	Mount	100 / 200
+	foot	200 / 400
+	Speed Modes:
+	0 = Foot=Normal, Mount=Normal
+	1 = Foot=Double Speed, Mount=Normal
+	2 = Foot=Always Walk, Mount=Always Walk (Half Speed)
+	3 = Foot=Always Run, Mount=Always Walk
+	4 = No Movement (handled by OnFreezeCheck)*/
+	//Since we only check when we run, we don't care all walk situation
+
+	if (m_pChar->IsStatFlag(STATF_ONHORSE | STATF_HOVERING)) //on horse or Gargoyle fly
+		iTimeMin = 100;
+	else //on foot
 	{
-		llong iRegen = ((iTimeDiff - iTimeMin) * g_Cfg.m_iWalkRegen) / 150;
-		if ( iRegen > g_Cfg.m_iWalkBuffer )
-			iRegen = g_Cfg.m_iWalkBuffer;
-		else if ( iRegen < -((g_Cfg.m_iWalkBuffer * g_Cfg.m_iWalkRegen) / 100) )
-			iRegen = -((g_Cfg.m_iWalkBuffer * g_Cfg.m_iWalkRegen) / 100);
-		iTimeDiff = iTimeMin + iRegen;
+		if (m_pChar->m_pPlayer && (m_pChar->m_pPlayer->m_speedMode == 1))
+			iTimeMin = 100;
+		else
+			iTimeMin = 200;
 	}
+	
+	if (!(iTimeDiff > iTimeMin + 350))
+		// We don't want to do process if time is greater of 350 (Ping of player should be lower than this)
+		// Accept a Big number cause a big offset on the average. When player stop moving, you'll always get big number.
 
-	m_iWalkTimeAvg += iTimeDiff;
-	const llong oldAvg = m_iWalkTimeAvg;
-	m_iWalkTimeAvg -= iTimeMin;
-
-	if ( m_iWalkTimeAvg > g_Cfg.m_iWalkBuffer )
-		m_iWalkTimeAvg = g_Cfg.m_iWalkBuffer;
-	else if ( m_iWalkTimeAvg < -g_Cfg.m_iWalkBuffer )
-		m_iWalkTimeAvg = -g_Cfg.m_iWalkBuffer;
-
-	if ( IsPriv(PRIV_DETAIL) && IsPriv(PRIV_DEBUG) )
-		SysMessagef("Walkcheck trace: timeDiff(%lld) / timeMin(%lld). oldAvg(%lld) :: curAvg(%lld)", iTimeDiff, iTimeMin, oldAvg, m_iWalkTimeAvg);
-
-	if ( m_iWalkTimeAvg < 0 && iTimeDiff >= 0 )
 	{
-		// Walking too fast.
-		DEBUG_WARN(("%s (%x): Fast Walk ?\n", GetName(), GetSocketID()));
-		if ( IsTrigUsed(TRIGGER_USEREXWALKLIMIT) )
+		if ( iTimeDiff > iTimeMin )
+		// If the step time is greater than the theoric time there 4 reasons
+		// It's the server process tick, player's ping, been a while since last step, change direction during run
+		// Here we ajust TimeDiff using ini parameter
+			//WalkRegen: Determine how the TimeDiff is ajust depending of the ping. Depending on setting, player will gain more point.
+			//Default Value is 25
+			//OVER default value: More permissive, more point earn, less false positive, more possibility to don't see high ping player
+			//UNDER default value: Strick verification, more false positive (Not recommand to go under default value)
 		{
-			if ( m_pChar->OnTrigger(CTRIG_UserExWalkLimit, m_pChar) != TRIGRET_RET_TRUE )
-				return false;
+			int64 iRegen = ((iTimeDiff - iTimeMin) * g_Cfg.m_iWalkRegen) / 20;
+
+			// Get the ajust Timediff
+			iTimeDiff = iTimeMin + iRegen;
+		}
+	
+		// Create de average step value
+		m_iWalkTimeAvg += iTimeDiff;
+		m_iWalkTimeAvg -= iTimeMin;
+
+		
+		//WalkBuffer: Maximum buffer allow on player. Each good step give point what maximum point you want?
+		//Ajust the maximum average to the define buffer
+		if ( m_iWalkTimeAvg > g_Cfg.m_iWalkBuffer )
+			m_iWalkTimeAvg = g_Cfg.m_iWalkBuffer;
+		
+		if ( IsPriv(PRIV_DETAIL) && IsPriv(PRIV_DEBUG) )
+			SysMessagef("Walkcheck trace: timeDiff(%lld) / timeMin(%lld). curAvg(%lld)", iTimeDiff, iTimeMin, m_iWalkTimeAvg);
+
+		// Checking if there a speehack
+		if ( m_iWalkTimeAvg < 0 && iTimeDiff >= 0 )
+		{
+			// Walking too fast.
+			m_iWalkTimeAvg = 500; //reset the average
+			DEBUG_WARN(("%s (%x): Fast Walk ?\n", GetName(), GetSocketID()));
+			if ( IsTrigUsed(TRIGGER_USEREXWALKLIMIT) )
+			{
+				if ( m_pChar->OnTrigger(CTRIG_UserExWalkLimit, m_pChar) != TRIGRET_RET_TRUE )
+					return false;
+			}
 		}
 	}
-
-	m_timeWalkStep = iCurTime;
 	return true;
 }
 
@@ -842,29 +866,7 @@ bool CClient::Event_Walk( byte rawdir, byte sequence ) // Player moves
 		// To get milliseconds precision we must get the system clock manually at each walk request (the server clock advances only at every tick).
 		const int64 iCurTime = CWorldGameTime::GetCurrentTime().GetTimeRaw();
 
-        if ( IsSetEF(EF_FastWalkPrevention) )
-        {
-            if ( iCurTime < m_timeNextEventWalk )		// fastwalk detected
-            {
-                new PacketMovementRej(this, sequence);
-                return false;
-            }
-
-            int64 iDelay = 0;
-            if ( m_pChar->IsStatFlag(STATF_ONHORSE|STATF_HOVERING) )
-                iDelay = (rawdir & 0x80) ? 70 : 170;	// 100ms : 200ms
-            else
-                iDelay = (rawdir & 0x80) ? 170 : 370;	// 200ms : 400ms
-
-            m_timeNextEventWalk = iCurTime + iDelay;
-        }
-        else if ( !Event_CheckWalkBuffer() )
-        {
-            new PacketMovementRej(this, sequence);
-            return false;
-        }
-
-		if ( !m_pChar->MoveToChar(pt, false, false) )
+		if (!m_pChar->MoveToChar(pt, false, false))
 		{
 			new PacketMovementRej(this, sequence);
 			return false;
@@ -872,7 +874,7 @@ bool CClient::Event_Walk( byte rawdir, byte sequence ) // Player moves
 
 		// Check if I stepped on any item/teleport
 		TRIGRET_TYPE iRet = m_pChar->CheckLocation(false);
-		if ( iRet == TRIGRET_RET_FALSE )
+		if (iRet == TRIGRET_RET_FALSE)
 		{
 			m_pChar->SetUnkPoint(ptOld);	// we already moved, so move back to previous location
 			new PacketMovementRej(this, sequence);
@@ -881,6 +883,40 @@ bool CClient::Event_Walk( byte rawdir, byte sequence ) // Player moves
 
 		// Set running flag if I'm running
 		m_pChar->StatFlag_Mod(STATF_FLY, (rawdir & 0x80) ? true : false);
+
+		if (IsSetEF(EF_FastWalkPrevention) && !m_pChar->IsPriv(PRIV_GM))
+		{
+			// FIXME:THIS SYSTEM DO NOT WORK SEE DETAIL DOWN
+			if (iCurTime < m_timeNextEventWalk)		// fastwalk detected (speedhack)
+			{
+				g_Log.Event(LOGL_WARN | LOGM_CHEAT, "Fastwalk detection for '%s', this player will notice a lag\n", GetAccount()->GetName());
+				new PacketMovementRej(this, sequence);
+				return false;
+			}
+
+			int64 iDelay = 0;
+			if (m_pChar->IsStatFlag(STATF_ONHORSE | STATF_HOVERING) || (m_pChar->m_pPlayer->m_speedMode & 0x01))
+				iDelay = (rawdir & 0x80) ? 100 : 200;	// 100ms : 200ms 
+			else
+				iDelay = (rawdir & 0x80) ? 200 : 400;	// 200ms : 400ms
+
+			iDelay -= 30; //Delay offset is set to be more permisif when player have lag or processor lack precision 
+			// This system do not work because the offset must be fine tune for each server and for EACH player and it's ping
+			// For exemple, in local we set offset to 10 and there is no false-positive. If set offset to 30, Speedhack at 1.2 is not detect
+			// On live server, with delay of 30, some player will experience false-positive some not. Player with good ping will be able to use speedhack without detection
+			// FIXME: The offset delay should be calculate using the ping value of each player and a fix value of processor functionnality. The iDelay must ajust each tick depending of the ping
+			// The buffer system Event_CheckWalkBuffer seem more acurate because it permit some ajustment.
+			m_timeNextEventWalk = iCurTime + iDelay;
+		}
+		else if (m_pChar->IsStatFlag(STATF_FLY) && !m_pChar->IsPriv(PRIV_GM) && (g_Cfg.m_iWalkBuffer) && !m_pChar->GetRegion()->_pMultiLink && !Event_CheckWalkBuffer(rawdir) )
+				//Run, Not GM , walkbuffer active on ini, not on multi (boat) 
+		{
+			new PacketMovementRej(this, sequence);
+			g_Log.Event(LOGL_WARN | LOGM_CHEAT, "PacketMovement Rejected for '%s', Speedhack or WalkRegen ini setting?\n", GetAccount()->GetName());
+			m_timeLastEventWalk = iCurTime;
+			++m_iWalkStepCount;					// Increase step count to use on next walk buffer checks
+			return false;
+		}
 
 		// Are we invis ?
 		m_pChar->CheckRevealOnMove();
@@ -898,7 +934,7 @@ bool CClient::Event_Walk( byte rawdir, byte sequence ) // Player moves
 		}
 
 		m_timeLastEventWalk = iCurTime;
-		++m_iWalkStepCount;					// Increase step count to use on walk buffer checks
+		++m_iWalkStepCount;					// Increase step count to use on next walk buffer checks
 	}
 	else
 	{
@@ -1108,238 +1144,252 @@ void CClient::Event_VendorBuy_Cheater( int iCode )
 
 void CClient::Event_VendorBuy(CChar* pVendor, const VendorItem* items, uint uiItemCount)
 {
-	ADDTOCALLSTACK("CClient::Event_VendorBuy");
-	if (m_pChar == nullptr || pVendor == nullptr || items == nullptr || uiItemCount <= 0)
+    ADDTOCALLSTACK("CClient::Event_VendorBuy");
+    if (m_pChar == nullptr || pVendor == nullptr || items == nullptr || uiItemCount <= 0)
+        return;
+    
+    //We don't need to limit virtual golds to 32 bit int.
+    const int64 kuiMaxCost = ((g_Cfg.m_iFeatureTOL & FEATURE_TOL_VIRTUALGOLD) ? (INT64_MAX / 2) : (INT32_MAX / 2));
+
+    const bool fPlayerVendor = pVendor->IsStatFlag(STATF_PET);
+    pVendor->GetBank(LAYER_VENDOR_STOCK);
+    CItemContainer* pPack = m_pChar->GetPackSafe();
+
+    CItemVendable* pItem;
+    int64 iCostTotal = 0;
+
+    //	Check if the vendor really has so much items
+    for (uint i = 0; i < uiItemCount; ++i)
+    {
+        if ( items[i].m_serial.IsValidUID() == false )
+            continue;
+
+        pItem = dynamic_cast <CItemVendable *> (items[i].m_serial.ItemFind());
+        if ( pItem == nullptr )
+            continue;
+            
+        if ((items[i].m_vcAmount <= 0) || (items[i].m_vcAmount > pItem->GetAmount()))
+        {
+            pVendor->Speak(g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_CANTFULFILL));
+            Event_VendorBuy_Cheater( 0x3 );
+            return;
+        }
+
+        switch (pItem->GetType())
+        {
+            case IT_FIGURINE:
+            {
+                if (IsSetOF(OF_PetSlots))
+                {
+                    CItemBase* pItemPet = CItemBase::FindItemBase(pItem->GetID());
+                    CCharBase* pPetDef = CCharBase::FindCharBase(CREID_TYPE(pItemPet->m_ttFigurine.m_idChar.GetResIndex()));
+                    if (pPetDef)
+                    {
+                        short iFollowerSlots = (short)pPetDef->GetDefNum("FOLLOWERSLOTS");
+                        if (!m_pChar->FollowersUpdate(pVendor, (maximum(0, iFollowerSlots) * items[i].m_vcAmount), true))
+                        {
+                            m_pChar->SysMessageDefault(DEFMSG_PETSLOTS_TRY_CONTROL);
+                            return;
+                        }
+                    }
+                }
+                break;
+            }
+            case IT_HAIR:
+            {
+                if (!m_pChar->IsPlayableCharacter())
+                {
+                    pVendor->Speak(g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_CANTBUY));
+                    return;
+                }
+                break;
+            }
+            case IT_BEARD:
+            {
+                if ((m_pChar->GetDispID() != CREID_MAN) && (m_pChar->GetDispID() != CREID_GARGMAN) && !m_pChar->IsPriv(PRIV_GM))
+                {
+                    pVendor->Speak(g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_CANTBUY));
+                    return;
+                }
+                break;
+            }
+        }
+        
+		iCostTotal += ((int64)(items[i].m_vcAmount) * items[i].m_price);
+        if (iCostTotal > kuiMaxCost)
+        {
+            pVendor->Speak(g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_CANTFULFILL));
+            Event_VendorBuy_Cheater( 0x4 );
+            return;
+        }
+    }
+    
+	if (iCostTotal <= 0 )
+	{
+		pVendor->Speak(g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_BUY_NOTHING));
 		return;
-
-    static constexpr uint kuiMaxCost = (INT32_MAX / 2);
-	const bool fPlayerVendor = pVendor->IsStatFlag(STATF_PET);
-	pVendor->GetBank(LAYER_VENDOR_STOCK);
-	CItemContainer* pPack = m_pChar->GetPackSafe();
-
-	CItemVendable* pItem;
-	int64 costtotal = 0;
-
-	//	Check if the vendor really has so much items
-	for (uint i = 0; i < uiItemCount; ++i)
-	{
-		if ( items[i].m_serial.IsValidUID() == false )
-			continue;
-
-		pItem = dynamic_cast <CItemVendable *> (items[i].m_serial.ItemFind());
-		if ( pItem == nullptr )
-			continue;
-
-		if ((items[i].m_vcAmount <= 0) || (items[i].m_vcAmount > pItem->GetAmount()))
-		{
-			pVendor->Speak("Your order cannot be fulfilled, please try again.");
-			Event_VendorBuy_Cheater( 0x3 );
-			return;
-		}
-
-		costtotal += ((int64)(items[i].m_vcAmount) * items[i].m_price);
-		if ( costtotal > kuiMaxCost )
-		{
-			pVendor->Speak("Your order cannot be fulfilled, please try again.");
-			Event_VendorBuy_Cheater( 0x4 );
-			return;
-		}
-
-		// If it's a pet, check if we have follower slots to control it
-		if ( pItem->GetType() != IT_FIGURINE )
-			continue;
-		if ( IsSetOF(OF_PetSlots) )
-		{
-			CItemBase* pItemPet = CItemBase::FindItemBase(pItem->GetID());
-			CCharBase* pPetDef = CCharBase::FindCharBase(CREID_TYPE(pItemPet->m_ttFigurine.m_idChar.GetResIndex()));
-			if ( pPetDef )
-			{
-				short iFollowerSlots = (short)pPetDef->GetDefNum("FOLLOWERSLOTS");
-				if ( !m_pChar->FollowersUpdate(pVendor, (maximum(1, iFollowerSlots) * items[i].m_vcAmount), true) )
-				{
-					m_pChar->SysMessageDefault( DEFMSG_PETSLOTS_TRY_CONTROL );
-					return;
-				}
-			}
-		}
 	}
-
-	if ( costtotal <= 0 )
-	{
-		pVendor->Speak("Thou hast bought nothing!");
-		return;
-	}
-    costtotal = m_pChar->PayGold(pVendor, (int)costtotal, nullptr, PAYGOLD_BUY);
-	//	Check for gold being enough to buy this
-	bool fBoss = pVendor->NPC_IsOwnedBy(m_pChar);
-	if ( !fBoss )
-	{
-		if ( g_Cfg.m_iFeatureTOL & FEATURE_TOL_VIRTUALGOLD )
-		{
-			if ( m_pChar->m_virtualGold < costtotal )
-			{
-				pVendor->Speak(g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_NOMONEY1));
-				return;
-			}
-			m_pChar->m_virtualGold -= costtotal;
-			m_pChar->UpdateStatsFlag();
-		}
-		else
-		{
-			int iGold = m_pChar->GetPackSafe()->ContentConsumeTest(CResourceID(RES_TYPEDEF, IT_GOLD), (int)(costtotal));
-			if ( !g_Cfg.m_fPayFromPackOnly && iGold )
-				iGold = m_pChar->ContentConsumeTest(CResourceID(RES_TYPEDEF, IT_GOLD), (int)(costtotal));
-
-			if ( iGold )
-			{
-				pVendor->Speak(g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_NOMONEY1));
-				return;
-			}
-		}
-	}
-
-	//	Move the items bought into your pack.
-	for ( uint i = 0; i < uiItemCount; ++i )
-	{
-		if ( items[i].m_serial.IsValidUID() == false )
-			break;
-
-		pItem = dynamic_cast <CItemVendable *> (items[i].m_serial.ItemFind());
-		word amount = items[i].m_vcAmount;
-
-		if ( pItem == nullptr )
-			continue;
-
-		if (( IsTrigUsed(TRIGGER_BUY) ) || ( IsTrigUsed(TRIGGER_ITEMBUY) ))
-		{
-			CScriptTriggerArgs Args( amount, items[i].m_vcAmount * items[i].m_price, pVendor );
-			Args.m_VarsLocal.SetNum( "TOTALCOST", costtotal);
-			if ( pItem->OnTrigger( ITRIG_Buy, this->GetChar(), &Args ) == TRIGRET_RET_TRUE )
-				continue;
-		}
-
-		if ( !fPlayerVendor )   // NPC vendors
-		{
-			pItem->SetAmount(pItem->GetAmount() - amount);
-
-			switch ( pItem->GetType() )
-			{
-				case IT_FIGURINE:
-					{
-						for ( int f = 0; f < amount; ++f )
-							m_pChar->Use_Figurine(pItem);
-					}
-					goto do_consume;
-				case IT_BEARD:
-					if (( m_pChar->GetDispID() != CREID_MAN ) && !m_pChar->IsPriv(PRIV_GM))
-					{
-						pVendor->Speak( g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_CANTBUY) );
-						continue;
-					}
-					break;
-				case IT_HAIR:
-					// Must be added directly. can't exist in pack!
-					if ( ! m_pChar->IsPlayableCharacter())
-					{
-						pVendor->Speak( g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_CANTBUY) );
-						continue;
-					}
-					{
-						CItem * pItemNew = CItem::CreateDupeItem( pItem );
-						m_pChar->LayerAdd(pItemNew);
-						pItemNew->m_TagDefs.SetNum("NOSAVE", 0, true);
-						pItemNew->SetTimeoutS(55000);	// set the grow timer.
-						pVendor->UpdateAnimate(ANIM_ATTACK_1H_SLASH);
-						m_pChar->Sound( SOUND_SNIP );	// snip noise.
-					}
-					continue;
-
-				default:
-					break;
-			}
-
-			if ( amount > 1 && !pItem->Item_GetDef()->IsStackableType() )
-			{
-				while ( amount -- )
-				{
-					CItem * pItemNew = CItem::CreateDupeItem(pItem);
-					pItemNew->SetAmount(1);
-					pItemNew->m_TagDefs.SetNum("NOSAVE", 0, true);
-					if ( !pPack->CanContainerHold( pItemNew, m_pChar ) || !m_pChar->CanCarry( pItemNew ) )
-						m_pChar->ItemDrop( pItemNew, m_pChar->GetTopPoint() );
-					else
-						pPack->ContentAdd( pItemNew );
-				}
-			}
-			else
-			{
-				CItem * pItemNew = CItem::CreateDupeItem(pItem);
-				pItemNew->SetAmount(amount);
-				pItemNew->m_TagDefs.SetNum("NOSAVE", 0, true);
-				if ( !pPack->CanContainerHold( pItemNew, m_pChar ) || !m_pChar->CanCarry( pItemNew ) )
-					m_pChar->ItemDrop( pItemNew, m_pChar->GetTopPoint() );
-				else
-					pPack->ContentAdd( pItemNew );
-			}
-		}
-		else    //  Player vendors
-		{
-			if ( pItem->GetAmount() <= amount ) // buy the whole item
-			{
-				if ( !pPack->CanContainerHold( pItem, m_pChar ) || !m_pChar->CanCarry( pItem ) )
-					m_pChar->ItemDrop( pItem, m_pChar->GetTopPoint() );
-				else
-					pPack->ContentAdd( pItem );
-
-				pItem->m_TagDefs.SetNum("NOSAVE", 0, true);
-			}
-			else
-			{
-				pItem->SetAmount(pItem->GetAmount() - amount);
-
-				CItem *pItemNew = CItem::CreateDupeItem(pItem);
-				pItemNew->m_TagDefs.SetNum("NOSAVE", 0, true);
-				pItemNew->SetAmount(amount);
-				if ( !pPack->CanContainerHold( pItemNew, m_pChar ) || !m_pChar->CanCarry( pItemNew ) )
-					m_pChar->ItemDrop( pItemNew, m_pChar->GetTopPoint() );
-				else
-					pPack->ContentAdd( pItemNew );
-			}
-		}
+	iCostTotal = m_pChar->PayGold(pVendor, iCostTotal, nullptr, PAYGOLD_BUY);
+    
+    //	Check for gold being enough to buy this
+    bool fBoss = pVendor->NPC_IsOwnedBy(m_pChar);
+    if ( !fBoss )
+    {
+        if (g_Cfg.m_iFeatureTOL & FEATURE_TOL_VIRTUALGOLD)
+        {
+            if (m_pChar->m_virtualGold < iCostTotal)
+            {
+                pVendor->Speak(g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_NOMONEY1));
+                return;
+            }
+        }
+        else
+        {
+            int iGold = m_pChar->GetPackSafe()->ContentConsumeTest(CResourceID(RES_TYPEDEF, IT_GOLD), (dword)iCostTotal);
+            if (!g_Cfg.m_fPayFromPackOnly && iGold)
+                iGold = m_pChar->ContentConsumeTest(CResourceID(RES_TYPEDEF, IT_GOLD), (int)iCostTotal);
+                
+            if (iGold)
+            {
+                pVendor->Speak(g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_NOMONEY1));
+                return;
+            }
+        }
+    }
+    
+    //	Move the items bought into your pack.
+    for (uint i = 0; i < uiItemCount; ++i)
+    {
+        if (items[i].m_serial.IsValidUID() == false)
+            continue; //We need to continue for loop for other items not break.
+            
+        pItem = dynamic_cast <CItemVendable *> (items[i].m_serial.ItemFind());
+        word amount = items[i].m_vcAmount;
+        
+        if (pItem == nullptr)
+            continue;
+            
+        if ((IsTrigUsed(TRIGGER_BUY)) || (IsTrigUsed(TRIGGER_ITEMBUY)))
+        {
+            CScriptTriggerArgs Args( amount, int64(amount) * items[i].m_price, pVendor );
+            Args.m_VarsLocal.SetNum( "TOTALCOST", iCostTotal);
+            if ( pItem->OnTrigger( ITRIG_Buy, this->GetChar(), &Args ) == TRIGRET_RET_TRUE )
+                continue;
+        }
+        
+        if (!fPlayerVendor) //NPC vendors
+        {
+            pItem->SetAmount(pItem->GetAmount() - amount);
+            
+            switch (pItem->GetType())
+            {
+                case IT_FIGURINE:
+                {
+                    for ( int f = 0; f < amount; ++f )
+                        m_pChar->Use_Figurine(pItem);
+                    goto do_consume;
+                }
+                case IT_BEARD:
+                case IT_HAIR:
+                {
+                    //While we already checked beard and hair requirements we don't need any more checks for it.
+                    CItem* pItemNew = CItem::CreateDupeItem(pItem);
+                    m_pChar->LayerAdd(pItemNew); //Equip it, we don't need to drop it on backpack.
+                    pItemNew->m_TagDefs.SetNum("NOSAVE", 0, true);
+                    pItemNew->SetTimeoutS(55000); //Growing timer.
+                    pVendor->UpdateAnimate(ANIM_ATTACK_1H_SLASH);
+                    m_pChar->Sound(SOUND_SNIP);
+                    break;
+                }
+                default:
+                    break;
+            }
+            
+            if ((amount > 1) && (!pItem->Item_GetDef()->IsStackableType()))
+            {
+                while (amount--)
+                {
+                    CItem * pItemNew = CItem::CreateDupeItem(pItem);
+                    pItemNew->SetAmount(1);
+                    pItemNew->m_TagDefs.SetNum("NOSAVE", 0, true);
+                    
+                    if (!pPack->CanContainerHold(pItemNew, m_pChar) || (!m_pChar->CanCarry(pItemNew)))
+                        m_pChar->ItemDrop( pItemNew, m_pChar->GetTopPoint() );
+                    else
+                        pPack->ContentAdd( pItemNew );
+                }
+            }
+            else
+            {
+                CItem * pItemNew = CItem::CreateDupeItem(pItem);
+                pItemNew->SetAmount(amount);
+                pItemNew->m_TagDefs.SetNum("NOSAVE", 0, true);
+                if (!pPack->CanContainerHold(pItemNew, m_pChar) || (!m_pChar->CanCarry(pItemNew)))
+                    m_pChar->ItemDrop(pItemNew, m_pChar->GetTopPoint());
+                else
+                    pPack->ContentAdd(pItemNew);
+            }
+        }
+        else //Player vendors
+        {
+            if ( pItem->GetAmount() <= amount ) //Buy the whole item
+            {
+                if ((!pPack->CanContainerHold(pItem, m_pChar)) || (!m_pChar->CanCarry(pItem)))
+                    m_pChar->ItemDrop(pItem, m_pChar->GetTopPoint());
+                else
+                    pPack->ContentAdd(pItem);
+                    
+                pItem->m_TagDefs.SetNum("NOSAVE", 0, true);
+            }
+            else
+            {
+                pItem->SetAmount(pItem->GetAmount() - amount);
+                
+                CItem *pItemNew = CItem::CreateDupeItem(pItem);
+                pItemNew->m_TagDefs.SetNum("NOSAVE", 0, true);
+                pItemNew->SetAmount(amount);
+                if ((!pPack->CanContainerHold(pItemNew, m_pChar)) || (!m_pChar->CanCarry(pItemNew)))
+                    m_pChar->ItemDrop(pItemNew, m_pChar->GetTopPoint());
+                else
+                    pPack->ContentAdd(pItemNew);
+            }
+        }
 
 do_consume:
-		pItem->Update();
-	}
-
-	//	Step #5
-	//	Say the message about the bought goods
-	tchar *sMsg = Str_GetTemp();
-	tchar *pszTemp1 = Str_GetTemp();
-	tchar *pszTemp2 = Str_GetTemp();
-	snprintf(pszTemp1, STR_TEMPLENGTH, g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_HYARE), m_pChar->GetName());
-	snprintf(pszTemp2, STR_TEMPLENGTH, fBoss ? g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_S1) : g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_B1),
-		costtotal, (costtotal==1) ? "" : g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_CA));
-	snprintf(sMsg, STR_TEMPLENGTH, "%s %s %s", pszTemp1, pszTemp2, g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_TY));
-	pVendor->Speak(sMsg);
-
-	//	Step #6
-	//	Take the gold and add it to the vendor
-	if ( !fBoss )
-	{
-		int iGold = m_pChar->GetPackSafe()->ContentConsume( CResourceID(RES_TYPEDEF,IT_GOLD), (int)(costtotal));
-		if ( !g_Cfg.m_fPayFromPackOnly && iGold)
-			m_pChar->ContentConsume( CResourceID(RES_TYPEDEF,IT_GOLD), iGold);
-			//m_pChar->ContentConsume( RESOURCE_ID(RES_TYPEDEF,IT_GOLD), (int)(costtotal));
-
-
-		pVendor->GetBank()->m_itEqBankBox.m_Check_Amount += (uint)(costtotal);
-	}
-
-	//	Clear the vendor display.
-	addVendorClose(pVendor);
-
-	if ( costtotal > 0 )	// if anything was sold, sound this
-		addSound( 0x057 );
+        pItem->Update();
+    }
+    
+    //Say the message about the bought goods
+    tchar *sMsg = Str_GetTemp();
+    tchar *pszTemp1 = Str_GetTemp();
+    tchar *pszTemp2 = Str_GetTemp();
+    snprintf(pszTemp1, STR_TEMPLENGTH, g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_HYARE), m_pChar->GetName());
+    snprintf(pszTemp2, STR_TEMPLENGTH, (fBoss ? g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_S1) : g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_B1)),
+		iCostTotal, ((iCostTotal ==1) ? "" : g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_CA)) );
+    snprintf(sMsg, STR_TEMPLENGTH, "%s %s %s", pszTemp1, pszTemp2, g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_TY));
+    pVendor->Speak(sMsg);
+    
+    //Take the gold and add it to the vendor
+    if ( !fBoss )
+    {
+        if (g_Cfg.m_iFeatureTOL & FEATURE_TOL_VIRTUALGOLD) //We have to do gold trade in here.
+        {
+            m_pChar->m_virtualGold -= iCostTotal;
+            m_pChar->UpdateStatsFlag();
+        }
+        else
+        {
+            int iGold = m_pChar->GetPackSafe()->ContentConsume( CResourceID(RES_TYPEDEF,IT_GOLD), (int)iCostTotal);
+            if (!g_Cfg.m_fPayFromPackOnly && iGold)
+                m_pChar->ContentConsume( CResourceID(RES_TYPEDEF,IT_GOLD), iGold);
+            pVendor->GetBank()->m_itEqBankBox.m_Check_Amount += (uint)iCostTotal;
+        }
+    }
+    
+    //Close vendor gump
+    addVendorClose(pVendor);
+    if (iCostTotal > 0) //if anything was sold, sound this
+        addSound(SOUND_DROP_GOLD1); //Gold sound is better than cloth one, 0x57 is SOUND_USE_CLOTH
 }
 
 void CClient::Event_VendorSell_Cheater( int iCode )
@@ -1406,12 +1456,24 @@ void CClient::Event_VendorSell(CChar* pVendor, const VendorItem* items, uint uiI
 		word amount = items[i].m_vcAmount;
 
 		// Now how much did i say i wanted to sell ?
+		dword dwPrice = 0;
 		if ( pItem->GetAmount() < amount )	// Selling more than i have ?
 		{
 			amount = pItem->GetAmount();
 		}
 
-		dword dwPrice = pItemSell->GetVendorPrice(iConvertFactor) * amount;
+		// If OVERRIDE.VALUE is define on the script and this NPC buy this item at a specific price, we use this price in priority
+		// Else, we calculate the value of the item in the player's backpack
+		if (pItemSell->GetKey("OVERRIDE.VALUE", true))
+		{
+			//Get the price on NPC template
+			dwPrice = pItemSell->GetVendorPrice(iConvertFactor,1) * amount; //Check the value of item on NPC template or itemdef
+		}
+		else
+		{
+			//Get the price/Value of the real item in the backpack
+			dwPrice = pItem->GetVendorPrice(iConvertFactor,1) * amount; //Check the value of the item on the player
+		}
 
 		if (( IsTrigUsed(TRIGGER_SELL) ) || ( IsTrigUsed(TRIGGER_ITEMSELL) ))
 		{
@@ -1789,20 +1851,28 @@ void CClient::Event_Talk_Common(lpctstr pszText)	// PC speech
 	CChar *pChar = nullptr;
 	CChar *pCharAlt = nullptr;
 	size_t i = 0;
-	int iAltDist;
-	if (g_Cfg.m_iDistanceTalk > 0)
-		iAltDist = g_Cfg.m_iDistanceTalk;
-	else
-		iAltDist = UO_MAP_VIEW_SIGHT;
-	bool bGhostSpeak = m_pChar->IsSpeakAsGhost();
+    bool bGhostSpeak = m_pChar->IsSpeakAsGhost();
+    int iFullDist = UO_MAP_VIEW_SIGHT;
+    bool fIgnoreLOS = (g_Cfg.m_iNPCDistanceHear < 0);
+    if (g_Cfg.m_iNPCDistanceHear != 0)
+    {
+        iFullDist = abs(g_Cfg.m_iNPCDistanceHear);
+    }
 
-	CWorldSearch AreaChars(m_pChar->GetTopPoint(), iAltDist);
+    //Reduce NPC hear distance for non pets
+    int iAltDist = iFullDist;
+
+	CWorldSearch AreaChars(m_pChar->GetTopPoint(), UO_MAP_VIEW_SIGHT);
+
 	for (;;)
 	{
 		pChar = AreaChars.GetChar();
+
+        //No more Chars to check
 		if ( !pChar )
 			break;
 
+        //Has Communication Crystal Flag on?
 		if ( pChar->IsStatFlag(STATF_COMM_CRYSTAL) )
 		{
 			for (CSObjContRec* pObjRec : pChar->GetIterationSafeCont())
@@ -1812,12 +1882,26 @@ void CClient::Event_Talk_Common(lpctstr pszText)	// PC speech
 			}
 		}
 
-		if ( pChar == m_pChar )
-			continue;
+        //Skik myself
+        if (pChar == m_pChar)
+        {
+            continue;
+        }
+        //Skip non NPCs
 		if ( !pChar->m_pNPC )
-			continue;
+        {
+            continue;
+        }
+        // Skip NPCs that can't understand ghosts if you are dead
 		if ( bGhostSpeak && !pChar->CanUnderstandGhost() )
-			continue;
+        {
+            continue;
+        }
+        //Skip Vendors that are too far when buying or selling
+        if (pChar->NPC_IsVendor() && (m_pChar->CanTouch(pChar) == false) && (FindStrWord(pszText, "buy,sell") > 0))
+        {
+            continue;
+        }
 
 		bool bNamed = false;
 		i = 0;
@@ -1833,32 +1917,39 @@ void CClient::Event_Talk_Common(lpctstr pszText)	// PC speech
 		}
 		if ( i > 0 )
 		{
-			while ( ISWHITESPACE(pszText[i]) )
-				++i;
+            while ( ISWHITESPACE(pszText[i]) )
+            {
+                ++i;
+            }
 
-			if ( pChar->NPC_OnHearPetCmd(pszText + i, m_pChar, !bNamed) )
+			if ( (pChar->NPC_IsOwnedBy(m_pChar)) && (pChar->NPC_OnHearPetCmd(pszText + i, m_pChar, !bNamed)) )
 			{
+                //Stop for single pet target or named
 				if ( bNamed || (GetTargMode() == CLIMODE_TARG_PET_CMD) )
 					return;
-				continue;	// the command might apply to others pets
+
+                // the command might apply to others pets
+				continue;
 			}
+
 			if ( bNamed )
 				break;
 		}
 
-		// Are we close to the char ?
-		int iDist = m_pChar->GetTopDist3D(pChar);
-		if ( (pChar->Skill_GetActive() == NPCACT_TALK) && (pChar->m_Act_UID == m_pChar->GetUID()) )	// already talking to him
+        int iDist = m_pChar->GetTopDist3D(pChar);
+
+        //Can't see or too far, Can't hear!
+        if (((!m_pChar->CanSeeLOS(pChar)) && (!fIgnoreLOS)) || (iDist > iFullDist))
+            continue;
+
+        // already talking to him
+		if ( (pChar->Skill_GetActive() == NPCACT_TALK) && (pChar->m_Act_UID == m_pChar->GetUID()) )
 		{
 			pCharAlt = pChar;
-			iAltDist = 1;
+            break;
 		}
-		else if ( pChar->IsClient() && (iAltDist >= 2) )	// PC's have higher priority
-		{
-			pCharAlt = pChar;
-			iAltDist = 2;	// high priority
-		}
-		else if ( iDist < iAltDist )	// closest NPC guy ?
+        // Pick closest NPC?
+		else if ( iDist < iAltDist )
 		{
 			pCharAlt = pChar;
 			iAltDist = iDist;
@@ -2407,7 +2498,7 @@ void CClient::Event_Target(dword context, CUID uid, CPointMap pt, byte flags, IT
 void CClient::Event_AOSPopupMenuRequest( dword uid ) //construct packet after a client request
 {
 	ADDTOCALLSTACK("CClient::Event_AOSPopupMenuRequest");
-	CUID uObj = uid;
+	CUID uObj(uid);
 	CObjBaseTemplate *pObj = uObj.ObjFind();
 	if ( !m_pChar || m_pChar->IsStatFlag(STATF_DEAD) || !CanSee(pObj) )
 		return;
@@ -2421,7 +2512,7 @@ void CClient::Event_AOSPopupMenuRequest( dword uid ) //construct packet after a 
 		delete m_pPopupPacket;
 		m_pPopupPacket = nullptr;
 	}
-	m_pPopupPacket = new PacketDisplayPopup(this, uid);
+	m_pPopupPacket = new PacketDisplayPopup(this, uObj);
 
 	CScriptTriggerArgs Args;
 	bool fPreparePacket = false;
@@ -2595,7 +2686,7 @@ void CClient::Event_AOSPopupMenuSelect(dword uid, word EntryTag)	//do something 
 	if ( !m_pChar || !EntryTag )
 		return;
 
-	CUID uObj = uid;
+	CUID uObj(uid);
 	CObjBase *pObj = uObj.ObjFind();
 	if ( !CanSee(pObj) )
 		return;
@@ -2730,7 +2821,7 @@ void CClient::Event_AOSPopupMenuSelect(dword uid, word EntryTag)	//do something 
 	switch ( EntryTag )
 	{
 		case POPUP_PAPERDOLL:
-			m_pChar->GetClient()->addCharPaperdoll(pChar);
+			m_pChar->GetClientActive()->addCharPaperdoll(pChar);
 			break;
 
 		case POPUP_BACKPACK:
@@ -2738,7 +2829,7 @@ void CClient::Event_AOSPopupMenuSelect(dword uid, word EntryTag)	//do something 
 			break;
 
 		case POPUP_PARTY_ADD:
-			m_pChar->GetClient()->OnTarg_Party_Add(pChar);
+			m_pChar->GetClientActive()->OnTarg_Party_Add(pChar);
 			break;
 
 		case POPUP_PARTY_REMOVE:
@@ -2807,7 +2898,7 @@ void CClient::Event_UseToolbar(byte bType, dword dwArg)
 		    break;
 
 		case 0x04: // Item
-			Event_DoubleClick(dwArg, true, true);
+			Event_DoubleClick(CUID(dwArg), true, true);
             break;
 
         case 0x5:	// virtue
@@ -2890,7 +2981,7 @@ void CClient::Event_ExtCmd( EXTCMD_TYPE type, tchar *pszName )
 
 		case EXTCMD_AUTOTARG:	// bizarre new autotarget mode. "target x y z"
 		{
-			CObjBase *pObj = CUID::ObjFind(atoi(ppArgs[0]));
+			CObjBase *pObj = CUID::ObjFindFromUID(atoi(ppArgs[0]));
 			if ( pObj )
 				DEBUG_ERR(("%x:Event_ExtCmd AutoTarg '%s' '%s'\n", GetSocketID(), pObj->GetName(), !ppArgs[1] ? TSTRING_NULL : ppArgs[1]));
 			else
@@ -2999,7 +3090,7 @@ bool CClient::xPacketFilter( const byte * pData, uint iLen )
 		Args.m_VarsLocal.SetNum("NUM", bytes);
 		memcpy(zBuf, &(pData[0]), bytestr);
 		zBuf[bytestr] = 0;
-		Args.m_VarsLocal.SetStr("STR", true, zBuf, true);
+		Args.m_VarsLocal.SetStr("STR", true, zBuf);
 		if ( m_pAccount )
 		{
 			Args.m_VarsLocal.SetStr("ACCOUNT", false, m_pAccount->GetName());
@@ -3048,7 +3139,7 @@ bool CClient::xOutPacketFilter( const byte * pData, uint iLen )
 		Args.m_VarsLocal.SetNum("NUM", bytes);
 		memcpy(zBuf, &(pData[0]), bytestr);
 		zBuf[bytestr] = 0;
-		Args.m_VarsLocal.SetStr("STR", true, zBuf, true);
+		Args.m_VarsLocal.SetStr("STR", true, zBuf);
 		if ( m_pAccount )
 		{
 			Args.m_VarsLocal.SetStr("ACCOUNT", false, m_pAccount->GetName());

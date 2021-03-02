@@ -151,7 +151,7 @@ bool CItemMulti::Delete(bool fForce)
 
 const CItemBaseMulti * CItemMulti::Multi_GetDef() const
 {
-    return(static_cast <const CItemBaseMulti *>(Base_GetDef()));
+    return static_cast <const CItemBaseMulti *>(Base_GetDef());
 }
 
 CRegion * CItemMulti::GetRegion() const
@@ -161,19 +161,18 @@ CRegion * CItemMulti::GetRegion() const
 
 int CItemMulti::GetSideDistanceFromCenter(DIR_TYPE dir) const
 {
-    const CPointMap& ptSide = GetRegion()->GetRegionCorner(dir);
-    return ptSide.GetDist(GetTopPoint());
+    ADDTOCALLSTACK("CItemMulti::GetSideDistanceFromCenter");
+    const CItemBaseMulti* pMultiDef = Multi_GetDef();
+    ASSERT(pMultiDef);
+    return pMultiDef->GetDistanceDir(dir);
 }
 
-int CItemMulti::Multi_GetMaxDist() const
+int CItemMulti::Multi_GetDistanceMax() const
 {
-    ADDTOCALLSTACK("CItemMulti::Multi_GetMaxDist");
+    ADDTOCALLSTACK("CItemMulti::Multi_GetDistanceMax");
     const CItemBaseMulti * pMultiDef = Multi_GetDef();
-    if (pMultiDef == nullptr)
-    {
-        return 0;
-    }
-    return pMultiDef->GetMaxDist();
+    ASSERT(pMultiDef);
+    return pMultiDef->GetDistanceMax();
 }
 
 const CItemBaseMulti * CItemMulti::Multi_GetDef(ITEMID_TYPE id) // static
@@ -257,7 +256,7 @@ void CItemMulti::MultiUnRealizeRegion()
     m_pRegion->UnRealizeRegion();
 
     // find all creatures in the region and remove this from them.
-    CWorldSearch Area(m_pRegion->m_pt, Multi_GetMaxDist());
+    CWorldSearch Area(m_pRegion->m_pt, Multi_GetDistanceMax());
     Area.SetSearchSquare(true);
     for (;;)
     {
@@ -289,14 +288,15 @@ bool CItemMulti::Multi_CreateComponent(ITEMID_TYPE id, short dx, short dy, char 
 
     switch (pItem->GetType())
     {
-        case IT_KEY:    // it will get locked down with the house ?
         case IT_SIGN_GUMP:
         case IT_SHIP_TILLER:
-        {
+            pItem->m_uidLink = GetUID();
+            FALLTHROUGH;
+        case IT_KEY:    // it will get locked down with the house ?
             pItem->m_itKey.m_UIDLock.SetPrivateUID(dwKeyCode);    // Set the key id for the key/sign.
             m_uidLink.SetPrivateUID(pItem->GetUID());
             // Do not break, those need fNeedKey set to true.
-        }
+            FALLTHROUGH;
         case IT_DOOR:
         case IT_CONTAINER:
             fNeedKey = true;
@@ -357,7 +357,7 @@ void CItemMulti::Multi_Setup(CChar *pChar, dword dwKeyCode)
         return;
     }
 
-    Multi_GetSign();    // set the m_uidLink
+    Multi_GetSign();    // set the m_uidLink 
 
     if (pChar)
     {
@@ -443,7 +443,7 @@ CItem * CItemMulti::Multi_FindItemType(IT_TYPE type) const
         return nullptr;
     }
 
-    CWorldSearch Area(GetTopPoint(), Multi_GetMaxDist());
+    CWorldSearch Area(GetTopPoint(), Multi_GetDistanceMax());
     Area.SetSearchSquare(true);
     for (;;)
     {
@@ -977,7 +977,7 @@ void CItemMulti::Eject(const CUID& uidChar)
 
 void CItemMulti::EjectAll(CUID uidCharNoTp)
 {
-    CWorldSearch Area(m_pRegion->m_pt, Multi_GetMaxDist());
+    CWorldSearch Area(m_pRegion->m_pt, Multi_GetDistanceMax());
     Area.SetSearchSquare(true);
     CChar *pCharNoTp = uidCharNoTp.CharFind();
     for (;;)
@@ -1076,26 +1076,26 @@ void CItemMulti::RemoveAllKeys()
     {
         return;
     }
-    RemoveKeys(GetOwner().GetObjUID());
+    RemoveKeys(GetOwner());
     if (!_lCoowners.empty())
     {
         for (const CUID& itCoowner : _lCoowners)
         {
-            RemoveKeys(itCoowner.GetPrivateUID());
+            RemoveKeys(itCoowner);
         }
     }
     if (!_lFriends.empty())
     {
         for (const CUID& itFriend : _lFriends)
         {
-            RemoveKeys(itFriend.GetPrivateUID());
+            RemoveKeys(itFriend);
         }
     }
     if (!_lAccesses.empty())
     {
         for (const CUID& itAccess : _lAccesses)
         {
-            RemoveKeys(itAccess.GetPrivateUID());
+            RemoveKeys(itAccess);
         }
     }
 }
@@ -1287,7 +1287,7 @@ void CItemMulti::TransferAllItemsToMovingCrate(TRANSFER_TYPE iType)
     {
         ptArea = m_pRegion->m_pt;
     }
-    CWorldSearch Area(ptArea, Multi_GetMaxDist());    // largest area.
+    CWorldSearch Area(ptArea, Multi_GetDistanceMax());    // largest area.
     Area.SetSearchSquare(true);
     for (;;)
     {
@@ -1698,14 +1698,8 @@ void CItemMulti::LockItem(const CUID& uidItem)
 void CItemMulti::UnlockItem(const CUID& uidItem)
 {
     ADDTOCALLSTACK("CItemMulti::UnlockItem");
-    for (size_t i = 0; i < _lLockDowns.size(); ++i)
-    {
-        if (_lLockDowns[i] == uidItem)
-        {
-            _lLockDowns.erase(_lLockDowns.begin() + i);
-            break;
-        }
-    }
+    _lLockDowns.erase(std::find(_lLockDowns.begin(), _lLockDowns.end(), uidItem));
+
     CItem *pItem = uidItem.ItemFind();
     if (!pItem)
     {
@@ -1716,6 +1710,24 @@ void CItemMulti::UnlockItem(const CUID& uidItem)
     CScript event("events -ei_house_lockdown");
     pItem->r_LoadVal(event);
     pItem->SetLockDownOfMulti(CUID());
+}
+
+void CItemMulti::UnlockAllItems()
+{
+    ADDTOCALLSTACK("CItemMulti::UnlockAllItems");
+    for (const CUID& uidLockeddown : _lLockDowns)
+    {
+        CItem *pItem = uidLockeddown.ItemFind(true);
+        if (!pItem)
+            continue;
+
+        pItem->ClrAttr(ATTR_LOCKEDDOWN);
+        pItem->m_uidLink.InitUID();
+        CScript event("events -ei_house_lockdown");
+        pItem->r_LoadVal(event);
+        pItem->SetLockDownOfMulti(CUID());
+    }
+    _lLockDowns.clear();
 }
 
 int CItemMulti::GetLockedItemIndex(const CUID& uidItem) const
@@ -2228,7 +2240,7 @@ bool CItemMulti::r_Verb(CScript & s, CTextConsole * pSrc) // Execute command fro
         }
         case SHV_DELFRIEND:
         {
-            const CUID uidFriend = s.GetArgDWVal();
+            const CUID uidFriend(s.GetArgDWVal());
             if (!uidFriend.IsValidUID())
             {
                 _lFriends.clear();
@@ -2257,7 +2269,7 @@ bool CItemMulti::r_Verb(CScript & s, CTextConsole * pSrc) // Execute command fro
             const CUID uidItem(s.GetArgDWVal());
             if (!uidItem.IsValidUID())
             {
-                _lLockDowns.clear();
+                UnlockAllItems();
             }
             else
             {
@@ -2299,7 +2311,7 @@ bool CItemMulti::r_Verb(CScript & s, CTextConsole * pSrc) // Execute command fro
             }
             else
             {
-                g_Log.EventError("Trying to redeed %s (0x%08x) with no redeed target, removing it instead.\n", GetName(), GetUID());
+                g_Log.EventError("Trying to redeed %s (0x%" PRIx32 ") with no redeed target, removing it instead.\n", GetName(), (dword)GetUID());
                 Delete();
                 return true;
             }
@@ -2857,8 +2869,7 @@ bool CItemMulti::r_LoadVal(CScript & s)
             }
             ASSERT(m_pRegion);
             CScript script(s.GetKey() + 7, s.GetArgStr());
-            script.m_iResourceFileIndex = s.m_iResourceFileIndex;    // Index in g_Cfg.m_ResourceFiles of the CResourceScript (script file) where the CScript originated
-            script.m_iLineNum = s.m_iLineNum;                        // Line in the script file where Key/Arg were read
+            script.CopyParseState(s);
             return m_pRegion->r_LoadVal(script);
         }
         // misc
@@ -2869,7 +2880,7 @@ bool CItemMulti::r_LoadVal(CScript & s)
         }
         case SHL_MOVINGCRATE:
         {
-            CUID dwCrate = s.GetArgDWVal();
+            CUID dwCrate(s.GetArgDWVal());
             if (dwCrate.IsValidUID())
             {
                 if ((int)dwCrate == 1) // fix for 'movingcrate 1'
@@ -3285,7 +3296,7 @@ CItem *CItemMulti::Multi_Create(CChar *pChar, const CItemBase * pItemDef, CPoint
         // Now name the guild
         CItemStone * pStone = dynamic_cast <CItemStone*>(pItemNew);
         pStone->AddRecruit(pChar, STONEPRIV_MASTER);
-        pChar->GetClient()->addPromptConsole(CLIMODE_PROMPT_STONE_NAME, g_Cfg.GetDefaultMsg(DEFMSG_ITEMUSE_GUILDSTONE_NEW), pItemNew->GetUID());
+        pChar->GetClientActive()->addPromptConsole(CLIMODE_PROMPT_STONE_NAME, g_Cfg.GetDefaultMsg(DEFMSG_ITEMUSE_GUILDSTONE_NEW), pItemNew->GetUID());
     }
     else if (pItemDef->IsType(IT_SHIP))
     {
@@ -3330,6 +3341,7 @@ void CItemMulti::OnComponentCreate(CItem * pComponent, bool fIsAddon)
         {
             CScript event("events +ei_house_telepad");
             pComponent->r_LoadVal(event);
+            break;
         }
         default:
             break;
@@ -3514,9 +3526,9 @@ bool CMultiStorage::CanAddHouse(const CUID& uidChar, int16 iHouseCount) const
     uint8 iMaxHouses = pChar->m_pPlayer->_iMaxHouses;
     if (iMaxHouses == 0)
     {
-        if (pChar->GetClient())
+        if (pChar->GetClientActive())
         {
-            iMaxHouses = pChar->GetClient()->GetAccount()->_iMaxHouses;
+            iMaxHouses = pChar->GetClientActive()->GetAccount()->_iMaxHouses;
         }
     }
     if (iMaxHouses == 0)
@@ -3639,9 +3651,9 @@ bool CMultiStorage::CanAddShip(const CUID& uidChar, int16 iShipCount)
     uint8 iMaxShips = pChar->m_pPlayer->_iMaxShips;
     if (iMaxShips == 0)
     {
-        if (pChar->GetClient())
+        if (pChar->GetClientActive())
         {
-            iMaxShips = pChar->GetClient()->GetAccount()->_iMaxShips;
+            iMaxShips = pChar->GetClientActive()->GetAccount()->_iMaxShips;
         }
     }
     if (iMaxShips == 0)

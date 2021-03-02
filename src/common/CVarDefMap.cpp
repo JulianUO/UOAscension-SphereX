@@ -13,6 +13,17 @@ inline static int VarDefCompare(const CVarDefCont* pVar, lpctstr ptcKey)
     return strcmpi(pVar->GetKey(), ptcKey);
 }
 
+lpctstr CVarDefCont::GetValStrZeroed(const CVarDefCont* pVar, bool fZero) // static
+{
+	ADDTOCALLSTACK_INTENSIVE("CVarDefCont::GetValStrZeroed");
+	if (pVar)
+	{
+        lpctstr ptcValStr = pVar->GetValStr();
+		return ptcValStr;
+	}
+	return (fZero ? "0" : "");
+}
+
 /***************************************************************************
 *
 *
@@ -442,16 +453,20 @@ CVarDefCont* CVarDefMap::SetStr( lpctstr pszName, bool fQuoted, lpctstr pszVal, 
 		return nullptr;
 
     ASSERT(pszVal);
-	if ( pszVal[0] == '\0' )	// if Val is an empty string, remove any previous def (and do not add a new def)
+	if (!fQuoted)
 	{
-		DeleteAtKey(pszName);
-		return nullptr;
-	}
+		if (pszVal[0] == '\0')
+		{
+			// If Val is an empty string, remove any previous def (and do not add a new def)
+			DeleteAtKey(pszName);
+			return nullptr;
+		}
 
-	if ( !fQuoted && IsSimpleNumberString(pszVal))
-	{
-		// Just store the number and not the string.
-		return SetNum( pszName, Exp_Get64Val( pszVal ), fDeleteZero, fWarnOverwrite);
+		if (IsSimpleNumberString(pszVal))
+		{
+			// Just store the number and not the string.
+			return SetNum(pszName, Exp_Get64Val(pszVal), fDeleteZero, fWarnOverwrite);
+		}
 	}
 
     const size_t idx = m_Container.find_predicate(pszName, VarDefCompare);
@@ -508,9 +523,7 @@ lpctstr CVarDefMap::GetKeyStr( lpctstr ptcKey, bool fZero ) const
 {
 	ADDTOCALLSTACK_INTENSIVE("CVarDefMap::GetKeyStr");
 	const CVarDefCont * pVar = GetKey(ptcKey);
-	if ( pVar == nullptr )
-		return (fZero ? "0" : "");
-	return pVar->GetValStr();
+	return CVarDefCont::GetValStrZeroed(pVar, fZero);
 }
 
 CVarDefCont * CVarDefMap::CheckParseKey( lpctstr pszArgs ) const
@@ -654,20 +667,14 @@ void CVarDefMap::r_WritePrefix( CScript & s, lpctstr ptcPrefix, lpctstr ptcKeyEx
 			continue;
 		
         const CVarDefContNum * pVarNum = dynamic_cast<const CVarDefContNum*>(pVar);
+        _WritePrefix(ptcKey);
+        lpctstr ptcVal = pVar->GetValStr();
         if (pVarNum)
         {
-            // Save VarNums only if they are != 0, otherwise it's a waste of space in the save file
-            if (pVarNum->GetValNum() != 0)
-            {
-                _WritePrefix(ptcKey);
-				lpctstr ptcVal = pVar->GetValStr();
-                s.WriteKey(ts.buffer(), ptcVal);
-            }
+            s.WriteKey(ts.buffer(), ptcVal);
         }
         else
         {
-            _WritePrefix(ptcKey);
-			lpctstr ptcVal = pVar->GetValStr();
             s.WriteKeyFormat(ts.buffer(), "\"%s\"", ptcVal);
         }
 	}

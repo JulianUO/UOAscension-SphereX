@@ -81,7 +81,7 @@ bool CChar::NPC_Vendor_Restock(bool bForce, bool bFillStock)
 		if ( IsTrigUsed(TRIGGER_NPCRESTOCK) )
 		{
 			CCharBase *pCharDef = Char_GetDef();
-			ReadScriptTrig(pCharDef, CTRIG_NPCRestock, true);
+			ReadScriptReducedTrig(pCharDef, CTRIG_NPCRestock, true);
 		}
 
 		//	we need restock vendor money as well
@@ -102,7 +102,7 @@ bool CChar::NPC_StablePetSelect( CChar * pCharPlayer )
 
 	if ( pCharPlayer == nullptr )
 		return false;
-	if ( ! pCharPlayer->IsClient())
+	if ( ! pCharPlayer->IsClientActive())
 		return false;
 
 	// Might have too many pets already ?

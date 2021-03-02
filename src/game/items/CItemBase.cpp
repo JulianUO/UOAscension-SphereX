@@ -913,6 +913,19 @@ bool CItemBase::IsSameDispID( ITEMID_TYPE id ) const
 	return false;
 }
 
+bool CItemBase::IsDupedItem( ITEMID_TYPE id ) const
+{
+    ADDTOCALLSTACK("CItemBase::IsDupedItem");
+    if (m_flip_id.empty())
+        return false;
+    for ( size_t i = 0; i < m_flip_id.size(); ++i )
+    {
+        if ( m_flip_id[i] == id)
+            return true;
+    }
+    return false;
+}
+
 void CItemBase::Restock()
 {
 	ADDTOCALLSTACK("CItemBase::Restock");
@@ -1125,14 +1138,17 @@ bool CItemBase::r_WriteVal( lpctstr ptcKey, CSString & sVal, CTextConsole * pSrc
 			if (!IsType(IT_SHIP))
 				return false;
 			CItemBaseMulti * pItemMulti = dynamic_cast<CItemBaseMulti*>(this);
+			ASSERT(pItemMulti);
 			sVal.FormatVal(pItemMulti->m_SpeedMode);
-		}break;
+		}
+		break;
 		case IBC_SHIPSPEED:
 		{
 			if (!IsType(IT_SHIP))
 				return false;
 			ptcKey += 9;
 			CItemBaseMulti * pItemMulti = dynamic_cast<CItemBaseMulti*>(this);
+			ASSERT(pItemMulti);
 
 			if (*ptcKey == '.')
 			{
@@ -1466,6 +1482,8 @@ bool CItemBase::r_LoadVal( CScript &s )
 			{
 				++ptcKey;
 				CItemBaseMulti *pItemMulti = dynamic_cast<CItemBaseMulti*>(dynamic_cast<CItemBase*>(this));
+				ASSERT(pItemMulti);
+
 				if (!strnicmp(ptcKey, "TILES", 5))
 				{
 					pItemMulti->_shipSpeed.tiles = (uchar)(s.GetArgVal());
@@ -1476,6 +1494,7 @@ bool CItemBase::r_LoadVal( CScript &s )
 					pItemMulti->_shipSpeed.tiles = (uchar)(s.GetArgVal());
 					return true;
 				}
+
 				int64 piVal[2];
 				size_t iQty = Str_ParseCmds(s.GetArgStr(), piVal, CountOf(piVal));
 				if (iQty == 2)
@@ -1495,8 +1514,10 @@ bool CItemBase::r_LoadVal( CScript &s )
                 return false;
             }
             CItemBaseMulti * pItemMulti = dynamic_cast<CItemBaseMulti*>(this);
+			ASSERT(pItemMulti);
             pItemMulti->_iMultiCount = s.GetArgU8Val();
-        }break;
+        }
+		break;
 		case IBC_CANUSE:
 			m_CanUse = s.GetArgVal();
 			break;
@@ -1626,21 +1647,29 @@ bool CItemBase::r_LoadVal( CScript &s )
 			break;
 		case IBC_ID:
 			{
-				if ( GetID() < ITEMID_MULTI )
-				{
+            if ( GetID() < ITEMID_MULTI )
+                {
                     g_Log.EventError( "Setting new ID for base type %s not allowed\n", GetResourceName());
-					return false;
-				}
-
-				ITEMID_TYPE id = (ITEMID_TYPE)(g_Cfg.ResourceGetIndexType( RES_ITEMDEF, s.GetArgStr()));
-				CItemBase * pItemDef = FindItemBase( id );	// make sure the base is loaded.
-				if ( ! pItemDef )
-				{
+                    return false;
+                }
+                
+                ITEMID_TYPE id = (ITEMID_TYPE)(g_Cfg.ResourceGetIndexType( RES_ITEMDEF, s.GetArgStr()));
+                CItemBase * pItemDef = FindItemBase( id );	// make sure the base is loaded.
+                if ( ! pItemDef )
+                {
                     g_Log.EventError( "Setting unknown base ID=0%x for base type %s\n", id, GetResourceName());
-					return false;
+                    return false;
 				}
+                
+                /*
+                 * I add Is Duped Item check to check if item is from DUPELIST of base item, and ID won't change to baseid for unnecessarily.
+                 * I made this change to fix issue #512 (https://github.com/Sphereserver/Source-X/issues/512)
+                 * I leave a note here to know developers why I did this changed
+                 * xwerswoodx
+                 */
+                 if (!pItemDef->IsDupedItem(id))
+                    id = ITEMID_TYPE(pItemDef->m_dwDispIndex);
 
-                id = ITEMID_TYPE(pItemDef->m_dwDispIndex);
                 if ( ! IsValidDispID(id) )
                 {
                     if (id >= g_Install.m_tiledata.GetItemMaxIndex())
@@ -1891,10 +1920,10 @@ bool CItemBaseMulti::AddComponent( ITEMID_TYPE id, short dx, short dy, char dz )
 	m_rect.UnionPoint( dx, dy );
 	if ( id > 0 )
 	{
-		CItemBase * pItemBase = FindItemBase(id);
+		const CItemBase * pItemBase = FindItemBase(id);
 		if ( pItemBase == nullptr )	// make sure the item is valid
 		{
-			DEBUG_ERR(( "Bad COMPONENT 0%x\n", id ));
+			g_Log.EventError( "Bad Multi COMPONENT 0%x\n", id );
 			return false;
 		}
 
@@ -1932,9 +1961,9 @@ bool CItemBaseMulti::AddComponent( tchar * pArgs )
 	return AddComponent((ITEMID_TYPE)(RES_GET_INDEX(piArgs[0])), (short)piArgs[1], (short)piArgs[2], (char)piArgs[3] );
 }
 
-int CItemBaseMulti::GetMaxDist() const
+int CItemBaseMulti::GetDistanceMax() const
 {
-	ADDTOCALLSTACK("CItemBaseMulti::GetMaxDist");
+	ADDTOCALLSTACK("CItemBaseMulti::GetDistanceMax");
 	int iDist = abs( m_rect.m_left );
 	int iDistTmp = abs( m_rect.m_top );
 	if ( iDistTmp > iDist )
@@ -1945,7 +1974,45 @@ int CItemBaseMulti::GetMaxDist() const
 	iDistTmp = abs( m_rect.m_bottom + 1 );
 	if ( iDistTmp > iDist )
 		iDist = iDistTmp;
-	return( iDist+1 );
+	return (iDist + 1);
+}
+
+int CItemBaseMulti::GetDistanceDir(DIR_TYPE dir) const
+{
+	ADDTOCALLSTACK("CItemBaseMulti::GetDistanceDir");
+	ASSERT(dir <= DIR_QTY);
+
+	int iDist = 0;
+	switch (dir)
+	{
+	case DIR_N:
+		iDist = m_rect.m_top;
+		break;
+	case DIR_NE:
+		iDist = (m_rect.m_top + m_rect.m_right) / 2;
+		break;
+	case DIR_E:
+		iDist = m_rect.m_right;
+		break;
+	case DIR_SE:
+		iDist = (m_rect.m_right + m_rect.m_bottom) / 2;
+		break;
+	case DIR_S:
+		iDist = m_rect.m_bottom;
+		break;
+	case DIR_SW:
+		iDist = (m_rect.m_bottom + m_rect.m_left) / 2;
+		break;
+	case DIR_W:
+		iDist = m_rect.m_left;
+		break;
+	case DIR_NW:
+		iDist = (m_rect.m_left + m_rect.m_top) / 2;
+		break;
+	default:
+		return 0;
+	}
+	return abs(iDist);
 }
 
 enum MLC_TYPE
@@ -2218,18 +2285,24 @@ CItemBase * CItemBase::FindItemBase( ITEMID_TYPE id ) // static
 	CScriptLineContext scriptStartContext = s.GetContext();
 	while ( s.ReadKeyParse())
 	{
-		if ( s.IsKey( "DUPEITEM" ))
-			return MakeDupeReplacement( pBase, (ITEMID_TYPE)(g_Cfg.ResourceGetIndexType( RES_ITEMDEF, s.GetArgStr() )) );
+		if (s.IsKey("DUPEITEM"))
+		{
+			return MakeDupeReplacement(pBase, (ITEMID_TYPE)(g_Cfg.ResourceGetIndexType(RES_ITEMDEF, s.GetArgStr())));
+		}
 		else if ( s.IsKey( "MULTIREGION" ))
 		{
 			// Upgrade the CItemBase::pBase to the CItemBaseMulti.
 			pBase = CItemBaseMulti::MakeMultiRegion( pBase, s );
 			continue;
 		}
-		else if ( s.IsKeyHead( "ON", 2 ))	// trigger scripting marks the end
+		else if (s.IsKeyHead("ON", 2))	// trigger scripting marks the end
+		{
 			break;
-		else if ( s.IsKey( "ID" ) || s.IsKey( "TYPE" ))	// These are required for CItemBaseMulti::MakeMultiRegion to function correctly
-			pBase->r_LoadVal( s );
+		}
+		else if (s.IsKey("ID") || s.IsKey("TYPE"))	// These are required for CItemBaseMulti::MakeMultiRegion to function correctly
+		{
+			pBase->r_LoadVal(s);
+		}
 	}
 
 	// Return to the start of the item script

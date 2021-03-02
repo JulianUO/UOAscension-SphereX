@@ -163,7 +163,7 @@ bool PacketCreate::doCreate(CNetState* net, lpctstr charname, bool fFemale, RACE
 	{
 		// logging in as a new player whilst already online !
 		client->addSysMessage(g_Cfg.GetDefaultMsg(DEFMSG_MSG_ALREADYONLINE));
-		g_Log.Event(LOGM_CLIENTS_LOG|LOGM_NOCONTEXT, "%lx:Account '%s' already in use\n", net->id(), account->GetName());
+		g_Log.Event(LOGM_CLIENTS_LOG|LOGM_NOCONTEXT, "%x:Account '%s' already in use\n", net->id(), account->GetName());
 		return false;
 	}
 
@@ -229,7 +229,7 @@ block_creation:
 		return false;
 	}
 
-	g_Log.Event(LOGM_CLIENTS_LOG|LOGM_NOCONTEXT, "%lx:Account '%s' created new char '%s' [0%lx]\n", net->id(), account->GetName(), pChar->GetName(), (dword)pChar->GetUID() );
+	g_Log.Event(LOGM_CLIENTS_LOG|LOGM_NOCONTEXT, "%x:Account '%s' created new char '%s' [0%" PRIx32 "]\n", net->id(), account->GetName(), pChar->GetName(), (dword)pChar->GetUID() );
 	client->Setup_Start(pChar);
 	return true;
 }
@@ -431,7 +431,7 @@ bool PacketItemDropReq::onReceive(CNetState* net)
 	if ( !character )
 		return false;
 
-	CUID serial = readInt32();
+	CUID serial(readInt32());
 	word x = readInt16();
 	word y = readInt16();
 	byte z = readByte();
@@ -447,7 +447,7 @@ bool PacketItemDropReq::onReceive(CNetState* net)
 			grid = 0;
 	}
 
-	CUID container = readInt32();
+	CUID container(readInt32());
 	CPointMap pt(x, y, z, character->GetTopMap());
 
 	client->Event_Item_Drop(serial, pt, container, grid);
@@ -783,7 +783,7 @@ bool PacketVendorBuyReq::onReceive(CNetState* net)
 			else if (!items[index].m_serial.IsValidUID())
 			{
 				items[index].m_serial = serial;
-				items[index].m_price = item->GetVendorPrice(iConvertFactor);
+				items[index].m_price = item->GetVendorPrice(iConvertFactor,0);
 				break;
 			}
 		}
@@ -1265,10 +1265,10 @@ bool PacketBulletinBoardReq::onReceive(CNetState* net)
 				DEBUG_ERR(("%x:BBoard can't create message item\n", net->id()));
 				return true;
 			}
-
+			CSTime datetime = CSTime::GetCurrentTime();
 			newMessage->SetAttr(ATTR_MOVE_NEVER);
 			newMessage->SetName(str);
-			newMessage->SetTimeStamp(CWorldGameTime::GetCurrentTime().GetTimeRaw());
+			newMessage->SetTimeStamp(datetime.GetTime());
 			newMessage->m_sAuthor = character->GetName();
 			newMessage->m_uidLink = character->GetUID();
 
@@ -1881,7 +1881,7 @@ bool PacketVendorSellReq::onReceive(CNetState* net)
 	CChar* vendor = vendorSerial.CharFind();
 	if (vendor == nullptr || vendor->m_pNPC == nullptr || !vendor->NPC_IsVendor())
 	{
-		client->Event_VendorBuy_Cheater(0x1);
+		client->Event_VendorSell_Cheater(0x1); //Both gives same message, but we have to use correct event while we already have.
 		return true;
 	}
 
@@ -2188,7 +2188,7 @@ bool PacketGumpDialogRet::onReceive(CNetState* net)
 			CChar *viewed = character;
 			if ((button == 1) && (checkCount > 0))
 			{
-				viewed = CUID::CharFind(readInt32());
+				viewed = CUID::CharFindFromUID(readInt32());
 				if (!viewed)
 					viewed = character;
 			}
@@ -2502,6 +2502,9 @@ bool PacketClientVersion::onReceive(CNetState* net)
 
 		if ((g_Serv.m_ClientVersion.GetClientVer() != 0) && (g_Serv.m_ClientVersion.GetClientVer() != version))
 			client->addLoginErr(PacketLoginError::BadVersion);
+        //we have asked client version in serverlist to configure character list and game feature.
+        if ( client->m_pAccount )
+                    client->m_pAccount->m_TagDefs.SetNum("ReportedCliVer", version);
 	}
 
 	return true;
@@ -3149,8 +3152,8 @@ bool PacketBandageMacro::onReceive(CNetState* net)
 		return false;
 	}
 
-    CUID uidBandage = readInt32();
-    CUID uidTarget = readInt32();
+    CUID uidBandage(readInt32());
+    CUID uidTarget(readInt32());
 	CItem* bandage = uidBandage.ItemFind();
 	CObjBase* target = uidTarget.ObjFind();
 	if (bandage == nullptr || target == nullptr)

@@ -295,6 +295,7 @@ public:
 		return m_qwFlags;
 	}
 	bool IsSameDispID( ITEMID_TYPE id ) const;
+	bool IsDupedItem( ITEMID_TYPE id ) const;
 	ITEMID_TYPE GetNextFlipID( ITEMID_TYPE id ) const;
 
 	virtual bool r_LoadVal( CScript & s ) override;
@@ -439,7 +440,8 @@ private:
 	CItemBaseMulti& operator=(const CItemBaseMulti& other);
 
 public:
-	int GetMaxDist() const;
+	int GetDistanceMax() const;
+	int GetDistanceDir(DIR_TYPE dir) const;
 
 	bool AddComponent( ITEMID_TYPE id, short dx, short dy, char dz );
 	bool AddComponent( tchar * pArgs );

@@ -136,6 +136,7 @@ CItem::CItem( ITEMID_TYPE id, CItemBase * pItemDef ) : CTimedObject(PROFILE_ITEM
 	m_containedGridIndex = 0;
 	m_dwDispIndex = ITEMID_NOTHING;
 
+
 	m_itNormal.m_more1 = 0;
 	m_itNormal.m_more2 = 0;
 	m_itNormal.m_morep.ZeroPoint();
@@ -167,14 +168,15 @@ CItem::CItem( ITEMID_TYPE id, CItemBase * pItemDef ) : CTimedObject(PROFILE_ITEM
 void CItem::DeleteCleanup(bool fForce)
 {
 	ADDTOCALLSTACK("CItem::DeleteCleanup");
+	_fDeleting = true;
 
 	// Remove corpse map waypoint on enhanced clients
 	if (IsType(IT_CORPSE) && m_uidLink)
 	{
 		CChar* pChar = m_uidLink.CharFind();
-		if (pChar && pChar->GetClient())
+		if (pChar && pChar->GetClientActive())
 		{
-			pChar->GetClient()->addMapWaypoint(this, MAPWAYPOINT_Remove);
+			pChar->GetClientActive()->addMapWaypoint(this, MAPWAYPOINT_Remove);
 		}
 	}
 
@@ -197,7 +199,7 @@ void CItem::DeleteCleanup(bool fForce)
 
     if (CUID uidMulti = GetComponentOfMulti())
     {
-        CItemMulti *pMulti = static_cast<CItemMulti*>(uidMulti.ItemFind());
+        CItemMulti *pMulti = static_cast<CItemMulti*>(uidMulti.ItemFind(true));
         if (pMulti)
         {
             pMulti->DeleteComponent(GetUID());
@@ -205,7 +207,7 @@ void CItem::DeleteCleanup(bool fForce)
     }
     if (CUID uidMulti = GetLockDownOfMulti())
     {
-        CItemMulti *pMulti = static_cast<CItemMulti*>(uidMulti.ItemFind());
+        CItemMulti *pMulti = static_cast<CItemMulti*>(uidMulti.ItemFind(true));
         if (pMulti)
         {
             pMulti->UnlockItem(GetUID());
@@ -792,9 +794,11 @@ int CItem::FixWeirdness()
             {
                 return 0; // get rid of it.	(this is not an ERROR per se)
             }
-            if (IsAttr(ATTR_STOLEN))
-                // The item has been laundered.
-                m_uidLink.InitUID();
+			if (IsAttr(ATTR_STOLEN))
+			{
+				// The item has been laundered.
+				m_uidLink.InitUID();
+			}
             else
             {
                 DEBUG_ERR(("'%s' Bad Link to 0%x\n", GetName(), (dword)(m_uidLink)));
@@ -938,7 +942,7 @@ int CItem::FixWeirdness()
     {
         case IT_EQ_TRADE_WINDOW:
             // Should not exist except equipped. Commented the check on the layer because, right now, placing it on LAYER_SPECIAL is the only way to create script-side a trade window.
-            if (!IsItemEquipped() || /*GetEquipLayer() != LAYER_NONE ||*/ !pChar || !pChar->m_pPlayer || !pChar->IsClient())
+            if (!IsItemEquipped() || /*GetEquipLayer() != LAYER_NONE ||*/ !pChar || !pChar->m_pPlayer || !pChar->IsClientActive())
             {
                 if (IsItemEquipped())
                 {
@@ -961,7 +965,7 @@ int CItem::FixWeirdness()
 
         case IT_EQ_CLIENT_LINGER:
             // Should not exist except equipped.
-            if (!IsItemEquipped() || GetEquipLayer() != LAYER_FLAG_ClientLinger || !pChar || !pChar->m_pPlayer)
+            if (!IsItemEquipped() || (GetEquipLayer() != LAYER_FLAG_ClientLinger) || !pChar || !pChar->m_pPlayer)
             {
                 iResultCode = 0x2221;
                 return iResultCode;	// get rid of it.
@@ -982,7 +986,7 @@ int CItem::FixWeirdness()
 
         case IT_EQ_HORSE:
             // These should only exist eqipped.
-            if (!IsItemEquipped() || GetEquipLayer() != LAYER_HORSE)
+            if (!IsItemEquipped() || (GetEquipLayer() != LAYER_HORSE))
             {
                 iResultCode = 0x2226;
                 return iResultCode;	// get rid of it.
@@ -1488,11 +1492,7 @@ bool CItem::MoveTo(const CPointMap& pt, bool fForceFix) // Put item on the groun
 
 	// Is this area too complex ?
 	if ( ! g_Serv.IsLoading())
-	{
-		size_t iCount = pSector->GetItemComplexity();
-		if ( iCount > g_Cfg.m_iMaxSectorComplexity )
-			g_Log.Event(LOGL_WARN, "%" PRIuSIZE_T " items at %s. Sector too complex!\n", iCount, pt.WriteUsed());
-	}
+		pSector->CheckItemComplexity();
 
 	SetTopPoint( pt );
 	if ( fForceFix )
@@ -1509,13 +1509,21 @@ bool CItem::MoveToCheck( const CPointMap & pt, CChar * pCharMover )
 	CPointMap ptNewPlace;
 	if (pt.IsValidPoint())
     {
-        if (pCharMover && pCharMover->IsPriv(PRIV_GM))
-		    ptNewPlace = pt;
+		if (pCharMover && pCharMover->IsPriv(PRIV_GM))
+		{
+			ptNewPlace = pt;
+		}
         else
         {
-            const CPointMap ptNear = CWorldMap::FindItemTypeNearby(pt, IT_WALL, 0, true, true);
-            if (!ptNear.IsValidPoint())
-                ptNewPlace = pt;
+            const CPointMap ptWall(CWorldMap::FindItemTypeNearby(pt, IT_WALL, 0, true, true));
+            if (!ptWall.IsValidPoint())
+            {
+                const CPointMap ptWindow(CWorldMap::FindItemTypeNearby(pt, IT_WINDOW, 0, true, true));
+                if (!ptWindow.IsValidPoint())
+                {
+                    ptNewPlace = pt;
+                }
+            }
         }
     }
 	if (pCharMover && !ptNewPlace.IsValidPoint())
@@ -1547,7 +1555,9 @@ bool CItem::MoveToCheck( const CPointMap & pt, CChar * pCharMover )
 
         iDecayTime = args.m_iN1 * MSECS_PER_TENTH;
 
-        const CPointMap ptChanged(args.m_s1.GetBuffer());
+		// Warning: here we ignore the read-onlyness of CSString's buffer only because we know that CPointMap constructor won't write past the end, but only replace some characters with '\0'. It's not worth it to build another string just for that.
+		tchar* ptcArgs = const_cast<tchar*>(args.m_s1.GetBuffer());
+        const CPointMap ptChanged(ptcArgs);
         if (!ptChanged.IsValidPoint())
             g_Log.EventError("Trying to override item drop P with an invalid P. Using the original one.\n");
         else
@@ -1563,29 +1573,32 @@ bool CItem::MoveToCheck( const CPointMap & pt, CChar * pCharMover )
     {
         MoveTo(ptNewPlace);
     }
+	Update();
 
-	if ( ttResult != TRIGRET_RET_TRUE )
+	if ( ttResult == TRIGRET_RET_TRUE )
+		return true;
+	
+	// Check if there's too many items on the same spot
+	uint iItemCount = 0;
+	const CItem * pItem = nullptr;
+	CWorldSearch AreaItems(ptNewPlace);
+	for (;;)
 	{
-		// Check if there's too many items on the same spot
-		uint iItemCount = 0;
-		CItem * pItem = nullptr;
-		CWorldSearch AreaItems(ptNewPlace);
-		for (;;)
+		pItem = AreaItems.GetItem();
+		if ( pItem == nullptr )
+			break;
+
+		++iItemCount;
+		if ( iItemCount > g_Cfg.m_iMaxItemComplexity )
 		{
-			pItem = AreaItems.GetItem();
-			if ( pItem == nullptr )
-				break;
-
-			++iItemCount;
-			if ( iItemCount > g_Cfg.m_iMaxItemComplexity )
-			{
-				Speak("Too many items here!");
-				iDecayTime = 60 * MSECS_PER_SEC;		// force decay (even when REGION_FLAG_NODECAY is set)
-				break;
-			}
+			Speak(g_Cfg.GetDefaultMsg(DEFMSG_TOO_MANY_ITEMS));
+			iDecayTime = 60 * MSECS_PER_SEC;		// force decay (even when REGION_FLAG_NODECAY is set)
+			break;
 		}
-
-        /*  // From 56b
+	}
+	 
+	/*  // From 56b
+		// Too many items on the same spot!
         if ( iItemCount > g_Cfg.m_iMaxItemComplexity )
         {
             Speak("Too many items here!");
@@ -1597,14 +1610,11 @@ bool CItem::MoveToCheck( const CPointMap & pt, CChar * pCharMover )
             // attempt to reject the move.
             return false;
         }
-        */
-
-		SetDecayTime(iDecayTime);
-		Sound(GetDropSound(nullptr));
-	}
-
-	Update();
-	return true;
+    */
+	
+	SetDecayTime(iDecayTime);
+	Sound(GetDropSound(nullptr));
+	return true;	
 }
 
 bool CItem::MoveNearObj( const CObjBaseTemplate* pObj, ushort uiSteps )
@@ -1887,10 +1897,24 @@ bool CItem::SetName( lpctstr pszName )
 	return SetNamePool( pszName );
 }
 
+HUE_TYPE CItem::GetHueVisible() const
+{
+	if (g_Cfg.m_iColorInvisItem) //If setting ask a specific color
+	{
+		if (IsAttr(ATTR_INVIS))
+		{
+			if (!IsType(IT_SPAWN_CHAR) && !IsType(IT_SPAWN_ITEM))  //Spawn point always keep their m_wHue (HUE_RED_DARK)
+				return g_Cfg.m_iColorInvisItem;
+		}
+	}
+	
+	return CObjBase::GetHue();
+}
+
 int CItem::GetWeight(word amount) const
 {
 	int iWeight = m_weight * (amount ? amount : GetAmount());
-    int iReduction = GetPropNum(COMP_PROPS_ITEMCHAR, PROPITCH_WEIGHTREDUCTION, true);
+    const int iReduction = GetPropNum(COMP_PROPS_ITEMCHAR, PROPITCH_WEIGHTREDUCTION, true);
 	if (iReduction)
 	{
 		iWeight -= (int)IMulDivLL( iWeight, iReduction, 100 );
@@ -1954,11 +1978,14 @@ bool CItem::SetBase( CItemBase * pItemDef )
 
 	if ( pItemOldDef )
 	{
+		pItemOldDef->DelInstance();
 		if ( pParentCont )
 			iWeightOld = GetWeight();
 	}
 
-	m_BaseRef.SetRef(pItemDef);
+	pItemDef->AddInstance();	// Increase object instance counter (different from the resource reference counter!)
+	m_BaseRef.SetRef(pItemDef);	// Among the other things, it increases the new resource reference counter and decreases the old, if any
+
 	m_weight = pItemDef->GetWeight();
 
 	// matex (moved here from constructor so armor/dam is copied too when baseid changes!)
@@ -2133,10 +2160,10 @@ void CItem::SetAmountUpdate(word amount )
     }
 }
 
-bool CItem::CanSendAmount() const
+bool CItem::CanSendAmount() const noexcept
 {
     // return false -> don't send to the client the real amount for this item (send 1 instead)
-    ITEMID_TYPE id = GetDispID();
+    const ITEMID_TYPE id = GetDispID();
     if (id == ITEMID_WorldGem) // it can be a natural resource worldgem bit (used for lumberjacking, mining...)
         return false;
     return true;
@@ -2703,8 +2730,16 @@ bool CItem::r_WriteVal( lpctstr ptcKey, CSString & sVal, CTextConsole * pSrc, bo
 			fDoDefault = true;
 			break;
 		case IC_LINK:
-			if ( ptcKey[4] == '.' )
-				return CScriptObj::r_WriteVal( ptcKey, sVal, pSrc, false );
+			if (ptcKey[4] == '.')
+			{
+				if (!strnicmp("ISVALID", ptcKey+5, 7))
+				{
+					sVal.FormatVal(IsValidRef(m_uidLink));
+					return true;
+				}
+
+				return CScriptObj::r_WriteVal(ptcKey, sVal, pSrc, false);
+			}
 			sVal.FormatHex( m_uidLink );
 			break;
 		case IC_MAXHITS:
@@ -3042,7 +3077,7 @@ bool CItem::r_LoadVal( CScript & s ) // Load an item Script
             return true;
         }
 		case IC_ATTR:
-			m_Attr = s.GetArgVal();
+			m_Attr = s.GetArgU64Val();
 			break;
 		case IC_BASEWEIGHT:
 			m_weight = s.GetArgWVal();
@@ -3052,7 +3087,7 @@ bool CItem::r_LoadVal( CScript & s ) // Load an item Script
             break;
 		case IC_CONT:	// needs special processing.
 			{
-				bool normcont = LoadSetContainer(s.GetArgVal(), (LAYER_TYPE)GetUnkZ());
+				bool normcont = LoadSetContainer(CUID(s.GetArgDWVal()), (LAYER_TYPE)GetUnkZ());
 				if (!normcont)
 				{
 					SERVMODE_TYPE iModeCode = g_Serv.GetServerMode();
@@ -3086,16 +3121,19 @@ bool CItem::r_LoadVal( CScript & s ) // Load an item Script
 					switch ( iArgs )
 					{
 						default:
+							FALLTHROUGH;
 						case 2:
 							pt.m_y = (short)(atoi(ppVal[1]));
+							FALLTHROUGH;
 						case 1:
 							pt.m_x = (short)(atoi(ppVal[0]));
+							FALLTHROUGH;
 						case 0:
 							break;
 					}
 				}
 				CObjBase * pContainer = GetContainer();
-				if (( IsItem() ) && ( IsItemInContainer() ) && ( pContainer->IsValidUID() ) && ( pContainer->IsContainer() ) && ( pContainer->IsItem() ))
+				if ( IsItem() && IsItemInContainer() && pContainer->IsValidUID() && pContainer->IsContainer() && pContainer->IsItem() )
 				{
 					CItemContainer * pCont = dynamic_cast <CItemContainer *> ( pContainer );
 					pCont->ContentAdd( this, pt );
@@ -3166,7 +3204,7 @@ bool CItem::r_LoadVal( CScript & s ) // Load an item Script
 			SetUnkZ( s.GetArgCVal() ); // GetEquipLayer()
             break;
 		case IC_LINK:
-			m_uidLink = s.GetArgVal();
+			m_uidLink.SetObjUID(s.GetArgDWVal());
             break;
 
 		case IC_FRUIT:	// m_more2
@@ -3215,13 +3253,17 @@ bool CItem::r_LoadVal( CScript & s ) // Load an item Script
 						case 4:	// m_map
 							if ( IsDigit(ppVal[3][0]))
 								pt.m_map = (uchar)(atoi(ppVal[3]));
+							FALLTHROUGH;
 						case 3: // m_z
 							if ( IsDigit(ppVal[2][0]) || ppVal[2][0] == '-' )
 								pt.m_z = (char)(atoi(ppVal[2]));
+							FALLTHROUGH;
 						case 2:
 							pt.m_y = (short)(atoi(ppVal[1]));
+							FALLTHROUGH;
 						case 1:
 							pt.m_x = (short)(atoi(ppVal[0]));
+							FALLTHROUGH;
 						case 0:
 							break;
 					}
@@ -3321,14 +3363,15 @@ lpctstr const CItem::sm_szVerbKeys[CIV_QTY+1] =
 bool CItem::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command from script
 {
 	ADDTOCALLSTACK("CItem::r_Verb");
-	EXC_TRY("Verb");
 	ASSERT(pSrc);
+	EXC_TRY("Pre-Verb");
 
     if (CEntity::r_Verb(s, pSrc))
     {
         return true;
     }
 
+	EXC_SET_BLOCK("Verb-Statement");
 	int index = FindTableSorted( s.GetKey(), sm_szVerbKeys, CountOf( sm_szVerbKeys )-1 );
 	if ( index < 0 )
 	{
@@ -4110,19 +4153,30 @@ void CItem::ConvertBolttoCloth()
 		if ( pBaseDef == nullptr )
 			continue;
 
-		CItem * pItemNew = CItem::CreateTemplate( pBaseDef->GetID() );
-		ASSERT(pItemNew);
-		pItemNew->SetAmount( iOutAmount * (word)(pDefCloth->m_BaseResources[i].GetResQty()) );
-		if ( pItemNew->IsType( IT_CLOTH ))
-			pItemNew->SetHue( GetHue() );
-		if ( pCont )
-		{
-			pCont->ContentAdd( pItemNew );
-		}
-		else
-		{
-			pItemNew->MoveToDecay(GetTopPoint(), g_Cfg.m_iDecay_Item);
-		}
+        uint iTotalAmount = iOutAmount * pDefCloth->m_BaseResources[i].GetResQty();
+        
+        CItem* pItemNew = nullptr;
+        while (iTotalAmount > 0)
+        {
+            pItemNew = CItem::CreateTemplate(pBaseDef->GetID());
+            ASSERT(pItemNew);
+            word iStack = (word)minimum(iTotalAmount, pItemNew->GetMaxAmount());
+            pItemNew->SetAmount(iStack);
+
+            if (pItemNew->IsType(IT_CLOTH))
+            {
+                pItemNew->SetHue(GetHue());
+            }
+            if (pCont)
+            {
+                pCont->ContentAdd(pItemNew);
+            }
+            else
+            {
+                pItemNew->MoveToDecay(GetTopPoint(), g_Cfg.m_iDecay_Item);
+            }
+            iTotalAmount -= iStack;
+        }
 	}
 }
 
@@ -4839,7 +4893,7 @@ CItem *CItem::Weapon_FindRangedAmmo(const CResourceID& id)
 	{
 		// Search container using UID
 		lpctstr  ptcAmmoCont = sAmmoCont.GetBuffer();
-		CContainer *pCont = dynamic_cast<CContainer *>(CUID::ItemFind(Exp_GetDWVal(ptcAmmoCont)));
+		CContainer *pCont = dynamic_cast<CContainer *>(CUID::ItemFindFromUID(Exp_GetDWVal(ptcAmmoCont)));
 		if ( pCont )
 		{
             //If the container exist that means the uid was a valid container uid.
@@ -4893,7 +4947,7 @@ bool CItem::IsMemoryTypes( word wType ) const
 {
 	if ( ! IsType( IT_EQ_MEMORY_OBJ ))
 		return false;
-	return (( GetHueAlt() & wType ) ? true : false );
+	return (( GetHue() & wType ) ? true : false );
 }
 
 lpctstr CItem::Use_SpyGlass( CChar * pUser ) const
@@ -5369,9 +5423,14 @@ bool CItem::OnSpellEffect( SPELL_TYPE spell, CChar * pCharSrc, int iSkillLevel, 
 	{
 		switch ( OnTrigger(ITRIG_SPELLEFFECT, pCharSrc, &Args) )
 		{
-			case TRIGRET_RET_TRUE:		return false;
-			case TRIGRET_RET_FALSE:		if ( pSpellDef && pSpellDef->IsSpellType(SPELLFLAG_SCRIPTED) ) return true;
-			default:					break;
+			case TRIGRET_RET_TRUE:
+				return false;
+			case TRIGRET_RET_FALSE:
+				if ( pSpellDef && pSpellDef->IsSpellType(SPELLFLAG_SCRIPTED) )
+					return true;
+				break;
+			default:
+				break;
 		}
 	}
 
@@ -5379,9 +5438,14 @@ bool CItem::OnSpellEffect( SPELL_TYPE spell, CChar * pCharSrc, int iSkillLevel, 
 	{
 		switch (Spell_OnTrigger(spell, SPTRIG_EFFECT, pCharSrc, &Args))
 		{
-			case TRIGRET_RET_TRUE:		return false;
-			case TRIGRET_RET_FALSE:		if ( pSpellDef && pSpellDef->IsSpellType(SPELLFLAG_SCRIPTED) ) return true;
-			default:					break;
+			case TRIGRET_RET_TRUE:
+				return false;
+			case TRIGRET_RET_FALSE:
+				if ( pSpellDef && pSpellDef->IsSpellType(SPELLFLAG_SCRIPTED) )
+					return true;
+				break;
+			default:
+				break;
 		}
 	}
 
@@ -5928,7 +5992,7 @@ bool CItem::OnTick()
 				const CChar * pSrc = m_uidLink.CharFind();
 				if ( pSrc && pSrc->m_pPlayer )
 				{
-                    const CClient* pClient = pSrc->GetClient();
+                    const CClient* pClient = pSrc->GetClientActive();
                     if (pClient)
                     {
                         pClient->addMapWaypoint(this, MAPWAYPOINT_Remove);	// remove corpse map waypoint on enhanced clients
