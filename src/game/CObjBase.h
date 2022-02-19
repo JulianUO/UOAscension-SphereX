@@ -21,11 +21,17 @@ class PacketSend;
 class PacketPropertyList;
 class CCSpawn;
 
+class CSector;
+class CWorldTicker;
+
 class CObjBase : public CObjBaseTemplate, public CScriptObj, public CEntity, public CEntityProps, public virtual CTimedObject
 {
 	static lpctstr const sm_szLoadKeys[];   // All Instances of CItem or CChar have these base attributes.
 	static lpctstr const sm_szVerbKeys[];   // All Instances of CItem or CChar have these base attributes.
 	static lpctstr const sm_szRefKeys[];    // All Instances of CItem or CChar have these base attributes.
+
+    friend class CSector;
+    friend class CWorldTicker;
 
 private:
 	int64 m_timestamp;          // TimeStamp
@@ -74,7 +80,7 @@ protected:
      */
     virtual void DeletePrepare();
 
-    void DeleteCleanup(bool fForce);
+    void DeleteCleanup(bool fForce);    // not virtual!
 
 public:
     inline bool IsBeingDeleted() const noexcept
@@ -82,7 +88,8 @@ public:
         return _fDeleting;
     }
 
-    virtual bool IsDeleted() const override;
+protected:  virtual bool _IsDeleted() const override;
+public:     virtual bool  IsDeleted() const override;
 
     /**
      * @brief   Deletes this CObjBase from game (doesn't delete the raw class instance).
@@ -104,12 +111,12 @@ public:
 	*/
     CBaseBaseDef* Base_GetDef() const noexcept;
 
-	dword GetCanFlagsBase() const noexcept
+	inline dword GetCanFlagsBase() const noexcept
 	{
 		return Base_GetDef()->m_Can;
 	}
 
-	dword GetCanFlags() const noexcept
+    inline dword GetCanFlags() const noexcept
 	{
 		// m_CanMask is XORed to m_Can:
 		//  If a flag in m_CanMask is enabled in m_Can, it is ignored in this Can check
@@ -164,8 +171,8 @@ public:
 
 
     /**
-     * @brief   Gets time stamp.
-     * @return  The time stamp.
+     * @brief   Gets timestamp of the item (it's a property and not related at all with TIMER).
+     * @return  The timestamp.
      */
 	int64 GetTimeStamp() const;
 
@@ -174,6 +181,11 @@ public:
      * @param   t_time  The time.
      */
 	void SetTimeStamp(int64 t_time);
+
+    /*
+    * @brief    Add iDelta to this object's timer (if active) and its child objects.
+    */
+    void TimeoutRecursiveResync(int64 iDelta);
 
     /**
     *@brief Returns the value of the string-type prop from the CComponentProps. Faster than the variant accepting a COMPPROPS_TYPE if you need to retrieve multiple props from the same CComponentProps
@@ -546,7 +558,7 @@ public:
      * @param [in,out]  SourceObj   (Optional) If non-null, source object.
      * @param   sound               The sound.
      */
-	void SetHue( HUE_TYPE wHue, bool fAvoidTrigger = true, CTextConsole *pSrc = nullptr, CObjBase *SourceObj = nullptr, llong sound = 0 );
+	void SetHue( HUE_TYPE wHue, bool fAvoidTrigger = true, CTextConsole *pSrc = nullptr, CObjBase * pSourceObj = nullptr, llong iSound = 0 );
 
     /**
      * @fn  HUE_TYPE CObjBase::GetHue() const;
@@ -603,7 +615,7 @@ public:
      *
      * @param [in,out]  ppTitles    If non-null, the titles.
      */
-	void inline SetNamePool_Fail( tchar * ppTitles );
+	void SetNamePool_Fail( tchar * ppTitles );
 
     /**
      * @fn  bool CObjBase::SetNamePool( lpctstr pszName );
@@ -874,12 +886,19 @@ public:
 #define SU_UPDATE_TOOLTIP   0x04    // update tooltip to all
 	uchar m_fStatusUpdate;  // update flags for next tick
 
+ 
+protected:
+    virtual void _GoAwake() override;
+    virtual void _GoSleep() override;
+
+protected:
     /**
-     * @fn  virtual void CObjBase::OnTickStatusUpdate();
-     *
      * @brief   Update Status window if any flag requires it on m_fStatusUpdate.
      */
-	virtual void OnTickStatusUpdate();
+    virtual void OnTickStatusUpdate();
+
+    virtual bool _CanTick() const override;
+    //virtual bool  _CanTick() const override;   // Not needed: the right virtual is called by CTimedObj::_CanTick.
 
 public:
     std::vector<std::unique_ptr<CClientTooltip>> m_TooltipData; // Storage for tooltip data while in trigger
@@ -997,6 +1016,7 @@ enum ITRIG_TYPE
     ITRIG_ADDWHITECANDLE,
 	ITRIG_AfterClick,
 	ITRIG_Buy,
+    ITRIG_CarveCorpse,                //I am a corpse and i am going to be carved.
 	ITRIG_Click,
 	ITRIG_CLIENTTOOLTIP,        // Sending tooltip to client for this item
 	ITRIG_CLIENTTOOLTIP_AFTERDEFAULT,
@@ -1027,6 +1047,7 @@ enum ITRIG_TYPE
     ITRIG_Ship_Move,            // I'm a ship and i'm moving around.
     ITRIG_Ship_Stop,            // I'm a ship and i stopped moving.
 	ITRIG_Ship_Turn,            // I'm a ship and i'm turning around.
+    ITRIG_Smelt,                // I'm going to be smelt.
     ITRIG_Spawn,                // This spawn is going to generate something.
 	ITRIG_SPELLEFFECT,          // cast some spell on me.
     ITRIG_Start,                // Start trigger, right now used only on Champions.
@@ -1087,11 +1108,10 @@ enum CTRIG_TYPE : short
 	CTRIG_Dismount,         // I'm dismounting.
 	CTRIG_DYE,
 	CTRIG_Eat,              // I'm eating something.
-	CTRIG_EffectAdd,        // A spell effected me, i'm getting bonus/penalties from it.
-	CTRIG_EffectRemove,		// Removing spell item from character.
 	CTRIG_EnvironChange,    // my environment changed somehow (light,weather,season,region)
 	CTRIG_ExpChange,        // EXP is going to change
 	CTRIG_ExpLevelChange,   // Experience LEVEL is going to change
+    CTRIG_Falling,          // CHAR IS FALLING
 	CTRIG_FameChange,       // Fame chaged
 	CTRIG_FollowersUpdate,  // Adding or removing CurFollowers.
 
@@ -1110,6 +1130,7 @@ enum CTRIG_TYPE : short
     // ITRIG_QTY
 	CTRIG_itemAfterClick,       // I'm going to click one item.
 	CTRIG_itemBuy,              // I'm going to buy one item.
+    CTRIG_itemCarveCorpse,            // I am carving a corpse.
 	CTRIG_itemClick,            // I clicked one item
 	CTRIG_itemClientTooltip,    // Requesting ToolTip for one item.
 	CTRIG_itemClientTooltip_AfterDefault,
@@ -1134,7 +1155,8 @@ enum CTRIG_TYPE : short
     CTRIG_itemRedeed,           // was redeeded (multis)
     CTRIG_itemRegionEnter,      // enter a region (ships)
     CTRIG_itemRegionLeave,      // leave a region (ships)
-	CTRIG_itemSell,             // I'l selling an item.
+	CTRIG_itemSell,             // I am selling an item.
+    CTRIG_itemSmelt,            // I am smelting an item.
 	CTRIG_itemSPELL,            // cast some spell on the item.
 	CTRIG_itemSTEP,             // stepped on an item
 	CTRIG_itemTARGON_CANCEL,    // Canceled a target made from the item.
@@ -1213,6 +1235,9 @@ enum CTRIG_TYPE : short
 	CTRIG_SpellBook,        // Opening a spellbook
 	CTRIG_SpellCast,        // Char is casting a spell.
 	CTRIG_SpellEffect,      // A spell just hit me.
+    CTRIG_SpellEffectAdd,        // A spell effected me, i'm getting bonus/penalties from it.
+    CTRIG_SpellEffectRemove,		// Removing spell item from character.
+    CTRIG_SpellEffectTick,  // A spell with SPELLFLAG_TICK just ticked.
 	CTRIG_SpellFail,        // The spell failed.
 	CTRIG_SpellInterrupt,	// The spell has been interrupted.
 	CTRIG_SpellSelect,      // selected a spell.

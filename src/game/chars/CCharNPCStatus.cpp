@@ -564,12 +564,6 @@ bool CChar::NPC_CheckWalkHere( const CPointMap & pt, const CRegion * pArea ) con
 				    return false;
             }
 		}
-
-		if ( Noto_IsCriminal() )
-		{
-			if ( !m_pArea->IsGuarded() && pArea->IsGuarded() )
-				return false;
-		}
 	}
 
 	// Is there a nasty object here that will hurt us ?
@@ -876,11 +870,7 @@ int CChar::NPC_GetAttackContinueMotivation( CChar * pChar, int iMotivation ) con
 	iMotivation += ( Stat_GetAdjusted(STAT_STR) - pChar->Stat_GetAdjusted(STAT_STR));
 
 	// I'm healthy.
-	int iTmp = GetHealthPercent() - pChar->GetHealthPercent();
-	if ( iTmp < -50 )
-		iMotivation -= 50;
-	else if ( iTmp > 50 )
-		iMotivation += 50;
+	iMotivation += GetHealthPercent() - pChar->GetHealthPercent();
 
 	// I'm smart and therefore more cowardly. (if injured)
 	iMotivation -= Stat_GetAdjusted(STAT_INT) / 16;

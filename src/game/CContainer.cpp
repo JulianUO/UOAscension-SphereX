@@ -11,14 +11,36 @@
 #include "CContainer.h"
 
 
-CContainer::CContainer()
+CContainer::CContainer() :
+	m_totalweight(0)
 {
-	m_totalweight = 0;
 }
 
-CContainer::~CContainer()
+
+void CContainer::_GoAwake()
 {
+	ADDTOCALLSTACK("CContainer::_GoAwake");
+	for (CSObjContRec* pObjRec : GetIterationSafeContReverse())
+	{
+		CItem* pItem = static_cast<CItem*>(pObjRec);
+		//std::unique_lock<std::shared_mutex> lock(pItem->THREAD_CMUTEX);
+		if (pItem->IsSleeping())
+			pItem->GoAwake();
+	}
 }
+
+void CContainer::_GoSleep()
+{
+	ADDTOCALLSTACK("CContainer::_GoSleep");
+	for (CSObjContRec* pObjRec : GetIterationSafeContReverse())
+	{
+		CItem* pItem = static_cast<CItem*>(pObjRec);
+		//std::unique_lock<std::shared_mutex> lock(pItem->THREAD_CMUTEX);
+		if (!pItem->IsSleeping())
+			pItem->GoSleep();
+	}
+}
+
 
 void CContainer::ContentDelete(bool fForce)
 {
@@ -125,7 +147,41 @@ void CContainer::ContentAddPrivate( CItem *pItem )
 		return;
 
 	CSObjCont::InsertContentTail( pItem );
-	OnWeightChange(pItem->GetWeight());
+	//pItem->RemoveUIDFlags(UID_O_DISCONNECT);
+
+	if ( !pItem->IsType(IT_EQ_TRADE_WINDOW) )  //Don't apply trade window layer item weight on character weight.
+		OnWeightChange(pItem->GetWeight());
+
+	if (auto pThisObj = dynamic_cast<const CObjBase*>(this))
+	{
+		if (pThisObj->IsItem())
+		{
+			// prevent the timer from firing if the item is inside a container-type item
+			if (!pItem->IsSleeping())
+			{
+				pItem->GoSleep();
+			}
+			pItem->SetDecayTime(-1);
+		}
+		else
+		{
+			// It's a char
+			if (pThisObj->IsSleeping())
+			{
+				if (!pItem->IsSleeping())
+				{
+					pItem->GoSleep();
+				}
+			}
+			else
+			{
+				if (pItem->IsSleeping())
+				{
+					pItem->GoAwake();
+				}
+			}
+		}
+	}
 }
 
 void CContainer::OnRemoveObj( CSObjContRec *pObRec )	// Override this = called when removed from list.
@@ -140,7 +196,8 @@ void CContainer::OnRemoveObj( CSObjContRec *pObRec )	// Override this = called w
 	ASSERT(pItem->GetParent() == nullptr);
 
 	pItem->SetUIDContainerFlags(UID_O_DISCONNECT);		// It is no place for the moment.
-	OnWeightChange(-pItem->GetWeight());
+	if ( !pItem->IsType(IT_EQ_TRADE_WINDOW) ) //Don't apply trade window layer item weight on character weight.
+		OnWeightChange(-pItem->GetWeight());
 }
 
 void CContainer::r_WriteContent( CScript &s ) const
@@ -302,7 +359,8 @@ bool CContainer::ContentFindKeyFor( CItem *pLocked ) const
 {
 	ADDTOCALLSTACK("CContainer::ContentFindKeyFor");
 	// Look for the key that fits this in my possesion.
-	return (pLocked->m_itContainer.m_UIDLock && (nullptr != ContentFind(CResourceID(RES_TYPEDEF, IT_KEY), pLocked->m_itContainer.m_UIDLock)));
+	const CUID& uidLock(pLocked->m_itContainer.m_UIDLock);
+	return (uidLock.IsValidUID() && (nullptr != ContentFind(CResourceID(RES_TYPEDEF, IT_KEY), uidLock)));
 }
 
 CItem *CContainer::ContentFindRandom() const

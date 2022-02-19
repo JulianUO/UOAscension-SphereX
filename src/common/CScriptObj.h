@@ -45,6 +45,14 @@ enum TRIGRET_TYPE	// trigger script returns.
 };
 
 
+struct ScriptedExprContext
+{
+	// Recursion counters and state variables
+	short _iEvaluate_Conditional_Reentrant;
+	short _iParseScriptText_Reentrant;
+	bool  _fParseScriptText_Brackets;
+};
+
 class CScriptObj
 {
 	// This object can be scripted. (but might not be)
@@ -53,11 +61,6 @@ class CScriptObj
 	static lpctstr const sm_szScriptKeys[];
 	static lpctstr const sm_szLoadKeys[];
 	static lpctstr const sm_szVerbKeys[];
-
-	// Recursion counters and state variables
-	short _iParseScriptText_Reentrant;
-	bool  _fParseScriptText_Brackets;
-	short _iEvaluate_Conditional_Reentrant;
 
 public:
 	static const char* m_sClassName;
@@ -90,33 +93,38 @@ public:
 	/*
 	* @brief Do the first-level parsing of a script line and eventually replace requested values got by r_WriteVal.
 	*/
-	size_t ParseScriptText( tchar * pszResponse, CTextConsole * pSrc, int iFlags = 0, CScriptTriggerArgs * pArgs = nullptr );
+	size_t ParseScriptText( tchar * pszResponse, CTextConsole * pSrc, int iFlags = 0, CScriptTriggerArgs * pArgs = nullptr,
+		std::shared_ptr<ScriptedExprContext> pContext = std::make_shared<ScriptedExprContext>() );
 	
 	/*
 	* @brief Execute a script command.
 	* Called when parsing a script section with OnTriggerRun or if issued by a CClient.
 	* It does check if we are requesting another ref.
-	* It evaluates simple commands, which typically do NOT require a script argument.
+	* It evaluates simple commands ("VERB"), which typically do NOT require a script argument.
+	* If it doesn't find a VERB, call r_LoadVal to do a second-level, deeper parsing.
 	*/
 	virtual bool r_Verb( CScript & s, CTextConsole * pSrc );
 
 	/*
 	* @brief Internally sets the corresponding value of a script keyword.
+	* WARNING: it's a second-level parsing function, call this if you are sure that calling r_Verb is superfluous.
 	* "LoadVal" means: Load the value from the script and store it in our internal structures/data.
 	* It does NOT check if we are requesting another ref, since it's already done by r_Verb.
 	* Here we evaluate more complex commands, which typically requires also a script argument.
 	*/
 	virtual bool r_LoadVal(CScript& s);
 
-	virtual bool r_Load(CScript& s);	// Loads the keyword/values of a script section
+	virtual bool r_Load(CScript& s);	// Loads the keyword/values of a whole script section
 
-	bool r_SetVal(lpctstr ptcKey, lpctstr pszVal); // Quick way to try to set a value for a script keyword
+// Hardcoded shortcuts to trigger specific script parsing.
+	bool r_ExecSingle(lpctstr ptcLine);
+	bool r_SetVal(lpctstr ptcKey, lpctstr ptcVal); // Quick way to try to set a value for a script keyword
 
 
 // FUNCTION methods
     static size_t r_GetFunctionIndex(lpctstr pszFunction);
     static bool r_CanCall(size_t uiFunctionIndex);
-	bool r_Call( lpctstr pszFunction, CTextConsole * pSrc, CScriptTriggerArgs * pArgs, CSString * psVal = nullptr, TRIGRET_TYPE * piRet = nullptr ); // Try to execute function
+	bool r_Call( lpctstr ptcFunction, CTextConsole * pSrc, CScriptTriggerArgs * pArgs, CSString * psVal = nullptr, TRIGRET_TYPE * piRet = nullptr ); // Try to execute function
     bool r_Call( size_t uiFunctionIndex, CTextConsole * pSrc, CScriptTriggerArgs * pArgs, CSString * psVal = nullptr, TRIGRET_TYPE * piRet = nullptr ); // Try to execute function
 
 
@@ -137,10 +145,11 @@ private:
 	TRIGRET_TYPE OnTriggerLoopForContSpecial(CScript& s, SK_TYPE iCmd, CTextConsole* pSrc, CScriptTriggerArgs* pArgs, CSString* pResult);
 
 	// Special statements
-	bool _Evaluate_Conditional_EvalSingle(const SubexprData& sdata, CTextConsole* pSrc, CScriptTriggerArgs* pArgs);
-	bool Evaluate_Conditional(lptstr ptcExpression, CTextConsole* pSrc, CScriptTriggerArgs* pArgs); // IF, ELIF, ELSEIF
+	bool _Evaluate_Conditional_EvalSingle(const SubexprData& sdata, CTextConsole* pSrc, CScriptTriggerArgs* pArgs, std::shared_ptr<ScriptedExprContext> pContext);
+	bool Evaluate_Conditional(lptstr ptcExpression, CTextConsole* pSrc, CScriptTriggerArgs* pArgs,
+		std::shared_ptr<ScriptedExprContext> pContext = std::make_shared<ScriptedExprContext>()); // IF, ELIF, ELSEIF
 
-	bool Evaluate_QvalConditional(lpctstr ptcKey, CSString& sVal, CTextConsole* pSrc, CScriptTriggerArgs* pArgs);
+	bool Evaluate_QvalConditional(lpctstr ptcKey, CSString& sVal, CTextConsole* pSrc, CScriptTriggerArgs* pArgs, std::shared_ptr<ScriptedExprContext> pContext);
 
 	bool Execute_Call(CScript& s, CTextConsole* pSrc, CScriptTriggerArgs* pArgs);
 	bool Execute_FullTrigger(CScript& s, CTextConsole* pSrc, CScriptTriggerArgs* pArgs);
@@ -153,7 +162,7 @@ protected:
 
 // Constructors/operators
 public:
-	CScriptObj();
+	CScriptObj() = default;
 	virtual ~CScriptObj() = default;
 
 private:

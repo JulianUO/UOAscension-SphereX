@@ -47,8 +47,8 @@ private:
     StatusUpdatesList _ObjStatusUpdates;   // objects that need OnTickStatusUpdate called
 
     friend class CWorld;
-    friend class CTimedFunctions;
-    CTimedFunctionHandler _TimedFunctions; // TimedFunction Container/Wrapper
+    friend class CWorldTimedFunctions;
+    CTimedFunctionHandler _TimedFunctions; // CTimedFunction Container/Wrapper
 
     CWorldClock* _pWorldClock;
     int64        _iLastTickDone;  
@@ -56,10 +56,12 @@ private:
 public:
     void Tick();
 
-    void AddTimedObject(int64 iTimeout, CTimedObject* pTimedObject);
+    void AddTimedObject(int64 iTimeout, CTimedObject* pTimedObject, bool fForce);
     void DelTimedObject(CTimedObject* pTimedObject);
-    void AddCharTicking(CChar* pChar, bool fIgnoreSleep);
-    void DelCharTicking(CChar* pChar);
+    void AddCharTicking(CChar* pChar, bool fNeedsLock);
+    void DelCharTicking(CChar* pChar, bool fNeedsLock);
+    void AddObjStatusUpdate(CObjBase* pObj, bool fNeedsLock);
+    void DelObjStatusUpdate(CObjBase* pObj, bool fNeedsLock);
 
 private:
     void _InsertTimedObject(const int64 iTimeout, CTimedObject* pTimedObject);

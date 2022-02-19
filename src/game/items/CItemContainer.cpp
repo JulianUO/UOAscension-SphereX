@@ -21,15 +21,16 @@ CItemContainer::CItemContainer( ITEMID_TYPE id, CItemBase *pItemDef ) :
 
 CItemContainer::~CItemContainer()
 {
-    ClearContainer();		// get rid of my contents first to protect against weight calc errors.
-    DeletePrepare();
+	CItemContainer::DeletePrepare();
+	CContainer::ClearContainer();		// get rid of my contents first to protect against weight calc errors.
+
     CItemMulti *pMulti = nullptr;
     if (_uidMultiSecured.IsValidUID())
     {
         pMulti = static_cast<CItemMulti*>(_uidMultiSecured.ItemFind());
         if (pMulti)
         {
-            pMulti->Release(GetUID());
+            pMulti->Release(GetUID(), true);
         }
     }
     if (_uidMultiCrate.IsValidUID())
@@ -37,7 +38,7 @@ CItemContainer::~CItemContainer()
         pMulti = static_cast<CItemMulti*>(_uidMultiCrate.ItemFind());
         if (pMulti)
         {
-            pMulti->SetMovingCrate(CUID(UID_UNUSED));
+			pMulti->SetMovingCrate({});
         }
     }
 }
@@ -62,16 +63,16 @@ void CItemContainer::DeletePrepare()
 	if ( IsType( IT_EQ_TRADE_WINDOW ))
 		Trade_Delete();
 	
-	ContentDelete(false);	// This object and its contents need to be deleted on the same tick
+	CContainer::ContentDelete(false);	// This object and its contents need to be deleted on the same tick
 	CItem::DeletePrepare();
 }
 
-void CItemContainer::SetSecuredOfMulti(CUID uidMulti)
+void CItemContainer::SetSecuredOfMulti(const CUID& uidMulti)
 {
     _uidMultiSecured = uidMulti;
 }
 
-void CItemContainer::SetCrateOfMulti(CUID uidMulti)
+void CItemContainer::SetCrateOfMulti(const CUID& uidMulti)
 {
     _uidMultiCrate = uidMulti;
 }
@@ -496,10 +497,11 @@ CPointMap CItemContainer::GetRandContainerLoc() const
 		}
 	}
 
-	return CPointMap(
-		(word)(sm_ContSize[i].m_minx + Calc_GetRandVal(sm_ContSize[i].m_maxx - sm_ContSize[i].m_minx)),
-		(word)(sm_ContSize[i].m_miny + Calc_GetRandVal(sm_ContSize[i].m_maxy - sm_ContSize[i].m_miny)),
-		0);
+	const int iRandOnce = (int)Calc_GetRandVal(UINT16_MAX);
+	return {
+		(short)(sm_ContSize[i].m_minx + (iRandOnce % (sm_ContSize[i].m_maxx - sm_ContSize[i].m_minx))),
+		(short)(sm_ContSize[i].m_miny + (iRandOnce % (sm_ContSize[i].m_maxy - sm_ContSize[i].m_miny))),
+		0 };
 }
 
 void CItemContainer::ContentAdd( CItem *pItem, CPointMap pt, bool bForceNoStack, uchar gridIndex )
@@ -543,11 +545,6 @@ void CItemContainer::ContentAdd( CItem *pItem, CPointMap pt, bool bForceNoStack,
 		}
 	}
 
-	if (/*pItem->IsTimerSet() &&*/ !pItem->IsSleeping())
-	{
-		pItem->GoSleep();		// prevent the timer from firing if the item is inside a container
-	}
-
 	// check for custom values in TDATA3/TDATA4
 	CItemBase *pContDef = Item_GetDef();
 	if (pContDef->m_ttContainer.m_dwMinXY || pContDef->m_ttContainer.m_dwMaxXY)
@@ -588,24 +585,33 @@ void CItemContainer::ContentAdd( CItem *pItem, CPointMap pt, bool bForceNoStack,
 	}
 
     // Try drop it on given container grid index (if not available, drop it on next free index)
-    bool fGridAvailable;
-    for ( uint i = 0; i < UCHAR_MAX; ++i )
-    {
-        fGridAvailable = true;
+	{
+		bool fGridCellUsed[UCHAR_MAX] {false};
 		for (const CSObjContRec* pObjRec : *this)
 		{
 			const CItem* pTry = static_cast<const CItem*>(pObjRec);
-            if ( pTry->GetContainedGridIndex() == gridIndex )
-            {
-                fGridAvailable = false;
-                break;
-            }
-        }
-        if ( fGridAvailable )
-            break;
+			const auto idxGridTest = pTry->GetContainedGridIndex();
 
-        if ( ++gridIndex >= g_Cfg.m_iContainerMaxItems )
-            gridIndex = 0;
+			static_assert(sizeof(idxGridTest) == sizeof(uchar));
+			fGridCellUsed[idxGridTest] = true;
+		}
+
+		static_assert(sizeof(gridIndex) == sizeof(uchar));
+		if (fGridCellUsed[gridIndex])
+		{
+			gridIndex = 0;
+			for (uint i = 0; i < UCHAR_MAX; ++i)
+			{
+				if (!fGridCellUsed[i])
+					break;
+
+				if (++gridIndex >= g_Cfg.m_iContainerMaxItems)
+				{
+					gridIndex = 0;
+					break;
+				}
+			}
+		}
 	}
 
 	CContainer::ContentAddPrivate(pItem);
@@ -659,6 +665,7 @@ void CItemContainer::ContentAdd( CItem *pItem, CPointMap pt, bool bForceNoStack,
 			break;
 	}
 
+	pItem->RemoveFromView(nullptr, true);
 	pItem->Update();
     if (!fStackInsert)
         pItem->UpdatePropertyFlag();
@@ -745,6 +752,22 @@ void CItemContainer::OnRemoveObj( CSObjContRec *pObjRec )	// Override this = cal
     pItem->GoAwake();
 }
 
+void CItemContainer::_GoAwake()
+{
+	ADDTOCALLSTACK("CItemContainer::_GoAwake");
+
+	CItem::_GoAwake();
+	CContainer::_GoAwake();	// This method isn't virtual
+}
+
+void CItemContainer::_GoSleep()
+{
+	ADDTOCALLSTACK("CItemContainer::_GoSleep");
+
+	CContainer::_GoSleep(); // This method isn't virtual
+	CItem::_GoSleep();
+}
+
 void CItemContainer::DupeCopy( const CItem *pItem )
 {
 	ADDTOCALLSTACK("CItemContainer::DupeCopy");
@@ -810,31 +833,27 @@ bool CItemContainer::CanContainerHold( const CItem *pItem, const CChar *pCharMsg
 	if ( pCharMsg->IsPriv(PRIV_GM) )	// a gm can doing anything.
 		return true;
 
-	if ( IsAttr(ATTR_MAGIC) )
-	{
-		// Put stuff in a magic box
-		pCharMsg->SysMessageDefault(DEFMSG_CONT_MAGIC);
-		return false;
-	}
-
 	size_t pTagTmp = (size_t)(GetKeyNum("OVERRIDE.MAXITEMS"));
-	size_t tMaxItemsCont = pTagTmp ? pTagTmp : g_Cfg.m_iContainerMaxItems;
-	if ( GetContentCount() >= tMaxItemsCont )
+	size_t iMaxItemsCont = pTagTmp ? pTagTmp : g_Cfg.m_iContainerMaxItems;
+	if ( GetContentCount() >= iMaxItemsCont )
 	{
-		pCharMsg->SysMessageDefault(DEFMSG_CONT_FULL);
+		pCharMsg->SysMessageDefault(DEFMSG_CONT_FULL_ITEMS);
+		return false;
+	}
+	// The player backpack should be check differently because an ini setting can limit the weight player can have on it.
+	// If setting = -1:illimited other value should be add to char maxweight
+	int iMaxWeight = m_ModMaxWeight;
+	if ((GetContainedLayer() == LAYER_PACK) && !(g_Cfg.m_iBackpackOverload <= -1))
+		iMaxWeight += (g_Cfg.Calc_MaxCarryWeight(pCharMsg) + g_Cfg.m_iBackpackOverload);
+
+	if (iMaxWeight > 0 && (GetTotalWeight() + pItem->GetWeight() > iMaxWeight))
+	{
+		pCharMsg->SysMessageDefault(DEFMSG_CONT_FULL_WEIGHT);
 		return false;
 	}
 
-	if (m_ModMaxWeight)
-	{
-		if ( (GetTotalWeight() + pItem->GetWeight()) > m_ModMaxWeight )
-		{
-			pCharMsg->SysMessageDefault(DEFMSG_CONT_FULL_WEIGHT);
-			return false;
-		}
-	}
-
-	if ( !IsItemEquipped() &&	// does not apply to my pack.
+	if ( !IsSetOF(OF_AllowContainerInsideContainer) &&
+		!IsItemEquipped() &&	// does not apply to my pack.
 		pItem->IsContainer() &&
 		(pItem->Item_GetDef()->GetVolume() >= Item_GetDef()->GetVolume()) )
 	{
@@ -907,7 +926,7 @@ bool CItemContainer::CanContainerHold( const CItem *pItem, const CChar *pCharMsg
 				pCharMsg->SysMessageDefault(DEFMSG_MSG_ERR_NOTKEY);
 				return false;
 			}
-			if ( !pItem->m_itKey.m_UIDLock )
+			if ( !pItem->m_itKey.m_UIDLock.IsValidUID())
 			{
 				pCharMsg->SysMessageDefault(DEFMSG_MSG_ERR_NOBLANKRING);
 				return false;
@@ -931,7 +950,7 @@ bool CItemContainer::CanContainerHold( const CItem *pItem, const CChar *pCharMsg
 			// Check that this vendor box hasn't already reached its content limit
 			if ( GetContentCount() >= g_Cfg.m_iContainerMaxItems )
 			{
-				pCharMsg->SysMessageDefault(DEFMSG_CONT_FULL);
+				pCharMsg->SysMessageDefault(DEFMSG_CONT_FULL_ITEMS);
 				return false;
 			}
 			break;
@@ -939,7 +958,7 @@ bool CItemContainer::CanContainerHold( const CItem *pItem, const CChar *pCharMsg
 		case IT_TRASH_CAN:
 			Sound(0x235); // a little sound so we know it "ate" it.
 			pCharMsg->SysMessageDefault(DEFMSG_ITEMUSE_TRASHCAN);
-			SetTimeoutS(15);
+			_SetTimeoutS(15);
 			break;
 
 		default:
@@ -1320,9 +1339,9 @@ bool CItemContainer::r_Verb( CScript &s, CTextConsole *pSrc )
 	return false;
 }
 
-bool CItemContainer::OnTick()
+bool CItemContainer::_OnTick()
 {
-	ADDTOCALLSTACK("CItemContainer::OnTick");
+	ADDTOCALLSTACK("CItemContainer::_OnTick");
 	// equipped or not.
 	switch ( GetType() )
 	{
@@ -1343,10 +1362,10 @@ bool CItemContainer::OnTick()
 			// Restock this box.
 			// Magic restocking container.
 			Restock();
-			SetTimeout(-1);
+			_SetTimeout(-1);
 			return true;
 		default:
 			break;
 	}
-	return CItemVendable::OnTick();
+	return CItemVendable::_OnTick();
 }

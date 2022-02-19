@@ -378,6 +378,31 @@ void CWorldThread::SaveThreadClose()
 	m_FileMultis.Close();
 }
 
+void CWorldThread::AddIdleObj(CSObjContRec* obj)
+{
+	m_ObjNew.InsertContentTail(obj);
+}
+
+void CWorldThread::ScheduleObjDeletion(CSObjContRec* obj)
+{
+	m_ObjDelete.InsertContentTail(obj);
+}
+
+void CWorldThread::ScheduleSpecialObjDeletion(CSObjListRec* obj)
+{
+	m_ObjSpecialDelete.InsertContentTail(obj);
+}
+
+bool CWorldThread::IsScheduledObjDeletion(const CSObjContRec* obj) const noexcept
+{
+	return (obj->GetParent() == &m_ObjDelete);
+}
+
+bool CWorldThread::IsScheduledSpecialObjDeletion(const CSObjListRec* obj) const noexcept
+{
+	return (obj->GetParent() == &m_ObjSpecialDelete);
+}
+
 int CWorldThread::FixObjTry( CObjBase * pObj, dword dwUID )
 {
 	ADDTOCALLSTACK_INTENSIVE("CWorldThread::FixObjTry");
@@ -387,7 +412,7 @@ int CWorldThread::FixObjTry( CObjBase * pObj, dword dwUID )
 
 	if ( dwUID != 0 )
 	{
-		if (( pObj->GetUID() & UID_O_INDEX_MASK ) != dwUID )
+		if (( pObj->GetUID().GetPrivateUID() & UID_O_INDEX_MASK ) != dwUID )
 		{
 			// Miss linked in the UID table !!! BAD
 			// Hopefully it was just not linked at all. else How the hell should i clean this up ???
@@ -468,10 +493,10 @@ int CWorldThread::FixObj( CObjBase * pObj, dword dwUID )
 	return iResultCode;
 }
 
-void CWorldThread::GarbageCollection_New()
+void CWorldThread::GarbageCollection_NewObjs()
 {
-	ADDTOCALLSTACK("CWorldThread::GarbageCollection_New");
-	EXC_TRY("GarbageCollection_New");
+	ADDTOCALLSTACK("CWorldThread::GarbageCollection_NewObjs");
+	EXC_TRY("GarbageCollection_NewObjs");
 	// Clean up new objects that are never placed.
 	size_t iObjCount = m_ObjNew.GetContentCount();
 	if (iObjCount > 0 )
@@ -518,7 +543,7 @@ void CWorldThread::GarbageCollection_UIDs()
 	// Go through the m_ppUIDs looking for Objects without links to reality.
 	// This can take a while.
 
-	GarbageCollection_New();
+	GarbageCollection_NewObjs();
 
 	dword iCount = 0;
 	for (dword i = 1; i < GetUIDCount(); ++i )
@@ -533,9 +558,19 @@ void CWorldThread::GarbageCollection_UIDs()
 			int iResultCode = FixObj(pObj, i);
 			if ( iResultCode )
 			{
-				// Do an immediate delete here instead of Delete()
-				delete pObj;
-				FreeUID(i);	// Get rid of junk uid if all fails..
+				// FixObj directly calls Delete method
+				//if (pObj->IsBeingDeleted() || pObj->IsDeleted())
+				//{
+					// Do an immediate delete here instead of Delete()
+					delete pObj;
+					FreeUID(i);	// Get rid of junk uid if all fails..
+				//}
+				/*
+				else
+				{
+					pObj->Delete();
+				}
+				*/
 				continue;
 			}
 
@@ -555,7 +590,7 @@ void CWorldThread::GarbageCollection_UIDs()
 		}
 	}
 
-	GarbageCollection_New();
+	GarbageCollection_NewObjs();
 
 	if ( iCount != CObjBase::sm_iCount )	// All objects must be accounted for.
 		g_Log.Event(LOGL_ERROR|LOGM_NOCONTEXT, "Garbage Collection: done. Object memory leak %" PRIu32 "!=%" PRIu32 ".\n", iCount, CObjBase::sm_iCount);
@@ -617,7 +652,11 @@ void CWorld::Init()
 
 CWorld::~CWorld()
 {
+	EXC_TRY("Destructor");
+
 	Close();
+
+	EXC_CATCH;
 }
 
 ///////////////////////////////////////////////
@@ -691,7 +730,7 @@ bool CWorld::SaveStage() // Save world state in stages.
 	if ( _iSaveStage == -1 )
 	{
 		if ( !g_Cfg.m_fSaveGarbageCollect )
-			GarbageCollection_New();
+			GarbageCollection_NewObjs();
 	}
 	else if ( _iSaveStage < iSectorsQty)
 	{
@@ -1135,7 +1174,7 @@ void CWorld::SaveStatics()
 	try
 	{
 		if ( !g_Cfg.m_fSaveGarbageCollect )
-			GarbageCollection_New();
+			GarbageCollection_NewObjs();
 
 		CScript m_FileStatics;
 		if ( !OpenScriptBackup(m_FileStatics, g_Cfg.m_sWorldBaseDir, "statics", m_iSaveCountID) )
@@ -1209,7 +1248,7 @@ bool CWorld::LoadFile( lpctstr pszLoadName, bool fError ) // Load world from scr
 	}
 
 	// Find the size of the file.
-	int iLoadSize = s.GetLength();
+	const int iLoadSize = s.GetLength();
     int iLoadStage = 0;
 
 	CScriptFileContext ScriptContext( &s );
@@ -1350,7 +1389,7 @@ bool CWorld::LoadAll() // Load world from script
 		return false;
 
 	_iTimeStartup = _GameClock.GetCurrentTime().GetTimeRaw();
-	_iTimeLastWorldSave = _GameClock.GetCurrentTime().GetTimeRaw() + g_Cfg.m_iSavePeriod;	// next save time.
+	_iTimeLastWorldSave = _iTimeStartup + g_Cfg.m_iSavePeriod;	// next save time.
 
 	// Set all the sector light levels now that we know the time.
 	// This should not look like part of the load. (CTRIG_EnvironChange triggers should run)
@@ -1394,8 +1433,8 @@ void CWorld::r_Write( CScript & s )
 {
 	ADDTOCALLSTACK("CWorld::r_Write");
 	// Write out the safe header.
-	s.WriteKey("TITLE", SPHERE_TITLE " World Script");
-	s.WriteKey("VERSION", SPHERE_VER_ID_STR);
+	s.WriteKeyStr("TITLE", SPHERE_TITLE " World Script");
+	s.WriteKeyStr("VERSION", SPHERE_VER_ID_STR);
 	#ifdef __GITREVISION__
 		s.WriteKeyVal("PREVBUILD", __GITREVISION__);
 	#endif
@@ -1654,9 +1693,9 @@ void CWorld::GarbageCollection()
 	g_Log.Flush();
 }
 
-void CWorld::OnTick()
+void CWorld::_OnTick()
 {
-	ADDTOCALLSTACK("CWorld::OnTick");
+	ADDTOCALLSTACK("CWorld::_OnTick");
 	// 256 real secs = 1 server hour. 19 light levels. check every 10 minutes or so.
 
 	// Do not tick while loading (startup, resync, exiting...) or when double ticking in the same msec?.

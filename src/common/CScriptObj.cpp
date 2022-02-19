@@ -14,7 +14,7 @@
 #include "../game/CServer.h"
 #include "../game/CWorld.h"
 #include "../game/CWorldMap.h"
-#include "../game/CTimedFunctions.h"
+#include "../game/CWorldTimedFunctions.h"
 #include "../sphere/ProfileTask.h"
 #include "crypto/CBCrypt.h"
 #include "crypto/CMD5.h"
@@ -56,13 +56,6 @@ static lpctstr const _ptcSRefKeys[SREF_QTY+1] =
     nullptr
 };
 
-CScriptObj::CScriptObj()
-{
-	_iParseScriptText_Reentrant = 0;
-	_fParseScriptText_Brackets = false;
-
-	_iEvaluate_Conditional_Reentrant = 0;
-}
 
 bool CScriptObj::ParseError_UndefinedKeyword(lpctstr ptcKey) // static
 {
@@ -310,10 +303,22 @@ bool CScriptObj::r_Call( size_t uiFunctionIndex, CTextConsole * pSrc, CScriptTri
     return true;
 }
 
-bool CScriptObj::r_SetVal( lpctstr ptcKey, lpctstr pszVal )
+bool CScriptObj::r_ExecSingle(lpctstr ptcLine)
+{
+	ADDTOCALLSTACK("CScriptObj::r_ExecSingle");
+	ASSERT(ptcLine);
+
+	CScript scriptLine(ptcLine);
+	return r_Verb(scriptLine, &g_Serv);
+}
+
+bool CScriptObj::r_SetVal( lpctstr ptcKey, lpctstr ptcVal )
 {
     ADDTOCALLSTACK("CScriptObj::r_SetVal");
-	CScript s( ptcKey, pszVal );
+	ASSERT(ptcKey);
+	ASSERT(ptcVal);
+
+	CScript s( ptcKey, ptcVal );
 	return r_LoadVal( s );
 }
 
@@ -720,7 +725,13 @@ badcmd:
 			{
 				const int64 val = Exp_GetLLVal(ptcKey);
 				SKIP_ARGSEP(ptcKey);
+				
 				const uint bit = Exp_GetUVal(ptcKey);
+				if (bit >= 64)
+				{
+					g_Log.EventError("%s shift argument ('%u') exceeds the maximum value of 63.\n", sm_szLoadKeys[index], bit);
+					return false;
+				}
 
 				if ( index == SSC_ISBIT )
 					sVal.FormatLLVal(val & (1ULL << bit));
@@ -815,9 +826,6 @@ badcmd:
 			tchar* buf = Str_GetTemp();
 			Str_CopyLimitNull(buf, ppArgs[2] + iPos, (size_t)(iCnt + 1));
 
-			if (g_Cfg.m_iDebugFlags & DEBUGF_SCRIPTS)
-				g_Log.EventDebug("SCRIPT: strsub(%" PRId64 ",%" PRId64 ",'%s') -> '%s'\n", iPos, iCnt, ppArgs[2], buf);
-            
 			sVal = buf;
             }
             return true;
@@ -1095,9 +1103,6 @@ badcmd:
 					g_Log.EventWarn("MULDIV(%" PRId64 ",%" PRId64 ",%" PRId64 ") -> Dividing by '0'\n", iNum, iMul, iDiv);
 				else
 					iRes = IMulDivLL(iNum,iMul,iDiv);
-
-				if ( g_Cfg.m_iDebugFlags & DEBUGF_SCRIPTS )
-					g_Log.EventDebug("SCRIPT: muldiv(%" PRId64 ",%" PRId64 ",%" PRId64 ") -> %" PRId64 "\n", iNum, iMul, iDiv, iRes);
 
 				sVal.FormatLLVal(iRes);
 			}
@@ -1460,7 +1465,7 @@ bool CScriptObj::r_Load( CScript & s )
 }
 
 
-bool CScriptObj::_Evaluate_Conditional_EvalSingle(const SubexprData& sdata, CTextConsole* pSrc, CScriptTriggerArgs* pArgs)
+bool CScriptObj::_Evaluate_Conditional_EvalSingle(const SubexprData& sdata, CTextConsole* pSrc, CScriptTriggerArgs* pArgs, std::shared_ptr<ScriptedExprContext> pContext)
 {
 	ADDTOCALLSTACK("CScriptObj::_Evaluate_Conditional_EvalSingle");
 	ASSERT(sdata.ptcStart);
@@ -1470,12 +1475,12 @@ bool CScriptObj::_Evaluate_Conditional_EvalSingle(const SubexprData& sdata, CTex
 	lptstr ptcSubexpr;
 
 	// Evaluate the subexpression body
-	if (_iEvaluate_Conditional_Reentrant >= 16)
+	if (pContext->_iEvaluate_Conditional_Reentrant >= 16)
 	{
 		g_Log.EventError("Exceeding the limit of 16 subexpressions. Further parsing is halted.\n");
 		return false;
 	}
-	++_iEvaluate_Conditional_Reentrant;
+	++ pContext->_iEvaluate_Conditional_Reentrant;
 
 	// Length to copy: +1 to include the last valid char (i'm not copying the subsequent char, which can be another char or '\0'
 	const size_t len = std::min(STR_TEMPLENGTH - 1U, size_t(sdata.ptcEnd - sdata.ptcStart + 1U));
@@ -1495,7 +1500,7 @@ bool CScriptObj::_Evaluate_Conditional_EvalSingle(const SubexprData& sdata, CTex
 		fVal = bool(Exp_GetVal(ptcSubexpr));
 	}
 
-	--_iEvaluate_Conditional_Reentrant;
+	-- pContext->_iEvaluate_Conditional_Reentrant;
 
 
 	// Apply non-associative operators preceding the subexpression
@@ -1518,7 +1523,7 @@ bool CScriptObj::_Evaluate_Conditional_EvalSingle(const SubexprData& sdata, CTex
 	return fVal;
 }
 
-bool CScriptObj::Evaluate_Conditional(lptstr ptcExpr, CTextConsole* pSrc, CScriptTriggerArgs* pArgs)
+bool CScriptObj::Evaluate_Conditional(lptstr ptcExpr, CTextConsole* pSrc, CScriptTriggerArgs* pArgs, std::shared_ptr<ScriptedExprContext> pContext)
 {
 	ADDTOCALLSTACK("CScriptObj::Evaluate_Conditional");
 
@@ -1536,7 +1541,7 @@ bool CScriptObj::Evaluate_Conditional(lptstr ptcExpr, CTextConsole* pSrc, CScrip
 		const SubexprData& sCur = psSubexprData[0];
 		ASSERT(sCur.uiType & SType::None);
 
-		const bool fVal = _Evaluate_Conditional_EvalSingle(sCur, pSrc, pArgs);
+		const bool fVal = _Evaluate_Conditional_EvalSingle(sCur, pSrc, pArgs, pContext);
 		return fVal;
 	}
 
@@ -1550,7 +1555,7 @@ bool CScriptObj::Evaluate_Conditional(lptstr ptcExpr, CTextConsole* pSrc, CScrip
 
 		if (i == 0)
 		{
-			fWholeExprVal = _Evaluate_Conditional_EvalSingle(sCur, pSrc, pArgs);
+			fWholeExprVal = _Evaluate_Conditional_EvalSingle(sCur, pSrc, pArgs, pContext);
 			continue;
 		}
 
@@ -1560,7 +1565,7 @@ bool CScriptObj::Evaluate_Conditional(lptstr ptcExpr, CTextConsole* pSrc, CScrip
 			if (fWholeExprVal)
 				return true;
 
-			const bool fVal = _Evaluate_Conditional_EvalSingle(sCur, pSrc, pArgs);
+			const bool fVal = _Evaluate_Conditional_EvalSingle(sCur, pSrc, pArgs, pContext);
 			fWholeExprVal = fWholeExprVal || fVal;
 		}
 		else if (sPrev.uiType & SType::And)
@@ -1568,7 +1573,7 @@ bool CScriptObj::Evaluate_Conditional(lptstr ptcExpr, CTextConsole* pSrc, CScrip
 			if (!fWholeExprVal)
 				return false;
 
-			const bool fVal = _Evaluate_Conditional_EvalSingle(sCur, pSrc, pArgs);
+			const bool fVal = _Evaluate_Conditional_EvalSingle(sCur, pSrc, pArgs, pContext);
 			fWholeExprVal = (i == 1) ? fVal : (fWholeExprVal && fVal);
 		}
 		
@@ -1576,7 +1581,7 @@ bool CScriptObj::Evaluate_Conditional(lptstr ptcExpr, CTextConsole* pSrc, CScrip
 		{
 			ASSERT(i == iQty - 1);	// It should be the last subexpression
 
-			const bool fVal = _Evaluate_Conditional_EvalSingle(sCur, pSrc, pArgs);
+			const bool fVal = _Evaluate_Conditional_EvalSingle(sCur, pSrc, pArgs, pContext);
 
 			if (sPrev.uiType & SType::Or)
 			{
@@ -1652,7 +1657,7 @@ static void Evaluate_QvalConditional_ParseArg(tchar* ptcSrc, tchar** ptcDest, lp
 	Str_Parse(ptcSrc, ptcDest, ptcSep);
 }
 
-bool CScriptObj::Evaluate_QvalConditional(lpctstr ptcKey, CSString& sVal, CTextConsole* pSrc, CScriptTriggerArgs* pArgs)
+bool CScriptObj::Evaluate_QvalConditional(lpctstr ptcKey, CSString& sVal, CTextConsole* pSrc, CScriptTriggerArgs* pArgs, std::shared_ptr<ScriptedExprContext> pContext)
 {
 	ADDTOCALLSTACK("CScriptObj::Evaluate_QvalConditional");
 	// Do a switch ? type statement <QVAL condition ? option1 : option2>
@@ -1675,13 +1680,13 @@ bool CScriptObj::Evaluate_QvalConditional(lpctstr ptcKey, CSString& sVal, CTextC
 	//  (do that in another string, since it may overwrite the arguments, which are written later in the same string).
 	tchar* ptcTemp = Str_GetTemp();
 	Str_CopyLimitNull(ptcTemp, ppCmds[0], STR_TEMPLENGTH);
-	ParseScriptText(ptcTemp, pSrc, 0, pArgs);
+	ParseScriptText(ptcTemp, pSrc, 0, pArgs, pContext);
 	const bool fCondition = Exp_GetVal(ptcTemp);
 
 	// Get the retval we want
 	//	(we might as well work on the transformed original string, since at this point we don't care if we corrupt other arguments)
 	ptcTemp = ppCmds[(fCondition ? 1 : 2)];
-	ParseScriptText(ptcTemp, pSrc, 0, pArgs);
+	ParseScriptText(ptcTemp, pSrc, 0, pArgs, pContext);
 
 	sVal = ptcTemp;
 	if (sVal.IsEmpty())
@@ -1689,7 +1694,7 @@ bool CScriptObj::Evaluate_QvalConditional(lpctstr ptcKey, CSString& sVal, CTextC
 	return true;
 }
 
-size_t CScriptObj::ParseScriptText( tchar * ptcResponse, CTextConsole * pSrc, int iFlags, CScriptTriggerArgs * pArgs )
+size_t CScriptObj::ParseScriptText(tchar * ptcResponse, CTextConsole * pSrc, int iFlags, CScriptTriggerArgs * pArgs, std::shared_ptr<ScriptedExprContext> pContext)
 {
 	ADDTOCALLSTACK("CScriptObj::ParseScriptText");
 	//ASSERT(ptcResponse[0] != ' ');	// Not needed: i remove whitespaces and invalid characters here.
@@ -1709,7 +1714,7 @@ size_t CScriptObj::ParseScriptText( tchar * ptcResponse, CTextConsole * pSrc, in
 	//  _iParseScriptText_Reentrant = 0;
 	//  _fParseScriptText_Brackets = false;	// Am i evaluating a statement? (Am i inside < > brackets of a statement i am currently evaluating?)
 
-	ASSERT(_fParseScriptText_Brackets == false);
+	ASSERT(pContext->_fParseScriptText_Brackets == false);
 	const bool fNoRecurseBrackets = ((iFlags & 2) != 0);
 
 	// General purpose variables.
@@ -1731,7 +1736,7 @@ size_t CScriptObj::ParseScriptText( tchar * ptcResponse, CTextConsole * pSrc, in
 		const tchar ch = ptcResponse[i];
 
 		// Are we looking for the current statement start?
-		if ( !_fParseScriptText_Brackets)	// not in brackets
+		if ( !pContext->_fParseScriptText_Brackets)	// not in brackets
 		{
 			if ( ch == chBegin )	// found the start !
 			{
@@ -1741,7 +1746,7 @@ size_t CScriptObj::ParseScriptText( tchar * ptcResponse, CTextConsole * pSrc, in
 
 				// Set the statement start
 				iBegin = i;
-				_fParseScriptText_Brackets = true;
+				pContext->_fParseScriptText_Brackets = true;
 
 				// Set-up to process special statements: is it a QVAL?
 				const bool fIsQval = !strnicmp(ptcResponse + i + 1, "QVAL", 4);
@@ -1766,7 +1771,7 @@ size_t CScriptObj::ParseScriptText( tchar * ptcResponse, CTextConsole * pSrc, in
 		}
 
 		// Handle possibly recursive angular brackets (i'm already inside an open bracket)
-		if (_fParseScriptText_Brackets && (ch == '<'))
+		if (pContext->_fParseScriptText_Brackets && (ch == '<'))
 		{
 			const tchar chNext = ptcResponse[i + 1];
 			if (chNext == '<')
@@ -1791,15 +1796,15 @@ size_t CScriptObj::ParseScriptText( tchar * ptcResponse, CTextConsole * pSrc, in
 				if (fIsQval)
 				{
 					// Nested QVAL... Needs to be evaluated separately, but we only want to know where it ends.
-					ASSERT(_fParseScriptText_Brackets == true);
-					++_iParseScriptText_Reentrant;
-					_fParseScriptText_Brackets = false;
+					ASSERT(pContext->_fParseScriptText_Brackets == true);
+					++ pContext->_iParseScriptText_Reentrant;
+					pContext->_fParseScriptText_Brackets = false;
 
 					tchar* ptcRecurseParse = ptcResponse + i;
 					const size_t iLen = ParseScriptText(ptcRecurseParse, pSrc, 4, pArgs);
 
-					_fParseScriptText_Brackets = true;
-					--_iParseScriptText_Reentrant;
+					pContext->_fParseScriptText_Brackets = true;
+					-- pContext->_iParseScriptText_Reentrant;
 
 					i += iLen;
 					continue;
@@ -1815,22 +1820,22 @@ size_t CScriptObj::ParseScriptText( tchar * ptcResponse, CTextConsole * pSrc, in
 				continue;
 			}
 
-			if (_iParseScriptText_Reentrant > 32 )
+			if (pContext->_iParseScriptText_Reentrant > 32 )
 			{
 				EXC_SET_BLOCK("recursive brackets limit");
-				PERSISTANT_ASSERT( _iParseScriptText_Reentrant < 32 );
+				PERSISTANT_ASSERT(pContext->_iParseScriptText_Reentrant < 32);
 			}
 
-			ASSERT(_fParseScriptText_Brackets == true);
-			++_iParseScriptText_Reentrant;
-			_fParseScriptText_Brackets = false;
+			ASSERT(pContext->_fParseScriptText_Brackets == true);
+			++pContext->_iParseScriptText_Reentrant;
+			pContext->_fParseScriptText_Brackets = false;
 
 			// Parse what's inside the open bracket
 			tchar* ptcRecurseParse = ptcResponse + i;
 			const size_t ilen = ParseScriptText(ptcRecurseParse, pSrc, 2, pArgs );
 
-			_fParseScriptText_Brackets = true;
-			--_iParseScriptText_Reentrant;
+			pContext->_fParseScriptText_Brackets = true;
+			--pContext->_iParseScriptText_Reentrant;
 
 			i += ilen;
 			continue;
@@ -1854,8 +1859,8 @@ size_t CScriptObj::ParseScriptText( tchar * ptcResponse, CTextConsole * pSrc, in
 						if (iFlags & 04)
 						{
 							// I was just checking for the QVAL statement end.
-							ASSERT(_fParseScriptText_Brackets == true);
-							_fParseScriptText_Brackets = false;
+							ASSERT(pContext->_fParseScriptText_Brackets == true);
+							pContext->_fParseScriptText_Brackets = false;
 							return i;
 						}
 
@@ -1877,7 +1882,7 @@ size_t CScriptObj::ParseScriptText( tchar * ptcResponse, CTextConsole * pSrc, in
 
 
 			// If i'm here it means that finally i'm at the end of the statement inside brackets.
-			_fParseScriptText_Brackets = false; // Close the statement.
+			pContext->_fParseScriptText_Brackets = false; // Close the statement.
 	
 			if ((eQval == QvalStatus::End) && (iQvalOpenBrackets != 0))
 			{
@@ -1899,7 +1904,7 @@ size_t CScriptObj::ParseScriptText( tchar * ptcResponse, CTextConsole * pSrc, in
 				// Separate evaluation for QVAL. I may need additional script context for it (pArgs isn't available in r_WriteVal).
 				EXC_SET_BLOCK("writeval qval");
 				ptcKey += 4; // Skip the letters QVAL and pass only the arguments
-				fRes = Evaluate_QvalConditional(ptcKey, sVal, pSrc, pArgs);
+				fRes = Evaluate_QvalConditional(ptcKey, sVal, pSrc, pArgs, pContext);
 				eQval = QvalStatus::None;
 			}
 			else
@@ -1948,7 +1953,7 @@ size_t CScriptObj::ParseScriptText( tchar * ptcResponse, CTextConsole * pSrc, in
 
 			if (fNoRecurseBrackets) // just do this one then bail out.
 			{
-				_fParseScriptText_Brackets = false;
+				pContext->_fParseScriptText_Brackets = false;
 				return i;
 			}
 		}
@@ -1959,7 +1964,7 @@ size_t CScriptObj::ParseScriptText( tchar * ptcResponse, CTextConsole * pSrc, in
 	g_Log.EventDebug("response '%s' source addr '0%p' flags '%d' args '%p'\n", ptcResponse, static_cast<void *>(pSrc), iFlags, static_cast<void *>(pArgs));
 	EXC_DEBUG_END;
 	
-	_fParseScriptText_Brackets = false;
+	pContext->_fParseScriptText_Brackets = false;
 	return i;
 }
 
@@ -2118,6 +2123,14 @@ TRIGRET_TYPE CScriptObj::OnTriggerScript( CScript & s, lpctstr pszTrigName, CTex
 	if ( !OnTriggerFind(s, pszTrigName) )
 		return TRIGRET_RET_DEFAULT;
 
+	/*
+	This is the same assignement found in the CChar::OnTrigger method (CCharAct.cpp).
+	If pSrc is null (for example the caster is dead when the spell triggers @EffectRemove or @EffectTick are fired) we assign the server object to it.
+	So the script can use safely use the isvalid command, otherwise Sphere will crash when accessing src in these scripts.
+	*/
+	if (!pSrc)
+		pSrc = &g_Serv;
+
 	const ProfileTask scriptsTask(PROFILE_SCRIPTS);
 
 	CScriptProfiler::CScriptProfilerTrigger	*pTrig = nullptr;
@@ -2273,7 +2286,7 @@ TRIGRET_TYPE CScriptObj::OnTriggerLoopGeneric(CScript& s, int iType, CTextConsol
 	// See WebPageScriptList for dealing with Arrays.
 
 	CScriptLineContext StartContext = s.GetContext();
-	CScriptLineContext EndContext = StartContext;
+	CScriptLineContext EndContext(StartContext);
 	int LoopsMade = 0;
 
 	if (iType & 8)		// WHILE
@@ -2579,7 +2592,7 @@ TRIGRET_TYPE CScriptObj::OnTriggerLoopGeneric(CScript& s, int iType, CTextConsol
 			char funcname[1024];
 			Str_CopyLimitNull(funcname, ptcArgs, sizeof(funcname));
 
-			TRIGRET_TYPE iRet = CTimedFunctions::Loop(funcname, LoopsMade, StartContext, s, pSrc, pArgs, pResult);
+			TRIGRET_TYPE iRet = CWorldTimedFunctions::Loop(funcname, LoopsMade, StartContext, s, pSrc, pArgs, pResult);
 			if ((iRet != TRIGRET_ENDIF) && (iRet != TRIGRET_CONTINUE))
 				return iRet;
 		}
@@ -2646,7 +2659,7 @@ TRIGRET_TYPE CScriptObj::OnTriggerLoopForCont(CScript& s, CTextConsole* pSrc, CS
 		tchar* ppArgs[2];
 		int iArgQty = Str_ParseCmds(const_cast<tchar*>(s.GetArgRaw()), ppArgs, CountOf(ppArgs), " \t,");
 
-		if (iArgQty >= 1)
+		if (iArgQty > 1)
 		{
 			TemporaryString tsOrigValue;
 			tchar* ptcOrigValue = tsOrigValue.buffer();
@@ -2680,7 +2693,7 @@ TRIGRET_TYPE CScriptObj::OnTriggerLoopForCont(CScript& s, CTextConsole* pSrc, CS
 		}
 		else
 		{
-			g_Log.EventError("FORCONT called without arguments.\n");
+			g_Log.EventError("FORCONT called with insufficient arguments.\n");
 			iRet = OnTriggerRun(s, TRIGRUN_SECTION_FALSE, pSrc, pArgs, pResult);
 		}
 	}
@@ -2724,7 +2737,7 @@ TRIGRET_TYPE CScriptObj::OnTriggerLoopForContSpecial(CScript& s, SK_TYPE iCmd, C
 					}
 
 					CScriptLineContext StartContext = s.GetContext();
-					CScriptLineContext EndContext = StartContext;
+					CScriptLineContext EndContext(StartContext);
 					lpctstr ptcParsedArg1 = tsParsedArg1.buffer();
 					iRet = pCont->OnContTriggerForLoop(s, pSrc, pArgs, pResult, StartContext, EndContext,
 						g_Cfg.ResourceGetID(((iCmd == SK_FORCONTID) ? RES_ITEMDEF : RES_TYPEDEF), tsParsedArg0.buffer()),

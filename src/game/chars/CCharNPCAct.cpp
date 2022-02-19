@@ -221,7 +221,7 @@ void CChar::NPC_ActStart_SpeakTo( CChar * pSrc )
 	m_atTalk.m_dwHearUnknown = 0;
 
 	Skill_Start( ( pSrc->GetFame() > 7000 ) ? NPCACT_TALK_FOLLOW : NPCACT_TALK );
-	SetTimeoutS(3);
+	_SetTimeoutS(3);
 	UpdateDir(pSrc);
 }
 
@@ -472,7 +472,7 @@ int CChar::NPC_WalkToPoint( bool fRun )
 			// whilst pathfinding we should keep trying to find new ways to our destination
 			if ( fUsePathfinding == true )
 			{
-				SetTimeoutD( 5 ); // wait a moment before finding a new route
+				_SetTimeoutD( 5 ); // wait a moment before finding a new route
 				return 1;
 			}
 			return 2;
@@ -544,7 +544,7 @@ int CChar::NPC_WalkToPoint( bool fRun )
 				// whilst pathfinding we should keep trying to find new ways to our destination
 				if ( fUsePathfinding )
 				{
-					SetTimeoutD( 5 ); // wait a moment before finding a new route
+					_SetTimeoutD( 5 ); // wait a moment before finding a new route
 					return 1;
 				}
 				return 2;
@@ -632,7 +632,7 @@ int CChar::NPC_WalkToPoint( bool fRun )
 	else if (iTickNext > 5 * MSECS_PER_SEC)  // neither more than 5 seconds.
 		iTickNext = 5 * MSECS_PER_SEC;
 
-	SetTimeout(iTickNext);
+	_SetTimeout(iTickNext);
 	EXC_CATCH;
 	return 1;
 }
@@ -823,14 +823,6 @@ bool CChar::NPC_LookAtCharHealer( CChar * pChar )
 	lpctstr pszRefuseMsg;
 
 	int iDist = GetDist( pChar );
-	if ( pChar->IsStatFlag( STATF_INSUBSTANTIAL ))
-	{
-		pszRefuseMsg = g_Cfg.GetDefaultMsg( DEFMSG_NPC_HEALER_MANIFEST );
-		if ( Calc_GetRandVal(5) || iDist > 3 )
-			return false;
-		Speak( pszRefuseMsg );
-		return true;
-	}
 
 	if ( iDist > 3 )
 	{
@@ -1262,10 +1254,33 @@ bool CChar::NPC_Act_Follow(bool fFlee, int maxDistance, bool fMoveAway)
 	// false = can't follow any more, give up.
 
 	if (Can(CAN_C_NONMOVER))
-		return false;
+	{
+		/*
+		  If the NPC has the MT_NONMOVER flag we need to check if it is actually in combat, otherwise it  will spam the attack because it
+		  constantly "forget" the character is attacking (See NPCAct_Fight method).
+		*/ 
+		if (!Fight_IsActive())
+			return false;
+		else
+			return true;
+	}
 
 	EXC_TRY("NPC_Act_Follow");
-	CChar * pChar = Fight_IsActive() ? m_Fight_Targ_UID.CharFind() : m_Act_UID.CharFind();
+
+	/*
+	* Replaced the Fight_IsActive() check with a check on m_fight_targ_UID.
+	* Red npcs usually never interact "in a peaceful way" with the players and thus m_act_UID is usually never set preventing the creature from fleeing and putting it in an immobile "state".
+	* Fight_IsActive returns true if the character is actively fighting (using a combat skill) in this case it's false because of the NPC'sFleeing
+	* Action and thus it will never pass the Fight_IsActive() check
+	*/
+	//CChar * pChar =  Fight_IsActive() ? m_Fight_Targ_UID.CharFind() : m_Act_UID.CharFind();
+
+	CChar* pChar = nullptr;
+	//If the NPC action is following somebody, directly assign the character from  the m_Act_UID value. 
+	if (Skill_GetActive() == NPCACT_FOLLOW_TARG)
+		pChar = m_Act_UID.CharFind();
+	else
+		pChar = m_Fight_Targ_UID.IsValidUID() ? m_Fight_Targ_UID.CharFind() : m_Act_UID.CharFind();
 	if (pChar == nullptr)
 	{
 		// free to do as i wish !
@@ -1502,7 +1517,7 @@ void CChar::NPC_LootMemory( CItem * pItem )
 	// If the item is set to decay.
 	if (pItem->IsTimerSet())
 	{
-		const int64 iTimerDiff = pItem->GetTimerDiff();
+		const int64 iTimerDiff = pItem->GetTimerAdjusted();
 		if (iTimerDiff > 0)
 			pMemory->SetTimeout(iTimerDiff);		// forget about this once the item is gone
 	}
@@ -1839,7 +1854,7 @@ bool CChar::NPC_Act_Food()
 				pResBit->SetTimeoutS(60*10);
 				//DEBUG_ERR(("Starting skill food\n"));
 				Skill_Start( NPCACT_FOOD );
-				SetTimeoutS(5);
+				_SetTimeoutS(5);
 				return true;
 			}
 			else									//	search for grass nearby
@@ -1886,11 +1901,14 @@ void CChar::NPC_Act_Idle()
 
 	// ---------- If we found nothing else to do. do this. -----------
 
-	// If guards are found outside guarded territories, do the following.
-	if ( m_pNPC->m_Brain == NPCBRAIN_GUARD && !m_pArea->IsGuarded() && m_ptHome.IsValidPoint())
+	// If guards are found outside guarded territories and not allowed, do the following.
+	if (!IsSetOF(OF_GuardOutsideGuardedArea))
 	{
-		Skill_Start(NPCACT_GO_HOME);
-		return;
+		if ( m_pNPC->m_Brain == NPCBRAIN_GUARD && !m_pArea->IsGuarded() && m_ptHome.IsValidPoint())
+		{
+			Skill_Start(NPCACT_GO_HOME);
+			return;
+		}
 	}
 
 	// Specific creature random actions.
@@ -1962,7 +1980,7 @@ void CChar::NPC_Act_Idle()
 
 	// just stand here for a bit.
 	Skill_Start(SKILL_NONE);
-	SetTimeoutS(1 + Calc_GetRandLLVal(2));
+	_SetTimeoutS(1 + Calc_GetRandLLVal(2));
 }
 
 bool CChar::NPC_OnItemGive( CChar *pCharSrc, CItem *pItem )
@@ -2128,17 +2146,25 @@ void CChar::NPC_OnTickAction()
 	// What action should we take now ?
 	EXC_TRY("NPC_TickAction");
 
+	const SKILL_TYPE iSkillActive = Skill_GetActive();
     if (!m_pArea)
     {
         const CPointMap& pt = GetUnkPoint();
-        if (pt.IsValidPoint())
-            DEBUG_WARN(("Trying to Tick Action on an NPC placed in an invalid area (P=%s). UID=0% " PRIx32 ", defname=%s.\n", pt.WriteUsed(), GetUID().GetObjUID(), GetResourceName()));
-        else
-            DEBUG_WARN(("Trying to Tick Action on unplaced NPC. UID=0% " PRIx32 ", defname=%s.\n", GetUID().GetObjUID(), GetResourceName()));
+		if (pt.IsValidPoint())
+		{
+			if (iSkillActive != NPCACT_RIDDEN)
+			{
+				g_Log.EventWarn("Trying to Tick Action on an NPC placed in an invalid area (P=%s). UID=0% " PRIx32 ", defname=%s.\n", pt.WriteUsed(), GetUID().GetObjUID(), GetResourceName());
+			}
+		}
+		else
+		{
+			g_Log.EventWarn("Trying to Tick Action on unplaced NPC. UID=0% " PRIx32 ", defname=%s.\n", GetUID().GetObjUID(), GetResourceName());
+		}
         return;
     }
 
-	const SKILL_TYPE iSkillActive = Skill_GetActive();
+	
     bool fSkillFight = false;
 	if ( g_Cfg.IsSkillFlag( iSkillActive, SKF_SCRIPTED ) )
 	{
@@ -2269,13 +2295,13 @@ void CChar::NPC_OnTickAction()
 	}
 
 	EXC_SET_BLOCK("timer expired (NPC)");
-	if ( IsTimerExpired() && !fSkillFight) // If i'm fighting, i don't want to wait to start another swing
+	if ( _IsTimerExpired() && !fSkillFight) // If i'm fighting, i don't want to wait to start another swing
 	{
 		int64 timeout = (150-Stat_GetAdjusted(STAT_DEX))/2;
 		timeout = maximum(timeout, 0);
 		timeout = Calc_GetRandLLVal2(timeout/2, timeout);
 		// default next brain/move tick
-		SetTimeoutD(1 + timeout);   // In Tenths of Second.
+		_SetTimeoutD(1 + timeout);   // In Tenths of Second.
 	}
 
 	//	vendors restock periodically

@@ -20,7 +20,10 @@
 #include "CCharPlayer.h"
 
 
+class CWorldTicker;
+
 class CCharNPC;
+
 
 enum NPCBRAIN_TYPE	// General AI type.
 {
@@ -42,7 +45,10 @@ enum NPCBRAIN_TYPE	// General AI type.
 class CChar : public CObjBase, public CContainer, public CTextConsole
 {
 	// RES_WORLDCHAR
-    THREAD_CMUTEX_DEF;
+
+	friend class CWorldTicker;
+
+    // THREAD_CMUTEX_DEF; // It inherits from CObjBase which inherits CTimedObject, which already has a class mutex.
 
 private:
 	// Spell type effects.
@@ -79,9 +85,7 @@ private:
 #define STATF_RIDDEN		0x40000000	// This is the horse. (don't display me) I am being ridden
 #define STATF_ONHORSE		0x80000000	// Mounted on horseback.
 
-	uint64 m_iStatFlag;		// Flags above
-
-	ushort m_Skill[SKILL_QTY];	// List of skills ( skill * 10 )
+	uint64 _uiStatFlag;		// Flags above
 
 	CClient * m_pClient;	// is the char a currently logged in m_pPlayer ?
 
@@ -137,7 +141,7 @@ public:
 
 	// Saved stuff.
 	DIR_TYPE m_dirFace;			// facing this dir.
-	std::string m_sTitle;		// Special title such as "the guard" (replaces the normal skill title) [use std::string instead of CSString because the former is allocated on-demand]
+	CSString m_sTitle;			// Special title such as "the guard" (replaces the normal skill title)
 	CPointMap m_ptHome;			// What is our "home" region. (towns and bounding of NPC's)
 	int64 m_virtualGold;		// Virtual gold used by TOL clients
 
@@ -153,6 +157,8 @@ public:
 
 
 	// Skills, Stats and health
+	ushort m_Skill[SKILL_QTY];	// List of skills ( skill * 10 )
+
 	struct
 	{
 		ushort  m_base;      // Base stat: STR, INT, DEX
@@ -164,6 +170,7 @@ public:
         int64   m_regenLast; // Time of the last regen.
         ushort  m_regenVal;  // Amount of Stat to gain at each regen
 	} m_Stat[STAT_QTY];
+
     short m_iKarma;
     ushort m_uiFame;
 
@@ -171,10 +178,9 @@ public:
 	int64  _iTimePeriodicTick;
 	int64  _iTimeNextRegen;	    // When did i get my last regen tick ?
     ushort _iRegenTickCount;    // ticks until next regen.
-	
 
 	int64 _iTimeLastHitsUpdate;
-	int64 m_timeLastCallGuards;
+	int64 _iTimeLastCallGuards;
 
 	// Some character action in progress.
 	SKILL_TYPE	m_Act_SkillCurrent;	// Currently using a skill. Could be combat skill.
@@ -313,22 +319,28 @@ private:
 	CChar& operator=(const CChar& other);
 
 protected:
-	void DeleteCleanup(bool fForce);
+	void DeleteCleanup(bool fForce);	// Not virtual!
 	virtual void DeletePrepare() override;
 public:
 	bool NotifyDelete();
 	virtual bool Delete(bool fForce = false) override;
 
-    virtual void GoSleep() override;
-    virtual void GoAwake() override;
-
-	// Status and attributes ------------------------------------	
+	// Status and attributes ------------------------------------
 	int IsWeird() const;
+
+//protected:	bool _IsStatFlag(uint64 uiStatFlag) const noexcept;
+public:		bool  IsStatFlag(uint64 uiStatFlag) const noexcept;
+
+//protected:	void _StatFlag_Set(uint64 uiStatFlag) noexcept;
+public:		void  StatFlag_Set(uint64 uiStatFlag) noexcept;
+
+//protected:	void _StatFlag_Clear(uint64 uiStatFlag) noexcept;
+public:		void  StatFlag_Clear(uint64 uiStatFlag) noexcept;
+
+//protected:	void _StatFlag_Mod(uint64 uiStatFlag, bool fMod) noexcept;
+public:		void  StatFlag_Mod(uint64 uiStatFlag, bool fMod) noexcept;
+
 	char GetFixZ(const CPointMap& pt, dword dwBlockFlags = 0);
-	bool IsStatFlag( uint64 iStatFlag ) const;
-	void StatFlag_Set(uint64 iStatFlag);
-	void StatFlag_Clear(uint64 iStatFlag);
-	void StatFlag_Mod(uint64 iStatFlagStatFlag, bool fMod );
 	bool IsPriv( word flag ) const;
 	PLEVEL_TYPE GetPrivLevel() const;
 
@@ -457,9 +469,10 @@ public:
 	bool MoveToRegionReTest( dword dwType );
 	bool MoveToChar(const CPointMap& pt, bool fStanding = true, bool fCheckLocation = true, bool fForceFix = false, bool fAllowReject = true);
 	bool MoveTo(const CPointMap& pt, bool fForceFix = false);
-	virtual void SetTopZ( char z ) noexcept override;
-	bool MoveToValidSpot(DIR_TYPE dir, int iDist, int iDistStart = 1, bool fFromShip = false);
+	virtual void SetTopZ( char z ) override;
 	virtual bool MoveNearObj( const CObjBaseTemplate *pObj, ushort iSteps = 0 ) override;
+	bool MoveToValidSpot(DIR_TYPE dir, int iDist, int iDistStart = 1, bool fFromShip = false);
+	bool MoveToNearestShore(bool fNoMsg = false);
 
 	CRegion * CanMoveWalkTo( CPointMap & pt, bool fCheckChars = true, bool fCheckOnly = false, DIR_TYPE dir = DIR_QTY, bool fPathFinding = false );
 	void CheckRevealOnMove();
@@ -948,7 +961,7 @@ private:
 	bool Spell_Unequip( LAYER_TYPE layer );
 
 	int  Spell_CastStart();
-	void Spell_CastFail();
+	void Spell_CastFail( bool fAbort = false );
 
 public:
     bool Spell_Resurrection(CItemCorpse * pCorpse = nullptr, CChar * pCharSrc = nullptr, bool fNoFail = false);
@@ -1031,7 +1044,6 @@ public:
 	void Fight_ClearAll();
 	void Fight_HitTry();
 	WAR_SWING_TYPE Fight_Hit( CChar * pCharTarg );
-	bool Fight_Parry(CItem * &pItemParry);
 	WAR_SWING_TYPE Fight_CanHit(CChar * pCharTarg, bool fSwingNoRange = false);
 	SKILL_TYPE Fight_GetWeaponSkill() const;
     DAMAGE_TYPE Fight_GetWeaponDamType(const CItem* pWeapon = nullptr) const;
@@ -1117,7 +1129,7 @@ public:
 
 	void Flip();
 	bool SetPoison( int iSkill, int iHits, CChar * pCharSrc );
-	bool SetPoisonCure( int iLevel, bool fExtra );
+	bool SetPoisonCure( bool fExtra );
 	bool CheckCorpseCrime( CItemCorpse *pCorpse, bool fLooting, bool fTest );
 	CItemCorpse * FindMyCorpse( bool fIgnoreLOS = false, int iRadius = 2) const;
 	CItemCorpse * MakeCorpse( bool fFrontFall );
@@ -1169,7 +1181,7 @@ public:
 	void Use_EatQty( CItem * pFood, ushort uiQty = 1 );
 	bool Use_Eat( CItem * pItem, ushort uiQty = 1 );
 	bool Use_MultiLockDown( CItem * pItemTarg );
-	bool Use_CarveCorpse( CItemCorpse * pCorpse );
+	void Use_CarveCorpse( CItemCorpse * pCorpse, CItem * pItemCarving );
 	bool Use_Repair( CItem * pItem );
 	int  Use_PlayMusic( CItem * pInstrument, int iDifficultyToPlay );
 	void Use_Drink(CItem *pItem);
@@ -1294,12 +1306,23 @@ public:
 	void OnHarmedBy( CChar * pCharSrc );
 	bool OnAttackedBy( CChar * pCharSrc, bool fPetsCommand = false, bool fShouldReveal = true );
 
+protected:
+	virtual void _GoAwake() override final;
+	virtual void _GoSleep() override final;
+
+	virtual bool _CanTick() const override final;
+
+protected:	virtual bool _OnTick() override final;  // _OnTick timeout for skills, AI, etc
+//public:	virtual bool  _OnTick() override final;
+
+public:
 	bool OnTickEquip( CItem * pItem );
 	void OnTickFood( ushort uiVal, int HitsHungerLoss );
-	void OnTickStatusUpdate();
-	bool OnTick();  // OnTick timeout for skills, AI, etc
-    void OnTickSkill(); // OnTick timeout specific for the skill behavior
-    bool OnTickPeriodic();  // Periodic tick calls (update stats, status bar, notoriety & attackers, death check, etc)
+
+	virtual void OnTickStatusUpdate() override;
+	bool OnTickPeriodic();  // Periodic tick calls (update stats, status bar, notoriety & attackers, death check, etc)
+    
+	void OnTickSkill(); // _OnTick timeout specific for the skill behavior
 
 	static CChar * CreateBasic( CREID_TYPE baseID );
 	static CChar * CreateNPC( CREID_TYPE id );

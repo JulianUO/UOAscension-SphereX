@@ -71,7 +71,7 @@ private:
     * @brief Removes a CMultiComponent from the components list.
     * @param pComponent the component.
     */
-    virtual void DeleteComponent(const CUID& uidComponent) override;
+    virtual void DeleteComponent(const CUID& uidComponent, bool fRemoveFromList) override final;
 
     void CopyDesign(CDesignDetails * designFrom, CDesignDetails * designTo);
     void GetLockdownsAt(short dx, short dy, char dz, std::vector<CUID> &vList);
@@ -80,7 +80,7 @@ private:
     void ClearFloor(char iFloor);
 
 private:
-    using ValidItemsContainer = phmap::btree_map<ITEMID_TYPE, uint>;	// ItemID, FeatureMask
+    using ValidItemsContainer = std::map<ITEMID_TYPE, uint>;	// ItemID, FeatureMask
     static ValidItemsContainer sm_mapValidItems;
 
     static bool LoadValidItems();
@@ -95,7 +95,7 @@ private:
     CItemMultiCustom& operator=(const CItemMultiCustom& other);
 
 public:
-    void BeginCustomize(CClient * pClientSrc);
+    void BeginCustomize(CClient* pClientSrc, bool continueCustomize = false);
     void EndCustomize(bool fForce = false);
     void SwitchToLevel(CClient * pClientSrc, uchar iLevel);
     void CommitChanges(CClient * pClientSrc = nullptr);

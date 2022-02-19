@@ -104,26 +104,25 @@ bool CClient::Cmd_Use_Item( CItem *pItem, bool fTestTouch, bool fScript )
 
 	CItemBase *pItemDef = pItem->Item_GetDef();
 	bool bIsEquipped = pItem->IsItemEquipped();
-	if ( pItemDef->IsTypeEquippable() && !bIsEquipped && pItemDef->GetEquipLayer() )
+	if (pItemDef->IsTypeEquippable() && !bIsEquipped && pItemDef->GetEquipLayer())
 	{
 		bool fMustEquip = true;
-		if ( pItem->IsTypeSpellbook() )
+		if (pItem->IsTypeSpellbook())
 			fMustEquip = false;
-		else if ( (pItem->IsType(IT_LIGHT_OUT) || pItem->IsType(IT_LIGHT_LIT)) && !pItem->IsItemInContainer() )
+		else if ((pItem->IsType(IT_LIGHT_OUT) || pItem->IsType(IT_LIGHT_LIT)) && !pItem->IsItemInContainer())
 			fMustEquip = false;
 
-		if ( fMustEquip )
+		if (fMustEquip)
 		{
-			if ( !m_pChar->CanMove(pItem) )
+			if (!m_pChar->CanMove(pItem))
 				return false;
-
+			/*Before weight behavior rework we had this check too :
 			if ( (pObjTop != m_pChar) && !m_pChar->CanCarry(pItem) )
 			{
 				SysMessageDefault(DEFMSG_MSG_HEAVY);
 				return false;
-			}
-
-			if ( !m_pChar->ItemEquip(pItem, nullptr, true) )
+			}*/
+			if (!m_pChar->ItemEquip(pItem, nullptr, true))
 				return false;
 		}
 	}
@@ -666,7 +665,7 @@ bool CClient::Cmd_Skill_Menu( const CResourceID& rid, int iSelect )
 		}
 
 		if ( g_Cfg.m_iDebugFlags & DEBUGF_SCRIPTS )
-			g_Log.EventDebug("SCRIPT: Too many empty skill menus to continue seeking through menu '%s'\n", g_Cfg.ResourceGetDef(rid)->GetResourceName());
+			g_Log.EventDebug("[DEBUG_SCRIPTS] Too many empty skill menus to continue seeking through menu '%s'\n", g_Cfg.ResourceGetDef(rid)->GetResourceName());
 	}
 
 	ASSERT(iShowCount < (int)CountOf(item));
@@ -850,7 +849,7 @@ int CClient::Cmd_Skill_Menu_Build( const CResourceID& rid, int iSelect, CMenuIte
 				if ( sm_iReentrant > 1024 )
 				{
 					if ( g_Cfg.m_iDebugFlags & DEBUGF_SCRIPTS )
-						g_Log.EventDebug("SCRIPT: Too many skill menus (circular menus?) to continue searching in menu '%s'\n", g_Cfg.ResourceGetDef(rid)->GetResourceName());
+						g_Log.EventDebug("[DEBUG_SCRIPTS] Too many skill menus (circular menus?) to continue searching in menu '%s'\n", g_Cfg.ResourceGetDef(rid)->GetResourceName());
 
 					*fLimitReached = true;
 				}

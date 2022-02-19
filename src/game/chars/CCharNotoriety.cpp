@@ -656,7 +656,7 @@ void CChar::NotoSave_Add( CChar * pChar, NOTO_TYPE value, NOTO_TYPE color  )
 		for (std::vector<NotoSaves>::iterator it = m_notoSaves.begin(), end = m_notoSaves.end(); it != end; ++it)
 		{
 			NotoSaves & refNoto = *it;
-			if ( refNoto.charUID == uid )
+			if ( refNoto.charUID == uid.GetObjUID() )
 			{
 				// Found him, no actions needed so I forget about him...
 				// or should I update data ?
@@ -668,7 +668,7 @@ void CChar::NotoSave_Add( CChar * pChar, NOTO_TYPE value, NOTO_TYPE color  )
 		}
 	}
 	NotoSaves refNoto;
-	refNoto.charUID = pChar->GetUID();
+	refNoto.charUID = pChar->GetUID().GetObjUID();
 	refNoto.time = 0;
 	refNoto.value = value;
 	refNoto.color = color;
@@ -787,7 +787,7 @@ bool CChar::NotoSave_Delete( CChar * pChar )
 	{
 		for (std::vector<NotoSaves>::iterator it = m_notoSaves.begin(), end = m_notoSaves.end(); it != end; ++it)
 		{
-			if (it->charUID == pChar->GetUID() )
+			if (it->charUID == pChar->GetUID().GetObjUID() )
 			{
 				m_notoSaves.erase(it);
 				return true;

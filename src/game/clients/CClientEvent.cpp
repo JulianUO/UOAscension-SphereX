@@ -391,12 +391,6 @@ void CClient::Event_Item_Drop( CUID uidItem, CPointMap pt, CUID uidOn, uchar gri
 					return;
 				}
 			}
-			else if ( ! pChar->CanCarry( pItem ))
-			{
-				SysMessage(g_Cfg.GetDefaultMsg(DEFMSG_MSG_HEAVY));
-				Event_Item_Drop_Fail( pItem );
-				return;
-			}
 		}
 
 		if (pObjTop->IsItem())
@@ -408,6 +402,23 @@ void CClient::Event_Item_Drop( CUID uidItem, CPointMap pt, CUID uidOn, uchar gri
 				return;
 			}
 		}
+        else // pObjTop may not be an item, it may be a character (eg: drop in the backpack or the bankbox)
+        {
+            if (pObjOn->IsItem() && pObjOn->IsContainer())
+            {
+                CItemContainer* pAboveContainer = static_cast<CItemContainer*>(pObjOn);
+                while (pAboveContainer) // do a recursive check.
+                {
+                    if (!pAboveContainer->CanContainerHold(pItem, m_pChar))
+                    {
+                        Event_Item_Drop_Fail(pItem);
+                        return;
+                    }
+                    CItemContainer* pNextContainer = static_cast<CItemContainer*>(static_cast<CItem*>(pObjOn)->GetTopContainer());
+                    pAboveContainer = pNextContainer == pAboveContainer ? nullptr : pNextContainer;
+                }
+            }
+        }
 
 		if ( pContItem != nullptr )
 		{
@@ -821,6 +832,29 @@ bool CClient::Event_CheckWalkBuffer(byte rawdir)
 	return true;
 }
 
+bool CClient::Event_ExceededNetworkQuota(uchar uiType, int64 iBytes, int64 iQuota)
+{
+	ADDTOCALLSTACK("CClient::Event_ExceededNetworkQuota");
+
+	CScriptTriggerArgs Args(uiType, iBytes, iQuota);
+	Args.m_VarsLocal.SetStrNew("Account", GetName());
+	Args.m_VarsLocal.SetStrNew("IP", GetPeer().GetAddrStr());
+
+	TRIGRET_TYPE tRet = TRIGRET_RET_DEFAULT;
+	g_Serv.r_Call("f_onclient_exceed_network_quota", this, &Args, nullptr, &tRet);
+
+	if (tRet == TRIGRET_RET_FALSE)
+	{
+		return true;	// print log message
+	}
+	if (tRet == TRIGRET_RET_TRUE)
+	{
+		return false;	// no log message
+	}
+
+	addKick(&g_Serv, false);
+	return true;
+}
 
 
 bool CClient::Event_Walk( byte rawdir, byte sequence ) // Player moves
@@ -840,7 +874,7 @@ bool CClient::Event_Walk( byte rawdir, byte sequence ) // Player moves
 	if ( !m_pChar )
 		return false;
 
-	DIR_TYPE dir = DIR_TYPE(rawdir & 0x0F);
+	DIR_TYPE dir = DIR_TYPE(rawdir & 0xF);
 	if ( dir >= DIR_QTY )
 	{
 		new PacketMovementRej(this, sequence);
@@ -882,7 +916,7 @@ bool CClient::Event_Walk( byte rawdir, byte sequence ) // Player moves
 		}
 
 		// Set running flag if I'm running
-		m_pChar->StatFlag_Mod(STATF_FLY, (rawdir & 0x80) ? true : false);
+		m_pChar->StatFlag_Mod(STATF_FLY, (rawdir & DIR_MASK_RUNNING) ? true : false);
 
 		if (IsSetEF(EF_FastWalkPrevention) && !m_pChar->IsPriv(PRIV_GM))
 		{
@@ -896,9 +930,9 @@ bool CClient::Event_Walk( byte rawdir, byte sequence ) // Player moves
 
 			int64 iDelay = 0;
 			if (m_pChar->IsStatFlag(STATF_ONHORSE | STATF_HOVERING) || (m_pChar->m_pPlayer->m_speedMode & 0x01))
-				iDelay = (rawdir & 0x80) ? 100 : 200;	// 100ms : 200ms 
+				iDelay = (rawdir & DIR_MASK_RUNNING) ? 100 : 200;	// 100ms : 200ms 
 			else
-				iDelay = (rawdir & 0x80) ? 200 : 400;	// 200ms : 400ms
+				iDelay = (rawdir & DIR_MASK_RUNNING) ? 200 : 400;	// 200ms : 400ms
 
 			iDelay -= 30; //Delay offset is set to be more permisif when player have lag or processor lack precision 
 			// This system do not work because the offset must be fine tune for each server and for EACH player and it's ping
@@ -1258,6 +1292,7 @@ void CClient::Event_VendorBuy(CChar* pVendor, const VendorItem* items, uint uiIt
     }
     
     //	Move the items bought into your pack.
+	uint uiItemBlocked = 0;
     for (uint i = 0; i < uiItemCount; ++i)
     {
         if (items[i].m_serial.IsValidUID() == false)
@@ -1271,10 +1306,15 @@ void CClient::Event_VendorBuy(CChar* pVendor, const VendorItem* items, uint uiIt
             
         if ((IsTrigUsed(TRIGGER_BUY)) || (IsTrigUsed(TRIGGER_ITEMBUY)))
         {
-            CScriptTriggerArgs Args( amount, int64(amount) * items[i].m_price, pVendor );
+			int64 iItemCost = int64(amount) * items[i].m_price;
+            CScriptTriggerArgs Args( amount, iItemCost, pVendor );
             Args.m_VarsLocal.SetNum( "TOTALCOST", iCostTotal);
-            if ( pItem->OnTrigger( ITRIG_Buy, this->GetChar(), &Args ) == TRIGRET_RET_TRUE )
-                continue;
+			if (pItem->OnTrigger(ITRIG_Buy, this->GetChar(), &Args) == TRIGRET_RET_TRUE)
+			{
+				iCostTotal -= iItemCost; //If we are blocking the transaction we should not pay for it!.
+				uiItemBlocked++;
+				continue;
+			}
         }
         
         if (!fPlayerVendor) //NPC vendors
@@ -1359,15 +1399,18 @@ do_consume:
         pItem->Update();
     }
     
-    //Say the message about the bought goods
-    tchar *sMsg = Str_GetTemp();
-    tchar *pszTemp1 = Str_GetTemp();
-    tchar *pszTemp2 = Str_GetTemp();
-    snprintf(pszTemp1, STR_TEMPLENGTH, g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_HYARE), m_pChar->GetName());
-    snprintf(pszTemp2, STR_TEMPLENGTH, (fBoss ? g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_S1) : g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_B1)),
-		iCostTotal, ((iCostTotal ==1) ? "" : g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_CA)) );
-    snprintf(sMsg, STR_TEMPLENGTH, "%s %s %s", pszTemp1, pszTemp2, g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_TY));
-    pVendor->Speak(sMsg);
+	if (uiItemBlocked < uiItemCount)
+	{
+		//Say the message about the bought goods
+		tchar* sMsg = Str_GetTemp();
+		tchar* pszTemp1 = Str_GetTemp();
+		tchar* pszTemp2 = Str_GetTemp();
+		snprintf(pszTemp1, STR_TEMPLENGTH, g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_HYARE), m_pChar->GetName());
+		snprintf(pszTemp2, STR_TEMPLENGTH, (fBoss ? g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_S1) : g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_B1)),
+			iCostTotal, ((iCostTotal == 1) ? "" : g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_CA)));
+		snprintf(sMsg, STR_TEMPLENGTH, "%s %s %s", pszTemp1, pszTemp2, g_Cfg.GetDefaultMsg(DEFMSG_NPC_VENDOR_TY));
+		pVendor->Speak(sMsg);
+	}
     
     //Take the gold and add it to the vendor
     if ( !fBoss )
@@ -1388,7 +1431,7 @@ do_consume:
     
     //Close vendor gump
     addVendorClose(pVendor);
-    if (iCostTotal > 0) //if anything was sold, sound this
+    if (iCostTotal > 0 && uiItemBlocked < uiItemCount) //if anything was sold, sound this
         addSound(SOUND_DROP_GOLD1); //Gold sound is better than cloth one, 0x57 is SOUND_USE_CLOTH
 }
 
@@ -2296,9 +2339,9 @@ bool CClient::Event_DoubleClick( CUID uid, bool fMacro, bool fTestTouch, bool fS
 	}
 
 	if ( pObj->IsItem() )
-		return Cmd_Use_Item(dynamic_cast<CItem *>(pObj), fTestTouch, fScript);
+		return Cmd_Use_Item(static_cast<CItem *>(pObj), fTestTouch, fScript);
 
-	CChar * pChar = dynamic_cast<CChar *>(pObj);
+	CChar * pChar = static_cast<CChar *>(pObj);
 	if ( IsTrigUsed(TRIGGER_DCLICK) || IsTrigUsed(TRIGGER_CHARDCLICK) )
 	{
 		if ( pChar->OnTrigger(CTRIG_DClick, m_pChar) == TRIGRET_RET_TRUE )
@@ -3096,7 +3139,7 @@ bool CClient::xPacketFilter( const byte * pData, uint iLen )
 			Args.m_VarsLocal.SetStr("ACCOUNT", false, m_pAccount->GetName());
 			if ( m_pChar )
 			{
-				Args.m_VarsLocal.SetNum("CHAR", m_pChar->GetUID());
+				Args.m_VarsLocal.SetNum("CHAR", m_pChar->GetUID().GetObjUID());
 			}
 		}
 
@@ -3145,7 +3188,7 @@ bool CClient::xOutPacketFilter( const byte * pData, uint iLen )
 			Args.m_VarsLocal.SetStr("ACCOUNT", false, m_pAccount->GetName());
 			if ( m_pChar )
 			{
-				Args.m_VarsLocal.SetNum("CHAR", m_pChar->GetUID());
+				Args.m_VarsLocal.SetNum("CHAR", m_pChar->GetUID().GetObjUID());
 			}
 		}
 

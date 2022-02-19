@@ -15,6 +15,7 @@
 
 #define NETWORK_DISCONNECTPRI	PacketSend::PRI_HIGHEST			// packet priorty to continue sending before closing sockets
 
+
 CNetState::CNetState(int id)
 {
     m_id = id;
@@ -26,6 +27,7 @@ CNetState::CNetState(int id)
     m_incoming.buffer = nullptr;
     m_incoming.rawBuffer = nullptr;
     m_packetExceptions = 0;
+    _iInByteCounter = _iOutByteCounter = 0;
     m_clientType = CLIENTTYPE_2D;
     m_clientVersion = 0;
     m_reportedVersion = 0;
@@ -88,8 +90,8 @@ void CNetState::clear(void)
             g_NetworkEvent.unregisterClient(this);
 #endif
 
-        //	record the client reference to the garbage collection to be deleted on it's time
-        g_World.m_ObjSpecialDelete.InsertContentHead(m_client);
+        //	record the client reference to the garbage collection to be deleted on its time
+        g_World.ScheduleSpecialObjDeletion(m_client);
     }
 
 #ifdef _WIN32
@@ -194,11 +196,9 @@ void CNetState::init(SOCKET socket, CSocketAddress addr)
     // disable NAGLE algorythm for data compression/coalescing.
     // Send as fast as we can. we handle packing ourselves.
     
-    char nbool = true;
-    iSockRet = m_socket.SetSockOpt(TCP_NODELAY, &nbool, sizeof(char), IPPROTO_TCP);
-    ASSERT(iSockRet == 0);
-    //if (iSockRet)
-    //    return;
+    int iSockFlag = 1;
+    iSockRet = m_socket.SetSockOpt(TCP_NODELAY, &iSockFlag, sizeof(iSockFlag), IPPROTO_TCP);
+    CheckReportNetAPIErr(iSockRet, "NetState::init.TCP_NODELAY");
 
     g_Serv.StatInc(SERV_STAT_CLIENTS);
     CClient* client = new CClient(this);

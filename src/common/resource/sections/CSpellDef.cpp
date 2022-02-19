@@ -10,6 +10,9 @@ lpctstr const CSpellDef::sm_szTrigName[SPTRIG_QTY+1] =
 {
     "@AAAUNUSED",
     "@EFFECT",
+    "@EFFECTADD",
+    "@EFFECTREMOVE",
+    "@EFFECTTICK",
     "@FAIL",
     "@SELECT",
     "@START",

@@ -30,9 +30,11 @@
 #include "CServer.h"
 #include "CWorld.h"
 #include "spheresvr.h"
+#include <sstream>
 
-// Dynamic initialization of some extern global stuff
-lpctstr g_szServerDescription = SPHERE_TITLE " Version " SPHERE_VERSION " " SPHERE_VER_FILEOS_STR	" by www.spherecommunity.net";
+
+// Dynamic allocation of some global stuff
+std::string g_sServerDescription;
 
 // Dynamic initialization of some static members of other classes, which are used very soon after the server starts
 dword CObjBase::sm_iCount = 0;				// UID table.
@@ -45,6 +47,12 @@ llong CSTime::_kllTimeProfileFrequency = 1; // Default value.
 GlobalInitializer::GlobalInitializer()
 {
 	// The order of the instructions is important!
+
+	std::stringstream ssServerDescription;
+	ssServerDescription << SPHERE_TITLE << " Version " << SPHERE_VERSION;
+	ssServerDescription << " [" << SPHERE_VER_FILEOS_STR << '-' << g_ptcArchBits << "]";
+	ssServerDescription << " by www.spherecommunity.net";
+	g_sServerDescription = ssServerDescription.str();
 
 #ifdef _WIN32
 	// Needed to get precise system time.
@@ -211,7 +219,7 @@ int Sphere_InitServer( int argc, char *argv[] )
 {
 	constexpr const char *m_sClassName = "SphereInit";
 	EXC_TRY("Init Server");
-	EXC_SET_BLOCK("loading");
+	EXC_SET_BLOCK("loading ini and scripts");
 	if ( !g_Serv.Load() )
 		return -3;
 
@@ -350,18 +358,18 @@ int Sphere_OnTick()
 	EXC_TRY("Tick");
 #ifdef _WIN32
 	EXC_SET_BLOCK("service");
-    g_NTService.OnTick();
+    g_NTService._OnTick();
 #endif
 
 	EXC_SET_BLOCK("world");
-	g_World.OnTick();
+	g_World._OnTick();
 
 	// process incoming data
 	EXC_SET_BLOCK("network-in");
 	g_NetworkManager.processAllInput();
 
 	EXC_SET_BLOCK("server");
-	g_Serv.OnTick();
+	g_Serv._OnTick();
 
 	// push outgoing data
 	EXC_SET_BLOCK("network-out");
@@ -422,9 +430,9 @@ static void Sphere_MainMonitorLoop()
 
 //******************************************************
 
-static void dword_q_sort(dword numbers[], dword left, dword right)
+static void dword_q_sort(dword *numbers, dword left, dword right)
 {
-	dword	pivot, l_hold, r_hold;
+	dword pivot, l_hold, r_hold;
 
 	l_hold = left;
 	r_hold = right;
@@ -448,8 +456,10 @@ static void dword_q_sort(dword numbers[], dword left, dword right)
 	pivot = left;
 	left = l_hold;
 	right = r_hold;
-	if (left < pivot) dword_q_sort(numbers, left, pivot-1);
-	if (right > pivot) dword_q_sort(numbers, pivot+1, right);
+	if (left < pivot)
+		dword_q_sort(numbers, left, pivot-1);
+	if (right > pivot)
+		dword_q_sort(numbers, pivot+1, right);
 }
 
 void defragSphere(char *path)
@@ -460,29 +470,21 @@ void defragSphere(char *path)
 	CSFile ouf;
 	char z[_MAX_PATH], z1[_MAX_PATH], buf[1024];
 	size_t i;
-	dword uid = 0;
 	char *p = nullptr, *p1 = nullptr;
 	size_t dBytesRead;
 	size_t dTotalMb;
 	const size_t mb10 = 10*1024*1024;
 	const size_t mb5 = 5*1024*1024;
 	bool bSpecial;
-	dword dTotalUIDs;
-
-	char	c,c1,c2;
-	dword	d;
-
-	//	NOTE: Sure I could use CVarDefArray, but it is extremely slow with memory allocation, takes hours
-	//		to read and save the data. Moreover, it takes less memory in this case and does less convertations.
-#define	MAX_UID	5000000L	// limit to 5mln of objects, takes 5mln*4 = 20mb
-	dword	*uids;
 
 	g_Log.Event(LOGM_INIT,	"Defragmentation (UID alteration) of " SPHERE_TITLE " saves.\n"
 		"Use it on your risk and if you know what you are doing since it can possibly harm your server.\n"
 		"The process can take up to several hours depending on the CPU you have.\n"
 		"After finished, you will have your '" SPHERE_FILE "*.scp' files converted and saved as '" SPHERE_FILE "*.scp.new'.\n");
 
-	uids = (dword*)calloc(MAX_UID, sizeof(dword));
+	constexpr dword MAX_UID = 40'000'000U; // limit to 100mln of objects, takes 100mln*4 ~= 400mb
+	dword dwIdxUID = 0;
+	dword* puids = (dword*)calloc(MAX_UID, sizeof(dword));
 	for ( i = 0; i < 3; ++i )
 	{
 		Str_CopyLimitNull(z, path, sizeof(z));
@@ -497,7 +499,7 @@ void defragSphere(char *path)
 			continue;
 		}
 		dBytesRead = dTotalMb = 0;
-		while ( !feof(inf._pStream) )
+		while ((dwIdxUID < MAX_UID) && !feof(inf._pStream))
 		{
 			fgets(buf, sizeof(buf), inf._pStream);
 			dBytesRead += strlen(buf);
@@ -511,24 +513,26 @@ void defragSphere(char *path)
 			{
 				p = buf + 7;
 				p1 = p;
-				while ( *p1 && ( *p1 != '\r' ) && ( *p1 != '\n' ) )
+				while (*p1 && (*p1 != '\r') && (*p1 != '\n'))
+				{
 					++p1;
+				}
 				*p1 = 0;
 
 				//	prepare new uid
 				*(p-1) = '0';
 				*p = 'x';
 				--p;
-				uids[uid++] = strtoul(p, &p1, 16);
+				puids[dwIdxUID++] = strtoul(p, &p1, 16);
 			}
 		}
 		inf.Close();
 	}
-	dTotalUIDs = uid;
-	g_Log.Event(LOGM_INIT, "Totally having %u unique objects (UIDs), latest: 0%x\n", uid, uids[uid]);
+	const dword dwTotalUIDs = dwIdxUID;
+	g_Log.Event(LOGM_INIT, "Totally having %" PRIuSIZE_T " unique objects (UIDs), latest: 0%x\n", dwTotalUIDs, puids[dwTotalUIDs-1]);
 
 	g_Log.Event(LOGM_INIT, "Quick-Sorting the UIDs array...\n");
-	dword_q_sort(uids, 0, dTotalUIDs-1);
+	dword_q_sort(puids, 0, dwTotalUIDs -1);
 
 	for ( i = 0; i < 5; ++i )
 	{
@@ -550,17 +554,18 @@ void defragSphere(char *path)
 			g_Log.Event(LOGM_INIT, "Cannot open file for writing. Skipped!\n");
 			continue;
 		}
+
 		dBytesRead = dTotalMb = 0;
 		while ( inf.ReadString(buf, sizeof(buf)) )
 		{
-			uid = (dword)strlen(buf);
-			if (uid > (CountOf(buf) - 3))
-				uid = CountOf(buf) - 3;
+			dwIdxUID = (dword)strlen(buf);
+			if (dwIdxUID > (CountOf(buf) - 3))
+				dwIdxUID = CountOf(buf) - 3;
 
-			buf[uid] = buf[uid+1] = buf[uid+2] = 0;	// just to be sure to be in line always
+			buf[dwIdxUID] = buf[dwIdxUID +1] = buf[dwIdxUID +2] = 0;	// just to be sure to be in line always
 							// NOTE: it is much faster than to use memcpy to clear before reading
 			bSpecial = false;
-			dBytesRead += uid;
+			dBytesRead += dwIdxUID;
 			if ( dBytesRead > mb5 )
 			{
 				dBytesRead -= mb5;
@@ -633,6 +638,7 @@ void defragSphere(char *path)
 			//	here we definitely know that this is very uid-like
 			if ( p )
 			{
+				char c, c1, c2;
 				c = *p1;
 
 				*p1 = 0;
@@ -645,7 +651,7 @@ void defragSphere(char *path)
 				*(p-1) = '0';
 				*p = 'x';
 				--p;
-				uid = strtoul(p, &p1, 16);
+				dwIdxUID = strtoul(p, &p1, 16);
 				++p;
 				*(p-1) = c1;
 				*p = c2;
@@ -654,25 +660,28 @@ void defragSphere(char *path)
 				//	since has amount/2 tryes at worst chance to get the item and never scans the whole array
 				//	It should improve speed since defragmenting 150Mb saves takes ~2:30 on 2.0Mhz CPU
 				{
-					dword dStep = dTotalUIDs/2;
-					d = dStep;
+					dword dStep = dwTotalUIDs /2;
+					dword d = dStep;
 					for (;;)
 					{
 						dStep /= 2;
 
-						if ( uids[d] == uid )
+						if ( puids[d] == dwIdxUID)
 						{
-							uid = d | (uids[d]&0xF0000000);	// do not forget attach item and special flags like 04..
+							dwIdxUID = d | (puids[d]&0xF0000000);	// do not forget attach item and special flags like 04..
 							break;
 						}
 						else
-                            if ( uids[d] < uid ) d += dStep;
-						else
-                            d -= dStep;
+						{
+							if (puids[d] < dwIdxUID)
+								d += dStep;
+							else
+								d -= dStep;
+						}
 
 						if ( dStep == 1 )
 						{
-							uid = 0xFFFFFFFFL;
+							dwIdxUID = 0xFFFFFFFFL;
 							break; // did not find the UID
 						}
 					}
@@ -695,11 +704,11 @@ void defragSphere(char *path)
 
 				//	replace UID by the new one since it has been found
 				*p1 = c;
-				if ( uid != 0xFFFFFFFFL )
+				if (dwIdxUID != 0xFFFFFFFFL )
 				{
 					*p = 0;
 					strcpy(z, p1);
-					sprintf(z1, "0%x", uid);
+					sprintf(z1, "0%" PRIx32, dwIdxUID);
 					strcat(buf, z1);
 					strcat(buf, z);
 				}
@@ -710,7 +719,7 @@ void defragSphere(char *path)
 		inf.Close();
 		ouf.Close();
 	}
-	free(uids);
+	free(puids);
 	g_Log.Event(LOGM_INIT,	"Defragmentation complete.\n");
 }
 
@@ -721,6 +730,8 @@ int Sphere_MainEntryPoint( int argc, char *argv[] )
 int _cdecl main( int argc, char * argv[] )
 #endif
 {
+	static constexpr lpctstr m_sClassName = "main";
+	EXC_TRY("MAIN");
 
 #ifndef _WIN32
     IThread::setThreadName("T_SphereStartup");
@@ -779,6 +790,9 @@ int _cdecl main( int argc, char * argv[] )
 #endif
 
 	return g_Serv.GetExitFlag();
+	EXC_CATCH;
+
+	return -1;
 }
 
 

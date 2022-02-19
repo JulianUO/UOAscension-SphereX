@@ -209,22 +209,19 @@ void CServer::SysMessage( lpctstr pszMsg ) const
 		return;
 
 #ifdef _WIN32
-    g_NTWindow.AddConsoleOutput(new ConsoleOutput(pszMsg));
+    g_NTWindow.AddConsoleOutput(std::make_unique<ConsoleOutput>(pszMsg));
 #else
-    g_UnixTerminal.AddConsoleOutput(new ConsoleOutput(pszMsg));
+    g_UnixTerminal.AddConsoleOutput(std::make_unique<ConsoleOutput>(pszMsg));
 #endif
 }
 
-void CServer::SysMessage(ConsoleOutput *pszMsg) const
+void CServer::SysMessage(std::unique_ptr<ConsoleOutput>&& pMsg) const
 {
     // Print just to the main console.
-    if ( !pszMsg )
-        return;
-
 #ifdef _WIN32
-    g_NTWindow.AddConsoleOutput(pszMsg);
+    g_NTWindow.AddConsoleOutput(std::move(pMsg));
 #else
-    g_UnixTerminal.AddConsoleOutput(pszMsg);
+    g_UnixTerminal.AddConsoleOutput(std::move(pMsg));
 #endif
 }
 
@@ -244,23 +241,24 @@ void CServer::PrintTelnet( lpctstr pszMsg ) const
 	}
 }
 
-void CServer::PrintStr( lpctstr pszMsg ) const
+void CServer::PrintStr(lpctstr ptcMsg) const
 {
 	// print to all consoles.
-	SysMessage( pszMsg );
-	PrintTelnet( pszMsg );
+	if (!ptcMsg)
+		return;
+
+	SysMessage(ptcMsg);
+	PrintTelnet(ptcMsg);
 }
 
-void CServer::PrintStr(ConsoleTextColor iColor, lpctstr pMsg) const
+void CServer::PrintStr(ConsoleTextColor iColor, lpctstr ptcMsg) const
 {
     // print to all consoles.
-    SysMessage(new ConsoleOutput(iColor, pMsg));
-    PrintTelnet(pMsg);
-}
+	if (!ptcMsg)
+		return;
 
-void CServer::PrintOutput(ConsoleOutput * pOutput) const
-{
-    SysMessage(pOutput);
+    SysMessage(std::make_unique<ConsoleOutput>(iColor, ptcMsg));
+    PrintTelnet(ptcMsg);
 }
 
 ssize_t CServer::PrintPercent( ssize_t iCount, ssize_t iTotal ) const
@@ -295,7 +293,7 @@ ssize_t CServer::PrintPercent( ssize_t iCount, ssize_t iTotal ) const
 
 #ifdef _WIN32
     g_NTWindow.SetWindowTitle(pszTemp);
-	g_NTService.OnTick();
+	g_NTService._OnTick();
 #endif
 	return iPercent;
 }
@@ -485,7 +483,7 @@ bool CServer::OnConsoleCmd( CSString & sText, CTextConsole * pSrc )
 			{
 				// Force periodic stuff
 				g_Accounts.Account_SaveAll();
-				g_Cfg.OnTick(true);
+				g_Cfg._OnTick(true);
 			} break;
 		case 'c':	// List all clients on line.
 			{
@@ -2075,8 +2073,12 @@ bool CServer::SocketsInit( CSocket & socket )
 	linger lval;
 	lval.l_onoff = 0;
 	lval.l_linger = 10;
-	socket.SetSockOpt(SO_LINGER, reinterpret_cast<const char *>(&lval), sizeof(lval));
-	socket.SetNonBlocking();
+	if ((0 != socket.SetSockOpt(SO_LINGER, reinterpret_cast<const char*>(&lval), sizeof(lval))) ||
+		(0 != socket.SetNonBlocking()))
+	{
+		g_Log.Event(LOGL_FATAL | LOGM_INIT, "Unable to initialize socket!\n");
+		return false;
+	}
 
 #ifndef _WIN32
 	int onNotOff = 1;
@@ -2156,9 +2158,9 @@ void CServer::SocketsClose()
 	m_SocketMain.Close();
 }
 
-void CServer::OnTick()
+void CServer::_OnTick()
 {
-	ADDTOCALLSTACK("CServer::OnTick");
+	ADDTOCALLSTACK("CServer::_OnTick");
 	EXC_TRY("Tick");
 
 #ifndef _WIN32
@@ -2206,8 +2208,8 @@ void CServer::OnTick()
 	}
 
 	EXC_SET_BLOCK("generic");
-	g_Cfg.OnTick(false);
-	_hDb.OnTick();
+	g_Cfg._OnTick(false);
+	_hDb._OnTick();
 	EXC_CATCH;
 }
 
@@ -2216,7 +2218,7 @@ bool CServer::Load()
 	EXC_TRY("Load");
 
 	EXC_SET_BLOCK("print sphere infos");
-	g_Log.Event(LOGM_INIT, "%s.\n", g_szServerDescription);
+	g_Log.Event(LOGM_INIT, "%s.\n", g_sServerDescription.c_str());
 #ifdef __GITREVISION__
 	g_Log.Event(LOGM_INIT, "Compiled at %s (%s) [build %d / GIT hash %s]\n\n", __DATE__, __TIME__, __GITREVISION__, __GITHASH__);
 #else

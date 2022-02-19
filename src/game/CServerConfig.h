@@ -31,56 +31,68 @@ using CServerRef = CServerDef*;
 
 
 /**
- * @enum    OF_TYPE
- * @brief   OptionFlags (sphere.ini)
- */
-enum OF_TYPE
-{
-	OF_NoDClickTarget			= 0x0000001,    // Weapons won't open a target in the cursor after DClicking them for equip.
-	OF_NoSmoothSailing			= 0x0000002,    // Deactivate Smooth Sailing for clients >= 7.0.8.13.
-	OF_ScaleDamageByDurability	= 0x0000004,    // Weapons/armors will lose DAM/AR effect based on it's current durability.
-	OF_Command_Sysmsgs			= 0x0000008,    // Shows status of hearall, allshow, allmove... commands after toggling them.
-	OF_PetSlots					= 0x0000010,    // Enable AOS pet follower slots on chars. If enabled, all players must have MAXFOLLOWER property set (default=5).
-	OF_OSIMultiSight			= 0x0000020,    // Only send items inside multis when the player enter on the multi area.
-	OF_Items_AutoName			= 0x0000040,    // Auto rename potions/scrolls to match its spell name
-	OF_FileCommands				= 0x0000080,    // Enable the usage of FILE commands
-	OF_NoItemNaming				= 0x0000100,    // Disable the DEFMSG."grandmaster_mark" in crafted items
-	OF_NoHouseMuteSpeech		= 0x0000200,    // Players outside multis won't hear what is told inside
-	OF_NoContextMenuLOS			= 0x0000400,    // Disable LOS check to use context menus on chars
-	OF_MapBoundarySailing		= 0x0000800,    // Boats will move to the other side of the map when reach map boundary
-	OF_Flood_Protection			= 0x0001000,    // Prevent the server send messages to client if its the same message as the last already sent
-	OF_Buffs					= 0x0002000,    // Enable the buff/debuff bar on ML clients >= 5.0.2b
-	OF_NoPrefix					= 0x0004000,    // Don't show "a" and "an" prefix on item names
-	OF_DyeType					= 0x0008000,    // Allow use i_dye on all items with t_dye_vat typedef instead only on i_dye_tub itemdef
-	OF_DrinkIsFood				= 0x0010000,    // Typedef t_drink will increase food level like t_food
-	OF_NoDClickTurn				= 0x0020000,    // Don't turn the player when DClick something
-	OF_NoPaperdollTradeTitle	= 0x0040000,	// Don't show the trade title on the paperdoll
-    OF_NoTargTurn				= 0x0080000,    // Don't turn the player when targetting something
-    OF_StatAllowValOverMax      = 0x0100000,    // Allow stats value above their maximum value (i.e. allow hits value > maxhits).
-    OF_GuardOutsideGuardedArea  = 0x0200000,    // Allow guards to walk in unguarded areas, instead of being teleported back to their home point.
-    OF_OWNoDropCarriedItem      = 0x0400000     // When overweighted, don't drop items on ground when moving them (or using BOUNCE) and checking if you can carry them.
-	
-};
-
-/**
  * @enum    EF_TYPE
  * @brief   ExperimentalFlags (sphere.ini)
  */
 enum EF_TYPE
 {
-	EF_NoDiagonalCheckLOS			= 0x0000001,    // Disable LOS checks on diagonal directions.
-	EF_Dynamic_Backsave				= 0x0000002,    // This will enable, if necessary, if a backgroundsave tick is triggered to save more than only one Sector.
-	EF_ItemStacking					= 0x0000004,    // Enable item stacking feature when drop items on ground.
-	EF_ItemStackDrop				= 0x0000008,    // The item stack will drop when an item got removed from the stack.
-	EF_FastWalkPrevention			= 0x0000010,    // Enable client fastwalk prevention (INCOMPLETE YET).
-	EF_Intrinsic_Locals				= 0x0000020,    // Disables the needing of 'local.', 'tag.', etc. Be aware of not creating variables with the same name of already-existing functions.
-	EF_Item_Strict_Comparison		= 0x0000040,    // Don't consider log/board and leather/hide as the same resource type.
-	EF_AllowTelnetPacketFilter		= 0x0000200,    // Enable packet filtering for telnet connections as well.
-	EF_Script_Profiler				= 0x0000400,    // Record all functions/triggers execution time statistics (it can be viewed pressing P on console).
-	EF_DamageTools					= 0x0002000,    // Damage tools (and fire @damage on them) while mining or lumberjacking
-	EF_UsePingServer				= 0x0008000,    // Enable the experimental Ping Server (for showing pings on the server list, uses UDP port 12000)
-	EF_FixCanSeeInClosedConts		= 0x0020000,    // Change CANSEE to return 0 for items inside containers that a client hasn't opened
-    EF_WalkCheckHeightMounted       = 0x0040000,    // Unlike the client does, assume an height increased by 4 in walkchecks if the char is mounted. Enabling this may prevent mounted characters to walk under places they could before.
+    EF_NoDiagonalCheckLOS = 0x0000001,    // Disable LOS checks on diagonal directions.
+    EF_Dynamic_Backsave = 0x0000002,    // This will enable, if necessary, if a backgroundsave tick is triggered to save more than only one Sector.
+    EF_ItemStacking = 0x0000004,    // Enable item stacking feature when drop items on ground.
+    EF_ItemStackDrop = 0x0000008,    // The item stack will drop when an item got removed from the stack.
+    EF_FastWalkPrevention = 0x0000010,    // Enable client fastwalk prevention (INCOMPLETE YET).
+    EF_Intrinsic_Locals = 0x0000020,    // Disables the needing of 'local.', 'tag.', etc. Be aware of not creating variables with the same name of already-existing functions.
+    EF_Item_Strict_Comparison = 0x0000040,    // Don't consider log/board and leather/hide as the same resource type.
+    EF_AllowTelnetPacketFilter = 0x0000200,    // Enable packet filtering for telnet connections as well.
+    EF_Script_Profiler = 0x0000400,    // Record all functions/triggers execution time statistics (it can be viewed pressing P on console).
+    EF_DamageTools = 0x0002000,    // Damage tools (and fire @damage on them) while mining or lumberjacking
+    EF_UsePingServer = 0x0008000,    // Enable the experimental Ping Server (for showing pings on the server list, uses UDP port 12000)
+    EF_FixCanSeeInClosedConts = 0x0020000,    // Change CANSEE to return 0 for items inside containers that a client hasn't opened
+    EF_WalkCheckHeightMounted = 0x0040000,    // Unlike the client does, assume an height increased by 4 in walkchecks if the char is mounted. Enabling this may prevent mounted characters to walk under places they could before.
+};
+
+/**
+ * @enum    OF_TYPE
+ * @brief   OptionFlags (sphere.ini)
+ */
+enum OF_TYPE
+{
+	OF_NoDClickTarget			    = 0x0000001,    // Weapons won't open a target in the cursor after DClicking them for equip.
+	OF_NoSmoothSailing			    = 0x0000002,    // Deactivate Smooth Sailing for clients >= 7.0.8.13.
+	OF_ScaleDamageByDurability	    = 0x0000004,    // Weapons/armors will lose DAM/AR effect based on it's current durability.
+	OF_Command_Sysmsgs			    = 0x0000008,    // Shows status of hearall, allshow, allmove... commands after toggling them.
+	OF_PetSlots					    = 0x0000010,    // Enable AOS pet follower slots on chars. If enabled, all players must have MAXFOLLOWER property set (default=5).
+	OF_OSIMultiSight			    = 0x0000020,    // Only send items inside multis when the player enter on the multi area.
+	OF_Items_AutoName			    = 0x0000040,    // Auto rename potions/scrolls to match its spell name
+	OF_FileCommands				    = 0x0000080,    // Enable the usage of FILE commands
+	OF_NoItemNaming				    = 0x0000100,    // Disable the DEFMSG."grandmaster_mark" in crafted items
+	OF_NoHouseMuteSpeech		    = 0x0000200,    // Players outside multis won't hear what is told inside
+	OF_NoContextMenuLOS			    = 0x0000400,    // Disable LOS check to use context menus on chars
+	OF_MapBoundarySailing		    = 0x0000800,    // Boats will move to the other side of the map when reach map boundary
+	OF_Flood_Protection			    = 0x0001000,    // Prevent the server send messages to client if its the same message as the last already sent
+	OF_Buffs					    = 0x0002000,    // Enable the buff/debuff bar on ML clients >= 5.0.2b
+	OF_NoPrefix					    = 0x0004000,    // Don't show "a" and "an" prefix on item names
+	OF_DyeType					    = 0x0008000,    // Allow use i_dye on all items with t_dye_vat typedef instead only on i_dye_tub itemdef
+	OF_DrinkIsFood				    = 0x0010000,    // Typedef t_drink will increase food level like t_food
+	OF_NoDClickTurn				    = 0x0020000,    // Don't turn the player when DClick something
+	OF_NoPaperdollTradeTitle	    = 0x0040000,	// Don't show the trade title on the paperdoll
+    OF_NoTargTurn				    = 0x0080000,    // Don't turn the player when targetting something
+    OF_StatAllowValOverMax          = 0x0100000,    // Allow stats value above their maximum value (i.e. allow hits value > maxhits).
+    OF_GuardOutsideGuardedArea      = 0x0200000,    // Allow guards to walk in unguarded areas, instead of being teleported back to their home point.
+    OF_OWNoDropCarriedItem          = 0x0400000,     // When overweighted, don't drop items on ground when moving them (or using BOUNCE) and checking if you can carry them.
+    OF_AllowContainerInsideContainer = 0x0800000    //Allow containers inside other containers even if they are heavier than the container being inserted into.
+	
+};
+
+/**
+ * @enum    AREAF_TYPE
+ * @brief   AreaFlags (sphere.ini)
+ */
+enum AREAF_TYPE
+{
+    AREAF_RoomInheritsEvents    = 0x0000001,
+    AREAF_RoomInheritsFlags     = 0x0000002,
+    AREAF_RoomInheritsTAGs      = 0x0000004
 };
 
 /**
@@ -262,14 +274,17 @@ public:
     uint8 _iMaxShipsGuild;      // Max ships per guild.
 
 	// Magic
-	bool m_fReagentsRequired;   // Do spells require reagents to be casted?
+	bool m_fReagentsRequired;   // Do spells require reagents or tithing points to be casted?
 	int  m_iWordsOfPowerColor;  // Color used for Words Of Power.
 	int  m_iWordsOfPowerFont;   // Font used for Words Of Power.
 	bool m_fWordsOfPowerPlayer; // Words of Power for players.
 	bool m_fWordsOfPowerStaff;  // Words of Power for staff.
 	bool m_fEquippedCast;       // Allow casting while equipped.
+    bool m_fManaLossAbort;      // Lose mana when spell casting aborted.
     bool m_fManaLossFail;       // Lose mana when spell casting failed.
+    int  m_fManaLossPercent;    // Percent of mana loss when missing a cast
     bool m_fNPCCanFizzleOnHit;  // NPCs can fizzle the spell when hit in combat.
+    bool m_fReagentLossAbort;   // Lose reagents when spell casting abort.
 	bool m_fReagentLossFail;    // Lose reagents when spell casting failed.
 	int  m_iMagicUnlockDoor;    // 1 in N chance of magic unlock working on doors -- 0 means never.
 	ITEMID_TYPE m_iSpell_Teleport_Effect_NPC;       // ID of the item shown when a NPC teleports.
@@ -294,6 +309,8 @@ public:
 	bool m_fMonsterFight;			// Will creatures fight amoung themselves.
 	bool m_fMonsterFear;			// will they run away if hurt ?
     uint m_iContainerMaxItems;      // Maximum number of items allowed in a container item.
+    int m_iDragWeightMax;            // Capacity of maxweight in % character can move with drag and drop
+    int m_iBackpackOverload;        // Maximum weight in stones extra allowed in main backpack.
 	int	 m_iBankIMax;				// Maximum number of items allowed in bank.
 	int  m_iBankWMax;				// Maximum weight in WEIGHT_UNITS stones allowed in bank.
     int m_iVendorMarkup;            // Default markup value, used if no other kind of tag is providen.
@@ -306,7 +323,9 @@ public:
     bool _fAutoHouseKeys;			// Do houses create keys automatically?
     bool _fAutoShipKeys;			// Do ships create keys automatically?
 	int  m_iStamRunningPenalty;		// Weight penalty for running (+N% of max carry weight)
+    int  m_iStamRunningPenaltyOverweight;// Weight penalty for running (+N% of max carry weight) when overweight
 	int  m_iStaminaLossAtWeight;	// %Weight at which characters begin to lose stamina.
+    int  m_iStaminaLossOverweight;  // %Weight at which characters begin to lose stamina when overweight.
 	int  m_iHitpointPercentOnRez;	// How many hitpoints do they get when they are rez'd?
 	int  m_iHitsHungerLoss;			// How many % of HP will loose char on starving.
 	int  m_iMaxBaseSkill;			// Maximum value for base skills at char creation.
@@ -358,8 +377,9 @@ public:
 	// other
 	
     int  m_iAutoProcessPriority;
-	uint m_iExperimentalFlags;	// Experimental Flags.
-	uint m_iOptionFlags;		// Option Flags.
+	uint _uiExperimentalFlags;	// Experimental Flags.
+	uint _uiOptionFlags;		// Option Flags.
+    uint _uiAreaFlags;		    // Area Flags.
     bool m_fNoResRobe;          // Adding resurrection robe to resurrected players or not.
     int	 m_iLostNPCTeleport;    // if Distance from HOME is greater than this, NPC will teleport to it instead of walking.
 	int64 m_iWoolGrowthTime;    // how long till wool grows back on sheared sheep, in minutes (stored as milliseconds).
@@ -434,7 +454,7 @@ public:
 #define STAT_FLAG_DENYMAX   0x01    //    MAX* denied
 #define STAT_FLAG_DENYMAXP  0x02    //        .. for players
 #define STAT_FLAG_DENYMAXN  0x04    //        .. for npcs
-	uint m_iStatFlag;
+	uint _uiStatFlag;
 
 #define NPC_AI_PATH				0x00001     // NPC pathfinding.
 #define	NPC_AI_FOOD				0x00002     // NPC food search (objects + grass).
@@ -509,13 +529,15 @@ public:
 	CSString m_sMySqlDB;    // MySQL DB.
 
 	// network settings
-	uint m_iNetworkThreads;         // number of network threads to create
-	uint m_iNetworkThreadPriority;  // priority of network threads
+	uint _uiNetworkThreads;         // number of network threads to create
+	uint _uiNetworkThreadPriority;  // priority of network threads
 	int	 m_fUseAsyncNetwork;        // 0=normal send, 1=async send, 2=async send for 4.0.0+ only
 	int	 m_iNetMaxPings;            // max pings before blocking an ip
 	int	 m_iNetHistoryTTL;          // time to remember an ip
-	int	 m_iNetMaxPacketsPerTick;   // max packets to send per tick (per queue)
-	uint m_iNetMaxLengthPerTick;    // max packet length to send per tick (per queue) (also max length of individual packets)
+	int	 _uiNetMaxPacketsPerTick;   // max packets to send per tick (per queue)
+	uint _uiNetMaxLengthPerTick;    // max packet length to send per tick (per queue) (also max length of individual packets)
+    int64 _iMaxSizeClientOut;       // Maximum number of bytes a client can send to the server in 10 seconds before being disconnected
+    int64 _iMaxSizeClientIn;        // Maximum number of bytes a client can receive from the server in 10 seconds before being disconnected
 	int	 m_iNetMaxQueueSize;        // max packets to hold per queue (comment out for unlimited)
 	bool m_fUsePacketPriorities;    // true to prioritise sending packets
 	bool m_fUseExtraBuffer;         // true to queue packet data in an extra buffer
@@ -537,7 +559,8 @@ public:
 
 	bool    m_bAgree;               // AGREE=n for nightly builds.
 	int     m_iMaxPolyStats;        // Max amount of each Stat gained through Polymorph spell. This affects separatelly to each stat.
-
+    
+    bool    m_NPCShoveNPC;           //NPC can walk through other NPC, by default this is disabled.
 	// End INI file options.
 
 	CResourceScript m_scpIni;       // Keep this around so we can link to it.
@@ -614,7 +637,7 @@ public:
 	bool LoadCryptIni( void );
 
     /**
-     * @brief   Loads or resync scripts..
+     * @brief   Loads or resync client files and scripts.
      *
      * @param   fResync Resync or normal load?.
      *
@@ -628,7 +651,7 @@ public:
      * @param   fResync true to resync.
      */
 	void Unload( bool fResync );
-	void OnTick( bool fNow );
+	void _OnTick( bool fNow );
 
     /**
      * @brief   Loads resource section ([SKILL ], [SPELL ], [CHARDEF ]...).
@@ -894,6 +917,15 @@ public:
 	int Calc_CombatChanceToHit( CChar * pChar, CChar * pCharTarg);
 
     /**
+     * @brief   Calculates the combat chance to parry.
+     *
+     * @param [in,out]  pChar       If non-null, the character attempting to parry.
+     * @param   skill               The skill.
+     *
+     * @return  The calculated combat chance to parry.
+     */
+    int Calc_CombatChanceToParry(CChar* pChar, CItem*& pItemParry);
+    /**
      * @brief   Chance to steal and retrieve the item successfully
      *
      * @param [in,out]  pCharThief  If non-null, the character thief.
@@ -957,6 +989,49 @@ public:
      */
 	lpctstr Calc_MaptoSextant( CPointMap pntCoords );
 
+    /*
+    *@brief Calculates mana cost of a spell, taking in consideration the LowerManaCost and and if is  being cast by a wand or scroll.
+    * 
+    * @param pCharCaster: The caster casting the spell.
+    * @param pSpell: The spell being cast.
+    * @param pObj: The item (if any) from whom the spell is being cast.
+    * 
+    * @return The mana cost of the spell if any.
+    */
+    ushort Calc_SpellManaCost(CChar * pCharCaster, const CSpellDef * pSpell, CObjBase * pObj);
+
+    /*
+    *@brief Calculates tithing cost of a spell, taking in consideration the LowerReagentCost property and if is  being cast by a wand or scroll.
+    *
+    * @param pCharCaster: The caster casting the spell.
+    * @param pSpell: The spell being cast.
+    * @param pObj: The item (if any) from whom the spell is being cast.
+    * @param fTest: Flag that determines when to consume the reagents.
+    * @return SCONT_BADINDEX if all the reagents are found, otherwise returns the first missing reagent.
+    */
+    size_t Calc_SpellReagentsConsume(CChar* pCharCaster, const CSpellDef* pSpell, CObjBase* pObj, bool fTest = false);
+
+    /*
+    *@brief Calculates tithing cost of a spell, taking in consideration the LowerReagentCost property and if is  being cast by a wand or scroll.
+    *        
+    * @param pCharCaster: The caster casting the spell.
+    * @param pSpell: The spell being cast.
+    * @param pObj: The item (if any) from whom the spell is being cast.
+    *
+    * @return The tithing cost of the spell, could be 0 if the LowerReagentCost check is passed.
+    */
+    ushort Calc_SpellTithingCost(CChar* pCharCaster, const CSpellDef* pSpell, CObjBase* pObj);
+
+    /*
+    * @brief Calculates the chance of curing a poison effect.
+    * 
+    * @param pPoison: The poison item.
+    * @param iCureLevel: The power level of the cure, this can be from a cure spell/potion or from healing/veterinary.
+    * 
+    * @return True the check passed and the poison is removed, false the check failed and the poison is not removed.
+    */
+    bool Calc_CurePoisonChance(const CItem* pPoison, int iCureLevel, bool fIsGm = false );
+
 #define SysMessageDefault( msg )	SysMessage( g_Cfg.GetDefaultMsg( msg ) )
 
     /**
@@ -990,8 +1065,8 @@ typedef std::map<dword,dword> KRGumpsMap;
 
 
 
-#define IsSetEF(ef)				((g_Cfg.m_iExperimentalFlags & ef) != 0)
-#define IsSetOF(of)				((g_Cfg.m_iOptionFlags & of) != 0)
+#define IsSetEF(ef)				((g_Cfg._uiExperimentalFlags & ef) != 0)
+#define IsSetOF(of)				((g_Cfg._uiOptionFlags & of) != 0)
 #define IsSetCombatFlags(of)	((g_Cfg.m_iCombatFlags & of) != 0)
 #define IsSetMagicFlags(of)		((g_Cfg.m_iMagicFlags & of) != 0)
 

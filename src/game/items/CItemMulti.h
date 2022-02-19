@@ -6,9 +6,9 @@
 #ifndef _INC_CITEMMULTI_H
 #define _INC_CITEMMULTI_H
 
-#include "../parallel_hashmap/btree.h"
 #include "../components/CCMultiMovable.h"
 #include "CItem.h"
+#include <map>
 
 
 #define MAX_MULTI_LIST_OBJS 128
@@ -35,6 +35,7 @@ class CChar;
 class CItemStone;
 class CItemContainer;
 class CItemShip;
+
 class CItemMulti : public CItem, public CCMultiMovable
 {
     friend class CCMultiMovable;
@@ -105,7 +106,7 @@ protected:
     * @brief Searchs for the CItemBase of this multi.
     * @return the CItemBaseMulti.
     */
-    const CItemBaseMulti * Multi_GetDef() const;
+    const CItemBaseMulti * Multi_GetDef() const noexcept;
     /**
     * @brief Components creation.
     * @param id The id of the item
@@ -123,7 +124,7 @@ public:
     * @brief Retrieves the CRegion*
     * @return the region.
     */
-    CRegion* GetRegion() const;
+    CRegion* GetRegion() const noexcept;
 
     /**
     * @brief Retrieves the distance of a corner/side from the center of the multi
@@ -205,7 +206,7 @@ public:
     * @brief Deletes a coowner to the _lCoowners list.
     * @param pCoowner the coowner
     */
-    void DeleteCoowner(const CUID& uidCoowner);
+    void DeleteCoowner(const CUID& uidCoowner, bool fRemoveFromList);
     /**
     * @brief Returns the total count of coowners on the list.
     * @return the count.
@@ -228,7 +229,7 @@ public:
     * @brief Deletes a friend to the _lFriends list.
     * @param pFriend the friend
     */
-    void DeleteFriend(const CUID& uidFriend);
+    void DeleteFriend(const CUID& uidFriend, bool fRemoveFromList);
     /**
     * @brief Returns the total count of friends on the list.
     * @return the count.
@@ -251,7 +252,7 @@ public:
     * @brief Deletes a char from the _lBans list.
     * @param pBan the char.
     */
-    void DeleteBan(const CUID& uidBan);
+    void DeleteBan(const CUID& uidBan, bool fRemoveFromList);
     /**
     * @brief Returns the total count of banned chars.
     * @return the count
@@ -276,7 +277,7 @@ public:
     * Note: This removes the char from the list, but won't prevent it from enter like a Ban.
     * @param pAccess the char.
     */
-    void DeleteAccess(const CUID& uidAccess);
+    void DeleteAccess(const CUID& uidAccess, bool fRemoveFromList);
     /**
     * @brief Returns the count of chars with access.
     * @return the count.
@@ -409,7 +410,7 @@ public:
     * @brief Removes a CMultiComponent from the components list.
     * @param pComponent the component.
     */
-    virtual void DeleteComponent(const CUID& uidComponent);
+    virtual void DeleteComponent(const CUID& uidComponent, bool fRemoveFromList);
     /**
     * @brief Returns the position of a given CMultiComponent.
     * @param pComponent the component
@@ -422,7 +423,7 @@ public:
     */
     size_t GetComponentCount() const;
     /**
-    * @brief Removes all Components.
+    * @brief Destroys all Components.
     */
     void RemoveAllComponents();
     /**
@@ -509,7 +510,7 @@ public:
     * @brief Unlocks an item and remove it from the Lockdowns list.
     * @param pItem the item.
     */
-    void UnlockItem(const CUID& uidItem);
+    void UnlockItem(const CUID& uidItem, bool fRemoveFromList);
     void UnlockAllItems();
     /**
     * @brief Returns the position of the given item.
@@ -531,7 +532,7 @@ public:
     * @brief Releases a container and removes it from the containers list.
     * @param pContainer the container.
     */
-    void Release(const CUID& uidContainer);
+    void Release(const CUID& uidContainer, bool fRemoveFromList);
     /**
     * @brief Returns the position of the given container
     * @param pContainer the container
@@ -558,7 +559,7 @@ public:
     * @brief Removes a char from the vendors list.
     * @param pVendor the vendor
     */
-    void DeleteVendor(const CUID& uidVendor);
+    void DeleteVendor(const CUID& uidVendor, bool fRemoveFromList);
     /**
     * @brief Returns the position of the given char.
     * @param pVendor the char
@@ -594,7 +595,7 @@ public:
     * @brief Tick override.
     * @return true
     */
-    virtual bool OnTick();
+    virtual bool _OnTick();
     /**
     * @brief Place the multi.
     * @param pt Position.
@@ -629,7 +630,7 @@ public:
     * @param id the id.
     * @return the CItemBaseMulti
     */
-    static const CItemBaseMulti * Multi_GetDef(ITEMID_TYPE id);
+    static const CItemBaseMulti * Multi_GetDefByID(ITEMID_TYPE id);
 
     // Scripts virtuals.
 
@@ -667,7 +668,7 @@ enum HOUSE_PRIV : uchar
 class CMultiStorage
 {
 private:
-    using MultiOwnedCont = phmap::btree_map<CUID, HOUSE_PRIV>;
+    using MultiOwnedCont = std::map<CUID, HOUSE_PRIV>;
     MultiOwnedCont _lHouses;  // List of stored houses.
     MultiOwnedCont _lShips;   // List of stored ships.
 

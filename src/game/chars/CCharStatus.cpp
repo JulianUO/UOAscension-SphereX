@@ -238,18 +238,18 @@ TRIGRET_TYPE CChar::OnCharTrigForLayerLoop( CScript &s, CTextConsole *pSrc, CScr
 	return TRIGRET_ENDIF;
 }
 
-int CChar::GetWeightLoadPercent( int iWeight ) const
+int CChar::GetWeightLoadPercent(int iWeight) const
 {
 	ADDTOCALLSTACK("CChar::GetWeightLoadPercent");
 	// Get a percent of load.
-	if ( IsPriv(PRIV_GM) )
+	if (IsPriv(PRIV_GM))
 		return 1;
 
 	int	MaxCarry = g_Cfg.Calc_MaxCarryWeight(this);
-	if ( !MaxCarry )
+	if (!MaxCarry)
 		return 1000;	// suppose self extra-overloaded
 
-	return (int)IMulDivLL( iWeight, 100, MaxCarry );
+	return (int)IMulDivLL(iWeight, 100, MaxCarry);
 }
 
 bool CChar::CanCarry( const CItem *pItem ) const
@@ -538,32 +538,23 @@ NPCBRAIN_TYPE CChar::GetNPCBrainAuto() const
 	ADDTOCALLSTACK("CChar::GetNPCBrainAuto");
 	// Auto-detect the brain
 	const CREID_TYPE id = GetDispID();
-	if ( id >= CREID_IRON_GOLEM )
+	
+	switch (id)
 	{
-		switch ( id )
-		{
-			//TODO: add other dragons
-			case CREID_DRAGON_SERPENTINE:
-			case CREID_DRAGON_SKELETAL:
-			case CREID_REPTILE_LORD:
-			case CREID_WYRM_ANCIENT:
-			case CREID_SWAMP_DRAGON:
-			case CREID_SWAMP_DRAGON_AR:
-				return NPCBRAIN_DRAGON;
-			default:
-				break;
-		}
-		return NPCBRAIN_MONSTER;
+		//TODO: add other dragons
+		case CREID_DRAGON_SERPENTINE:
+		case CREID_DRAGON_SKELETAL:
+		case CREID_REPTILE_LORD:
+		case CREID_WYRM_ANCIENT:
+		case CREID_SWAMP_DRAGON:
+		case CREID_SWAMP_DRAGON_AR:
+			return NPCBRAIN_DRAGON;
+		default:
+			break;
 	}
 
-	if ( (id == CREID_ENERGY_VORTEX) || (id == CREID_BLADE_SPIRIT) )
+	if ((id == CREID_ENERGY_VORTEX) || (id == CREID_BLADE_SPIRIT))
 		return NPCBRAIN_BERSERK;
-
-	if ( id >= CREID_MAN )
-		return NPCBRAIN_HUMAN;
-
-	if ( id >= CREID_HORSE_TAN )
-		return NPCBRAIN_ANIMAL;
 
 	switch ( id )
 	{
@@ -574,9 +565,18 @@ NPCBRAIN_TYPE CChar::GetNPCBrainAuto() const
 		case CREID_BULL_FROG:
 		case CREID_DOLPHIN:
 			return NPCBRAIN_ANIMAL;
-		default:
-			return NPCBRAIN_MONSTER;
 	}
+
+	if (id >= CREID_IRON_GOLEM)
+		return NPCBRAIN_MONSTER;
+
+	if ( id >= CREID_MAN )
+		return NPCBRAIN_HUMAN;
+
+	if ( id >= CREID_HORSE_TAN )
+		return NPCBRAIN_ANIMAL;
+
+	return NPCBRAIN_MONSTER;
 }
 
 lpctstr CChar::GetPronoun() const
@@ -898,8 +898,8 @@ bool CChar::IsOwnedBy( const CChar * pChar, bool fAllowGM ) const
 lpctstr CChar::GetTradeTitle() const // Paperdoll title for character p (2)
 {
 	ADDTOCALLSTACK("CChar::GetTradeTitle");
-	if ( !m_sTitle.empty() )
-		return m_sTitle.c_str();
+	if ( !m_sTitle.IsEmpty() )
+		return m_sTitle.GetBuffer();
 
 	tchar *pTemp = Str_GetTemp();
     const CCharBase *pCharDef = Char_GetDef();
@@ -911,7 +911,8 @@ lpctstr CChar::GetTradeTitle() const // Paperdoll title for character p (2)
 	{
 		if ( !IsIndividualName() )
 			return "";	// same as type anyhow.
-		snprintf(pTemp, STR_TEMPLENGTH, "%s %s", pCharDef->IsFemale() ? g_Cfg.GetDefaultMsg(DEFMSG_TRADETITLE_ARTICLE_FEMALE) : g_Cfg.GetDefaultMsg(DEFMSG_TRADETITLE_ARTICLE_MALE), pCharDef->GetTradeName());
+		lpctstr ptcArticle = pCharDef->IsFemale() ? g_Cfg.GetDefaultMsg(DEFMSG_TRADETITLE_ARTICLE_FEMALE) : g_Cfg.GetDefaultMsg(DEFMSG_TRADETITLE_ARTICLE_MALE);
+		snprintf(pTemp, STR_TEMPLENGTH, "%s %s", ptcArticle, pCharDef->GetTradeName());
 		return pTemp;
 	}
 
@@ -1386,6 +1387,16 @@ bool CChar::CanTouch( const CObjBase *pObj ) const
 				return false;
 		}
 	}
+	else if (pObjTop == this) //Top container is the player (bank or backpack)
+	{
+		// Check if the item is in my bankbox, and i'm not in the same position from which I opened it the last time.
+		const CPointMap& ptTop = GetTopPoint();
+		CItemContainer* pBank = GetChar()->GetBank();
+		bool fItemContIsInsideBankBox = pBank->IsItemInside(pObj->GetUID().ItemFind());
+		if (fItemContIsInsideBankBox && (pBank->m_itEqBankBox.m_pntOpen != ptTop))
+			return false;
+	}
+
 
 	if ( IsPriv(PRIV_GM) )
 		return true;

@@ -196,8 +196,10 @@ PacketObjectStatus::PacketObjectStatus(const CClient* target, CObjBase* object) 
 		writeBool(fCanRename);
 		writeByte(version);
 		if (state->isClientEnhanced() && objectChar && objectChar->IsPlayableCharacter())
+		{
 			// The Enhanced Client wants the char race and other things when showing paperdolls (otherwise the interface throws an "unnoticeable" internal error)
 			WriteVersionSpecific(target, objectChar, version);
+		}
 	}
 
 	push(target);
@@ -207,7 +209,8 @@ void PacketObjectStatus::WriteVersionSpecific(const CClient* target, const CChar
 {
     bool fElemental = IsSetCombatFlags(COMBAT_ELEMENTAL_ENGINE);
 	const CCharBase * otherDefinition = other->Char_GetDef();
-    const CCPropsChar* pCCPChar = other->GetCCPropsChar(), *pBaseCCPChar = otherDefinition->GetCCPropsChar();
+	const CCPropsChar* pCCPChar = other->GetComponentProps<CCPropsChar>();
+	const CCPropsChar* pBaseCCPChar = otherDefinition->GetComponentProps<CCPropsChar>();
 
 	writeBool(otherDefinition->IsFemale());
 	writeInt16((word)(other->Stat_GetAdjusted(STAT_STR)));
@@ -1212,19 +1215,21 @@ PacketItemContents::PacketItemContents(CClient* target, const CItemContainer* co
 		if ( fFilterLayers )
 		{
 			const LAYER_TYPE layer = (LAYER_TYPE)(item->GetContainedLayer());
-			ASSERT(layer < LAYER_HORSE);
-			switch ( layer )	// don't put these on a corpse.
+			if ((layer > LAYER_NONE) && (layer < LAYER_HORSE))
 			{
-				case LAYER_NONE:
+				switch (layer)	// don't put these on a corpse.
+				{
 				case LAYER_PACK: // these display strange.
 					continue;
 
 				default:
 					// Make sure that no more than one of each layer goes out to client....crashes otherwise!!
-					if ( fIsLayerSent[layer] )
+					if (fIsLayerSent[layer])
 						continue;
+
 					fIsLayerSent[layer] = true;
 					break;
+				}
 			}
 		}
 
@@ -2393,13 +2398,12 @@ PacketCharacter::PacketCharacter(CClient* target, const CChar* character) : Pack
 		{
 			CItem* item = static_cast<CItem*>(pObjRec);
 			LAYER_TYPE layer = item->GetEquipLayer();
-			if (CItemBase::IsVisibleLayer(layer) == false)
+			if (CItemBase::IsVisibleLayer(layer) == false)	// sanity check for layer value, ensure we don't get out of bounds in isLayerSent array
 				continue;
 			if (viewer->CanSeeItem(item) == false && viewer != character)
 				continue;
 
 			// prevent same layer being sent twice
-			ASSERT(layer <= LAYER_HORSE);
 			if (isLayerSent[layer])
 				continue;
 
@@ -3590,7 +3594,7 @@ void PacketGumpDialog::writeCompressedControls(const CSString* controls, uint co
 
 		int controlLengthActual = 0;
 		for (uint i = 0; i < controlCount; ++i)
-			controlLengthActual += snprintf(&toCompress[controlLengthActual], size_t(controlLength - controlLengthActual), "{%s}", controls[i].GetBuffer());
+			controlLengthActual += snprintf(&toCompress[controlLengthActual], (size_t(controlLength) - controlLengthActual), "{%s}", controls[i].GetBuffer());
 		++ controlLengthActual;
 
 		ASSERT(controlLengthActual == controlLength);
@@ -5214,6 +5218,14 @@ PacketDisplayMapNew::PacketDisplayMapNew(const CClient* target, const CItemMap* 
 
 	word width	= (word)(itemDef->m_ttMap.m_iGumpWidth 	> 0 ? itemDef->m_ttMap.m_iGumpWidth		:	(word)CItemMap::DEFAULT_SIZE);
 	word height = (word)(itemDef->m_ttMap.m_iGumpHeight	> 0 ? itemDef->m_ttMap.m_iGumpHeight	:	(word)CItemMap::DEFAULT_SIZE);
+	
+	word overrideWidth = (word)map->GetKeyNum("OVERRIDE.MAPWIDTH", true);
+	if (overrideWidth > 0)
+		width = overrideWidth;
+
+	word overrideHeight = (word)map->GetKeyNum("OVERRIDE.MAPHEIGHT", true);
+	if (overrideHeight > 0)
+		height = overrideHeight;
 
 	writeInt32(map->GetUID());
 	writeInt16(GUMP_MAP_2_NORTH);
@@ -5221,8 +5233,8 @@ PacketDisplayMapNew::PacketDisplayMapNew(const CClient* target, const CItemMap* 
 	writeInt16((word)(rect.m_top));
 	writeInt16((word)(rect.m_right));
 	writeInt16((word)(rect.m_bottom));
+	writeInt16(height); //the packet guide lists the width as the value sent before heigth, but in game the values are actually inverted.
 	writeInt16(width);
-	writeInt16(height);
 	writeInt16((word)(rect.m_map));
 
 	push(target);

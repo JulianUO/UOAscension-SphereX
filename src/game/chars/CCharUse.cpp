@@ -40,9 +40,13 @@ bool CChar::Use_MultiLockDown( CItem * pItemTarg )
 	return false;
 }
 
-bool CChar::Use_CarveCorpse( CItemCorpse * pCorpse )
+void CChar::Use_CarveCorpse( CItemCorpse * pCorpse, CItem * pItemCarving )
 {
 	ADDTOCALLSTACK("CChar::Use_CarveCorpse");
+
+	if (!pItemCarving)
+		return;
+
 	CREID_TYPE CorpseID = pCorpse->m_itCorpse.m_BaseID;
 	CCharBase *pCorpseDef = CCharBase::FindCharBase(CorpseID);
 	if ( !pCorpseDef || pCorpse->m_itCorpse.m_carved )
@@ -54,25 +58,6 @@ bool CChar::Use_CarveCorpse( CItemCorpse * pCorpse )
 	CChar *pChar = pCorpse->m_uidLink.CharFind();
 	CPointMap pnt = pCorpse->GetTopLevelObj()->GetTopPoint();
 
-	bool fPlayAnim = true;
-	bool fUseBlood = true;
-	int iResourcesPercent = 100;
-	if (IsTrigUsed(TRIGGER_CARVECORPSE))
-	{
-			CScriptTriggerArgs Args(fPlayAnim, fUseBlood);
-			Args.m_VarsLocal.SetNum("ResourcesPercent", iResourcesPercent);
-			TRIGRET_TYPE iRet = pChar->OnTrigger(CTRIG_CarveCorpse, this, &Args);
-			if (iRet == TRIGRET_RET_TRUE)
-				return false;
-			fPlayAnim = (bool)(Args.m_iN1);
-			fUseBlood = (bool)(Args.m_iN2);
-			iResourcesPercent = (int)Args.m_VarsLocal.GetKeyNum("ResourcesPercent");
-	}
-
-	if ( fPlayAnim )
-		UpdateAnimate(ANIM_BOW);
-
-	if ( pCorpse->m_TagDefs.GetKeyNum("BLOOD") && fUseBlood )
 	{
 		CItem *pBlood = CItem::CreateBase(ITEMID_BLOOD4);
 		ASSERT(pBlood);
@@ -80,17 +65,59 @@ bool CChar::Use_CarveCorpse( CItemCorpse * pCorpse )
 		pBlood->MoveToDecay(pnt, 5 * MSECS_PER_SEC);
 	}
 
-	size_t iItems = 0;
-	for ( size_t i = 0; i < pCorpseDef->m_BaseResources.size(); ++i )
+	word iResourceQty = 0;
+	size_t iResourceTotalQty = pCorpseDef->m_BaseResources.size();
+
+	CScriptTriggerArgs Args(iResourceTotalQty,0,pItemCarving);
+
+	for (size_t i = 0; i < iResourceTotalQty; ++i)
 	{
-		llong iQty = (pCorpseDef->m_BaseResources[i].GetResQty() * iResourcesPercent) / 100;
+		
+		const CResourceID& rid = pCorpseDef->m_BaseResources[i].GetResourceID();
+		if (rid.GetResType() != RES_ITEMDEF)
+			continue;
+
+		ITEMID_TYPE id = (ITEMID_TYPE)(rid.GetResIndex());
+		if (id == ITEMID_NOTHING)
+			break;
+
+		tchar* pszTmp = Str_GetTemp();
+		snprintf(pszTmp, STR_TEMPLENGTH, "resource.%u.ID", (int)i);
+		Args.m_VarsLocal.SetNum(pszTmp, (int64)id);
+
+		iResourceQty = (word)pCorpseDef->m_BaseResources[i].GetResQty();
+		snprintf(pszTmp, STR_TEMPLENGTH, "resource.%u.amount", (int)i);
+		Args.m_VarsLocal.SetNum(pszTmp, iResourceQty);
+	}
+	if (IsTrigUsed(TRIGGER_CARVECORPSE) || IsTrigUsed(TRIGGER_ITEMCARVECORPSE))
+	{
+		switch (static_cast<CItem*>(pCorpse)->OnTrigger(ITRIG_CarveCorpse, this, &Args))
+		{
+		case TRIGRET_RET_TRUE:	return;
+		default:				break;
+		}
+	}
+
+	size_t iItems = 0;
+	for ( size_t i = 0; i < iResourceTotalQty; ++i )
+	{
+		/*llong iQty = pCorpseDef->m_BaseResources[i].GetResQty();
 		const CResourceID& rid = pCorpseDef->m_BaseResources[i].GetResourceID();
 		if ( rid.GetResType() != RES_ITEMDEF )
 			continue;
 
 		ITEMID_TYPE id = (ITEMID_TYPE)(rid.GetResIndex());
 		if ( id == ITEMID_NOTHING )
-			break;
+			break;*/
+
+		tchar* pszTmp = Str_GetTemp();
+		snprintf(pszTmp, STR_TEMPLENGTH, "resource.%u.ID", (int)i);
+		ITEMID_TYPE id = (ITEMID_TYPE)RES_GET_INDEX(Args.m_VarsLocal.GetKeyNum(pszTmp));
+		if (id == ITEMID_NOTHING)
+			break; 
+
+		snprintf(pszTmp, STR_TEMPLENGTH, "resource.%u.amount", (int)i);
+		iResourceQty =(word)Args.m_VarsLocal.GetKeyNum(pszTmp);
 
 		++ iItems;
 		CItem *pPart = CItem::CreateTemplate(id, nullptr, this);
@@ -107,7 +134,7 @@ bool CChar::Use_CarveCorpse( CItemCorpse * pCorpse )
 				SysMessageDefault(DEFMSG_CARVE_CORPSE_HIDES);
 				//pPart->m_itSkin.m_creid = CorpseID;
 				if ( (g_Cfg.m_iRacialFlags & RACIALF_HUMAN_WORKHORSE) && IsHuman() )	// humans always find 10% bonus when gathering hides, ores and logs (Workhorse racial trait)
-					iQty = iQty * 110 / 100;
+					iResourceQty = iResourceQty * 110 / 100;
 				break;
 			case IT_FEATHER:
 				SysMessageDefault(DEFMSG_CARVE_CORPSE_FEATHERS);
@@ -125,8 +152,8 @@ bool CChar::Use_CarveCorpse( CItemCorpse * pCorpse )
 				break;
 		}
 
-		if ( iQty > 1 )
-			pPart->SetAmount((word)iQty);
+		if (iResourceQty > 1 )
+			pPart->SetAmount((word)iResourceQty);
 
 		if ( pChar && pChar->m_pPlayer )
 		{
@@ -516,8 +543,8 @@ bool CChar::Use_Train_ArcheryButte( CItem * pButte, bool fSetup )
 		return false;
 
 	CItem *pAmmo = nullptr;
-	CResourceID ridAmmo = pWeapon->Weapon_GetRangedAmmoRes();
-	if ( ridAmmo )
+	const CResourceID ridAmmo(pWeapon->Weapon_GetRangedAmmoRes());
+	if (ridAmmo.IsValidUID() && ridAmmo.GetObjUID() > 0)
 	{
 		pAmmo = pWeapon->Weapon_FindRangedAmmo(ridAmmo);
 		if ( !pAmmo )
@@ -600,10 +627,10 @@ bool CChar::Use_Item_Web( CItem * pItemWeb )
 
 	// Try to break it.
 
-    if (pItemWeb->m_itWeb.m_wHitsCur == 0)
-        pItemWeb->m_itWeb.m_wHitsCur = 60 + Calc_GetRandVal(250);
-    else if (pItemWeb->m_itWeb.m_wHitsCur > INT32_MAX)
-        pItemWeb->m_itWeb.m_wHitsCur = INT32_MAX;
+    if (pItemWeb->m_itWeb.m_dwHitsCur == 0)
+        pItemWeb->m_itWeb.m_dwHitsCur = 60 + Calc_GetRandVal(250);
+    else if (pItemWeb->m_itWeb.m_dwHitsCur > INT32_MAX)
+        pItemWeb->m_itWeb.m_dwHitsCur = INT32_MAX;
 
 	// Since broken webs become spider silk, we should get out of here now if we aren't in a web.
 	CItem *pFlag = LayerFind(LAYER_FLAG_Stuck);
@@ -651,7 +678,7 @@ bool CChar::Use_Item_Web( CItem * pItemWeb )
 		pFlag->m_uidLink = pItemWeb->GetUID();		
 
         int iStuckTimerSeconds = 2; // Mininum stuck timer value is 2 seconds.
-        iCharStr = ((100 - minimum(100, iCharStr)) * (int)pItemWeb->m_itWeb.m_wHitsCur) / 10;
+        iCharStr = ((100 - minimum(100, iCharStr)) * (int)pItemWeb->m_itWeb.m_dwHitsCur) / 10;
         iStuckTimerSeconds = minimum(10, iStuckTimerSeconds + iCharStr); //Maximum stuck timer value is 10 seconds
 
 		pFlag->SetTimeout(iStuckTimerSeconds * MSECS_PER_SEC);
@@ -733,7 +760,7 @@ bool CChar::Use_Repair( CItem * pItemArmor )
 		return false;
 	}
 	
-	if ( pItemArmor->m_itArmor.m_wHitsCur >= pItemArmor->m_itArmor.m_wHitsMax )
+	if ( pItemArmor->m_itArmor.m_dwHitsCur >= pItemArmor->m_itArmor.m_wHitsMax )
 	{
 		SysMessageDefault(DEFMSG_REPAIR_FULL);
 		return false;
@@ -749,9 +776,10 @@ bool CChar::Use_Repair( CItem * pItemArmor )
 	CItemBase *pItemDef = pItemArmor->Item_GetDef();
 	ASSERT(pItemDef);
 
-	size_t i = pItemDef->m_SkillMake.FindResourceType(RES_SKILL);
-	if (i == SCONT_BADINDEX)
-		return false;
+	// Use up some raw materials to repair.
+	int iTotalHits = pItemArmor->m_itArmor.m_wHitsMax;
+	int iDamageHits = pItemArmor->m_itArmor.m_wHitsMax - pItemArmor->m_itArmor.m_dwHitsCur;
+	int iDamagePercent = IMulDiv(100, iDamageHits, iTotalHits);
 
 	SKILL_TYPE skill = static_cast<SKILL_TYPE>(pItemDef->m_SkillMake[i].GetResIndex());
 	ushort wSkillVal = Skill_GetAdjusted(skill);
@@ -793,17 +821,46 @@ bool CChar::Use_Repair( CItem * pItemArmor )
 	pItemArmor->m_itArmor.m_wHitsMax -= (word)iDecrease;
 	if (Skill_UseQuick(skill, iDifficulty, false))
 	{
-		pItemArmor->m_itArmor.m_wHitsCur = pItemArmor->m_itArmor.m_wHitsMax;
-		pItemArmor->UpdatePropertyFlag();
-		SysMessageDefault(DEFMSG_REPAIR_SUCCESS);
-		return true;
+		pItemArmor->m_itArmor.m_dwHitsCur = (word)(iTotalHits);
+		pszText = g_Cfg.GetDefaultMsg(DEFMSG_REPAIR_1);
 	}
 	else
 	{
-		pItemArmor->m_itArmor.m_wHitsCur = (word)maximum(0, pItemArmor->m_itArmor.m_wHitsCur - iDecrease);
-		SysMessageDefault(DEFMSG_REPAIR_FAIL);
-		return false;
+		/*****************************
+		// not sure if this is working!
+		******************************/
+		// Failure
+		if ( !Calc_GetRandVal(6) )
+		{
+			pszText = g_Cfg.GetDefaultMsg(DEFMSG_REPAIR_2);
+			-- pItemArmor->m_itArmor.m_wHitsMax;
+			-- pItemArmor->m_itArmor.m_dwHitsCur;
+		}
+		else if ( !Calc_GetRandVal(3) )
+		{
+			pszText = g_Cfg.GetDefaultMsg(DEFMSG_REPAIR_3);
+			-- pItemArmor->m_itArmor.m_dwHitsCur;
+		}
+		else
+			pszText = g_Cfg.GetDefaultMsg( DEFMSG_REPAIR_4 );
+
+		iDamagePercent = Calc_GetRandVal(iDamagePercent);	// some random amount
 	}
+
+	ResourceConsumePart(&(pItemDef->m_BaseResources), 1, iDamagePercent / 2, false);
+	if ( pItemArmor->m_itArmor.m_dwHitsCur <= 0 )
+		pszText = g_Cfg.GetDefaultMsg(DEFMSG_REPAIR_5);
+
+	tchar *pszMsg = Str_GetTemp();
+	snprintf(pszMsg, STR_TEMPLENGTH, g_Cfg.GetDefaultMsg(DEFMSG_REPAIR_MSG), pszText, pItemArmor->GetName());
+	Emote(pszMsg);
+
+	if ( pItemArmor->m_itArmor.m_dwHitsCur <= 0 )
+		pItemArmor->Delete();
+	else
+		pItemArmor->UpdatePropertyFlag();
+
+	return fSuccess;
 }
 
 void CChar::Use_EatQty( CItem * pFood, ushort uiQty )
@@ -1076,7 +1133,6 @@ CChar * CChar::Use_Figurine( CItem * pItem, bool fCheckFollowerSlots )
 	pPet->Update();
 	pPet->Skill_Start(SKILL_NONE);	// was NPCACT_RIDDEN
 	pPet->SoundChar(CRESND_IDLE);
-	CWorldTickingList::AddCharPeriodic(pPet);
 	return pPet;
 }
 
@@ -1139,12 +1195,12 @@ bool CChar::Use_Key( CItem * pKey, CItem * pItemTarg )
 			return false;
 		}
 
-		if ( !pKey->m_itKey.m_UIDLock && !pItemTarg->m_itKey.m_UIDLock )
+		if ( !pKey->m_itKey.m_UIDLock.IsValidUID() && !pItemTarg->m_itKey.m_UIDLock.IsValidUID())
 		{
 			SysMessageDefault(DEFMSG_MSG_KEY_BLANKS);
 			return false;
 		}
-		if ( pItemTarg->m_itKey.m_UIDLock && pKey->m_itKey.m_UIDLock )
+		if ( pItemTarg->m_itKey.m_UIDLock.IsValidUID() && pKey->m_itKey.m_UIDLock.IsValidUID())
 		{
 			SysMessageDefault(DEFMSG_MSG_KEY_NOTBLANKS);
 			return false;
@@ -1156,14 +1212,14 @@ bool CChar::Use_Key( CItem * pKey, CItem * pItemTarg )
 			SysMessageDefault(DEFMSG_MSG_KEY_FAILC);
 			return false;
 		}
-		if ( pItemTarg->m_itKey.m_UIDLock )
+		if ( pItemTarg->m_itKey.m_UIDLock.IsValidUID())
 			pKey->m_itKey.m_UIDLock = pItemTarg->m_itKey.m_UIDLock;
 		else
 			pItemTarg->m_itKey.m_UIDLock = pKey->m_itKey.m_UIDLock;
 		return true;
 	}
 
-	if ( !pKey->m_itKey.m_UIDLock )
+	if ( !pKey->m_itKey.m_UIDLock.IsValidUID())
 	{
 		SysMessageDefault(DEFMSG_MSG_KEY_ISBLANK);
 		return false;
@@ -1181,13 +1237,13 @@ bool CChar::Use_Key( CItem * pKey, CItem * pItemTarg )
 		return false;
 	}
 
-	if ( m_pArea->GetResourceID() == pKey->m_itKey.m_UIDLock )
+	if ( m_pArea->GetResourceID().GetObjUID() == pKey->m_itKey.m_UIDLock.GetObjUID() )
 	{
 		if ( Use_MultiLockDown(pItemTarg) )
 			return true;
 	}
 
-	if ( !pItemTarg->m_itContainer.m_UIDLock )	// or m_itContainer.m_UIDLock
+	if ( !pItemTarg->m_itContainer.m_UIDLock.IsValidUID())	// or m_itContainer.m_UIDLock
 	{
 		SysMessageDefault(DEFMSG_MSG_KEY_NOLOCK);
 		return false;
@@ -1613,7 +1669,7 @@ int CChar::Do_Use_Item(CItem *pItem, bool fLink)
 		case IT_SHIP_PLANK:
 		{
 			// Close the plank if I'm inside the ship
-			if (m_pArea->IsFlag(REGION_FLAG_SHIP) && m_pArea->GetResourceID() == pItem->m_uidLink)
+			if (m_pArea->IsFlag(REGION_FLAG_SHIP) && (m_pArea->GetResourceID().GetObjUID() == pItem->m_uidLink.GetObjUID()))
 			{
 				if (pItem->m_itShipPlank.m_wSideType == IT_SHIP_SIDE_LOCKED && !ContentFindKeyFor(pItem))
 				{

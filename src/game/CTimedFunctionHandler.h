@@ -6,32 +6,21 @@
 #ifndef _INC_CTIMEDFUNCTIONHANDLER_H
 #define _INC_CTIMEDFUNCTIONHANDLER_H
 
+#include "../common/sphere_library/CSObjCont.h"
 #include "../common/CScriptContexts.h"
-#include "../common/CScriptObj.h"
-#include "../common/CUID.h"
-#include "CServerTime.h"
-#include <vector>
+#include "CTimedFunction.h"
 
 
 class CScript;
+class CUID;
 
 class CTimedFunctionHandler
 {
-public:
-    struct TimedFunction
-    {
-        int		elapsed;
-        char	funcname[1024];
-        CUID 	uid;
-    };
-
 private:
-    std::vector<TimedFunction *> m_timedFunctions[TICKS_PER_SEC];
-    int m_curTick;
-    int m_processedFunctionsPerTick;
-    std::vector<TimedFunction *> m_tfRecycled;
-    std::vector<TimedFunction *> m_tfQueuedToBeAdded;
-    bool m_isBeingProcessed;
+    CSObjCont _timedFunctions;
+
+    std::string _strLoadBufferCommand;
+    std::string _strLoadBufferNumbers;
 
 public:
     static const char *m_sClassName;
@@ -42,16 +31,15 @@ private:
     CTimedFunctionHandler& operator=(const CTimedFunctionHandler& other);
 
 public:
-    void OnTick();
     void r_Write(CScript & s);
 
-    int Load(const char *pszName, bool fQuoted, const char *pszVal);
-    void Add(CUID uid, int numSeconds, lpctstr funcname);
-    void Erase(CUID uid);
-    void Stop(CUID uid, lpctstr funcname);
+    int Load(lpctstr ptcKeyword, bool fQuoted, lpctstr ptcArg);
+    void Add(const CUID& uid, int64 iTimeout, const char* pcCommand);
+    void ClearUID(const CUID& uid);
+    void Stop(const CUID& uid, lpctstr ptcCommand);
     void Clear();
-    TRIGRET_TYPE Loop(lpctstr funcname, int LoopsMade, CScriptLineContext StartContext,
+    TRIGRET_TYPE Loop(lpctstr ptcCommand, int iLoopsMade, CScriptLineContext StartContext,
         CScript &s, CTextConsole * pSrc, CScriptTriggerArgs * pArgs, CSString * pResult);
-    int IsTimer(CUID uid, lpctstr funcname);
+    int64 IsTimer(const CUID& uid, lpctstr ptcCommand) const;
 };
 #endif // _INC_CTIMEDFUNCTIONHANDLER_H

@@ -14,16 +14,21 @@ CItemStone::CItemStone( ITEMID_TYPE id, CItemBase * pItemDef ) :
     CTimedObject(PROFILE_ITEMS),
     CItem( id, pItemDef )
 {
+	EXC_TRY("Constructor");
+
 	m_itStone.m_iAlign = STONEALIGN_STANDARD;
     g_World.m_Stones.emplace_back(this);
     _pMultiStorage = new CMultiStorage(CUID());
     _iMaxShips = g_Cfg._iMaxShipsGuild;
     _iMaxHouses = g_Cfg._iMaxHousesGuild;
-	_uidAlliance = 0;
+
+	EXC_CATCH;
 }
 
 CItemStone::~CItemStone()
 {
+	EXC_TRY("Cleanup in destructor");
+
 	SetAmount(0);	// Tell everyone we are deleting.
 	DeletePrepare();	// Must remove early because virtuals will fail in child destructor.
 
@@ -33,6 +38,8 @@ CItemStone::~CItemStone()
     delete _pMultiStorage;
 	// all members are deleted automatically.
 	ClearContainer();	// do this manually to preserve the parents type cast
+
+	EXC_CATCH;
 }
 
 MEMORY_TYPE CItemStone::GetMemoryType() const
@@ -81,16 +88,6 @@ void CItemStone::SetALIGNTYPE(STONEALIGN_TYPE iAlign)
 	m_itStone.m_iAlign = iAlign;
 }
 
-CUID CItemStone::GetAlliance() const
-{
-	return _uidAlliance;
-}
-
-void CItemStone::SetAlliance(CUID uid)
-{
-	_uidAlliance = uid;
-}
-
 lpctstr CItemStone::GetAbbrev() const
 {
 	return m_sAbbrev;
@@ -128,9 +125,8 @@ void CItemStone::r_Write( CScript & s )
 	ADDTOCALLSTACK_INTENSIVE("CItemStone::r_Write");
 	CItem::r_Write( s );
 	s.WriteKeyVal( "ALIGN", GetAlignType());
-	s.WriteKeyVal( "ALLIANCE", _uidAlliance);
 	if ( ! m_sAbbrev.IsEmpty())
-		s.WriteKey( "ABBREV", m_sAbbrev );
+		s.WriteKeyStr( "ABBREV", m_sAbbrev.GetBuffer() );
 
 	TemporaryString tsTemp;
 	for ( uint i = 0; i < CountOf(m_sCharter); ++i )
@@ -138,14 +134,14 @@ void CItemStone::r_Write( CScript & s )
 		if ( ! m_sCharter[i].IsEmpty())
 		{
 			snprintf(tsTemp.buffer(), tsTemp.capacity(), "CHARTER%u", i);
-			s.WriteKey(tsTemp.buffer(), m_sCharter[i] );
+			s.WriteKeyStr(tsTemp.buffer(), m_sCharter[i].GetBuffer() );
 		}
 	}
 
 	if ( ! m_sWebPageURL.IsEmpty())
-		s.WriteKey( "WEBPAGE", GetWebPageURL() );
+		s.WriteKeyStr( "WEBPAGE", GetWebPageURL() );
 
-	// s.WriteKey( "//", "uid,title,priv,loyaluid,abbr&theydecl,wedecl");
+	// s.WriteKeyVal( "//", "uid,title,priv,loyaluid,abbr&theydecl,wedecl");
 
 	CStoneMember * pMember = static_cast <CStoneMember *>(GetContainerHead());
 	for ( ; pMember != nullptr; pMember = pMember->GetNext())
@@ -360,28 +356,6 @@ bool CItemStone::r_LoadVal( CScript & s ) // Load an item Script
 		case STC_ALIGN: // "ALIGN"
 			SetALIGNTYPE(static_cast<STONEALIGN_TYPE>(s.GetArgVal()));
 			return true;
-		case STC_ALLIANCE:
-			{
-				if (s.HasArgs())
-				{
-					CUID pNewAlliance = (dword)s.GetArgVal();
-					CItem* pItem = pNewAlliance.ItemFind();
-					if (!pItem)
-					{
-						DEBUG_ERR(("ALLIANCE called on non item 0%x uid.\n", (dword)pNewAlliance));
-						return false;
-					}
-
-					SetAlliance(pNewAlliance);
-					return true;
-				}
-				else
-				{
-					SetAlliance((CUID)0);
-					return true;
-				}
-			}
-			return true;
 		case STC_MASTERUID:
 			{
 				if ( s.HasArgs() )
@@ -475,22 +449,6 @@ bool CItemStone::r_WriteVal( lpctstr ptcKey, CSString & sVal, CTextConsole * pSr
 	EXC_TRY("WriteVal");
 	CChar * pCharSrc = pSrc->GetChar();
 
-	if (!strnicmp("alliance.", ptcKey, 9))
-	{
-		lpcstr pszCmd = ptcKey + 9;
-
-		if (!_uidAlliance)
-		{
-			sVal.FormatVal(0);
-			return true;
-		}
-		else if (!strnicmp("master", pszCmd, 6))
-		{
-			CItemStone* pAllyStone = dynamic_cast<CItemStone *>(_uidAlliance.ItemFind());
-			sVal.FormatHex((dword)pAllyStone->GetMaster()->GetUID());
-			return true;
-		}
-	}
 	if ( !strnicmp("member.",ptcKey,7) )
 	{
 		lpctstr pszCmd = ptcKey + 7;
@@ -689,9 +647,6 @@ bool CItemStone::r_WriteVal( lpctstr ptcKey, CSString & sVal, CTextConsole * pSr
 			return true;
 		case STC_ALIGN:
 			sVal.FormatVal( GetAlignType());
-			return true;
-		case STC_ALLIANCE:
-			sVal.FormatHex(_uidAlliance ? _uidAlliance : (CUID)0);
 			return true;
 		case STC_WEBPAGE: // "WEBPAGE"
 			sVal = GetWebPageURL();
@@ -1013,6 +968,9 @@ bool CItemStone::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command f
 			break;
 		case ISV_TOGGLEABBREVIATION:
 			{
+				if (!s.HasArgs() && !pMember)
+					return false;
+
 				const CUID uidMember(s.HasArgs() ? s.GetArgDWVal() : pMember->GetLinkUID());
 				CChar * pMemberChar = uidMember.CharFind();
 				if ( pMemberChar )
@@ -1382,10 +1340,6 @@ bool CItemStone::IsAlliedWith( const CItemStone * pStone) const
 			return true;
 	}
 
-	// We share the same Alliance UID
-	if (_uidAlliance && pStone->_uidAlliance)
-		return (_uidAlliance == pStone->_uidAlliance);
-
 	// we have declared or they declared.
 	CStoneMember * pAllyMember = GetMember(pStone);
 	if ( pAllyMember ) // Ok, we might be ally
@@ -1423,20 +1377,6 @@ bool CItemStone::IsAtWarWith( const CItemStone * pEnemyStone ) const
 			return true;
 	}
 
-	// We are part of an alliance and we should check if the alliance master is at war.
-	// The alliance is considered a "guildstone" by itself
-	// Should search through the members
-	if (_uidAlliance)
-	{
-		CItemStone* pAllianceStone = dynamic_cast<CItemStone*>(_uidAlliance.ItemFind());
-		CStoneMember* pEnemyMember = pAllianceStone->GetMember(pEnemyStone);
-
-		if (pEnemyMember->m_iPriv == STONEPRIV_ENEMY && pEnemyMember->GetTheyDeclaredWar() && pEnemyMember->GetWeDeclaredWar())
-			return true;
-	}
-
-	// We have declared or they declared.
-	// If our guild is not in alliance, we search in our members.
 	CStoneMember * pEnemyMember = GetMember(pEnemyStone);
 	if (pEnemyMember)
 	{

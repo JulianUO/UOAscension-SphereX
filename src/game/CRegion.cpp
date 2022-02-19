@@ -58,6 +58,7 @@ bool CTeleport::RealizeTeleport()
 CRegion::CRegion( CResourceID rid, lpctstr pszName ) :
 	CResourceDef( rid )
 {
+	ADDTOCALLSTACK("CRegion::CRegion()");
 	m_dwFlags	= 0;
 	m_iModified	= 0;
 	m_iLinkedSectors = 0;
@@ -68,13 +69,13 @@ CRegion::CRegion( CResourceID rid, lpctstr pszName ) :
 
 CRegion::~CRegion()
 {
+	ADDTOCALLSTACK("CRegion::~CRegion");
 	// RemoveSelf();
 	UnRealizeRegion();
 }
 
-void CRegion::SetModified( int iModFlag )
+void CRegion::SetModified( int iModFlag ) noexcept
 {
-	ADDTOCALLSTACK("CRegion::SetModified");
 	if ( !m_iLinkedSectors )
         return;
 	m_iModified	= m_iModified | iModFlag;
@@ -658,7 +659,7 @@ void CRegion::r_WriteBody( CScript & s, lpctstr pszPrefix )
 		CSString sVal;
 		m_Events.WriteResourceRefList( sVal );
 		snprintf(tsTemp.buffer(), tsTemp.capacity(), "%sEVENTS", pszPrefix);
-		s.WriteKey(tsTemp.buffer(), sVal);
+		s.WriteKeyStr(tsTemp.buffer(), sVal);
 	}
 
 	// Write New variables
@@ -674,10 +675,10 @@ void CRegion::r_WriteModified( CScript &s )
 {
 	ADDTOCALLSTACK("CRegion::r_WriteModified");
 	if ( m_iModified & REGMOD_NAME )
-		s.WriteKey("NAME", GetName() );
+		s.WriteKeyStr("NAME", GetName() );
 
 	if ( m_iModified & REGMOD_GROUP )
-		s.WriteKey("GROUP", m_sGroup );
+		s.WriteKeyStr("GROUP", m_sGroup.GetBuffer() );
 
 	if ( m_iModified & REGMOD_FLAGS )
 	{
@@ -688,7 +689,7 @@ void CRegion::r_WriteModified( CScript &s )
 	{
 		CSString sVal;
 		m_Events.WriteResourceRefList( sVal );
-		s.WriteKey( "EVENTS", sVal );
+		s.WriteKeyStr( "EVENTS", sVal.GetBuffer() );
 	}
 }
 
@@ -698,22 +699,22 @@ void CRegion::r_WriteBase( CScript &s )
 	ADDTOCALLSTACK("CRegion::r_WriteBase");
     lpctstr ptcName = GetName();
 	if ( ptcName && ptcName[0] )
-		s.WriteKey("NAME", ptcName);
+		s.WriteKeyStr("NAME", ptcName);
 
 	if ( ! m_sGroup.IsEmpty() )
-		s.WriteKey("GROUP", static_cast<lpctstr>(m_sGroup));
+		s.WriteKeyStr("GROUP", m_sGroup.GetBuffer());
 
 	CRegion::r_WriteBody( s, "" );
 
 	if ( m_pt.IsValidPoint())
-		s.WriteKey("P", m_pt.WriteUsed());
+		s.WriteKeyStr("P", m_pt.WriteUsed());
 	else if ( m_pt.m_map )
 		s.WriteKeyVal("MAP", m_pt.m_map);
 
 	size_t iQty = GetRegionRectCount();
 	for ( size_t i = 0; i < iQty; ++i )
 	{
-		s.WriteKey("RECT", GetRegionRect(i).Write() );
+		s.WriteKeyStr("RECT", GetRegionRect(i).Write() );
 	}
 }
 

@@ -80,6 +80,8 @@ enum RES_TYPE	// all the script resource sections we know how to deal with !
 
 #define RES_DIALOG_TEXT				1	// sub page for the section.
 #define RES_DIALOG_BUTTON			2
+#define RES_DIALOG_PREBUTTON		3
+
 
 #define RES_NEWBIE_MALE_DEFAULT		(10000+1)	// just an unused number for the range.
 #define RES_NEWBIE_FEMALE_DEFAULT	(10000+2)
@@ -134,6 +136,10 @@ struct CResourceIDBase : public CUID    // It has not the "page" part/variable. 
 
     CResourceIDBase(const CResourceIDBase& rid);                // copy constructor
     CResourceIDBase& operator = (const CResourceIDBase& rid);   // assignment operator
+
+    // operator CUID() const noexcept = delete;    // Such a call will never happen, this "conversion" is done via the constructor
+
+    //---
 
     void FixRes();
 

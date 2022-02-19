@@ -174,7 +174,7 @@ void CChar::CallGuards()
 		return;
 
     // Spam check, not calling this more than once per second, which will cause an excess of calls and checks on crowded areas because of the 2 CWorldSearch.
-	if (CWorldGameTime::GetCurrentTime().GetTimeDiff(m_timeLastCallGuards + (1 * MSECS_PER_SEC)) <= 0)
+	if (CWorldGameTime::GetCurrentTime().GetTimeDiff(_iTimeLastCallGuards + (1 * MSECS_PER_SEC)) <= 0)
 		return;
 
 	// We don't have any target yet, let's check everyone nearby
@@ -214,10 +214,10 @@ bool CChar::CallGuards( CChar * pCriminal )
 		return false;
     }
 
-    if (CWorldGameTime::GetCurrentTime().GetTimeDiff(m_timeLastCallGuards + (25 * MSECS_PER_TENTH)) <= 0)	// Spam check
+    if (CWorldGameTime::GetCurrentTime().GetTimeDiff(_iTimeLastCallGuards + (25 * MSECS_PER_TENTH)) <= 0)	// Spam check
         return false;
 
-    m_timeLastCallGuards = CWorldGameTime::GetCurrentTime().GetTimeRaw();
+    _iTimeLastCallGuards = CWorldGameTime::GetCurrentTime().GetTimeRaw();
 
 	CChar *pGuard = nullptr;
 	if (m_pNPC && m_pNPC->m_Brain == NPCBRAIN_GUARD)
@@ -629,8 +629,8 @@ effect_bounce:
 		if ( (uType & DAMAGE_FIRE) && Can(CAN_C_FIRE_IMMUNE) )
 			goto effect_bounce;
 		// I can't take damage from my pets, the only exception is for BRAIN_BERSERK pets
-		if ( pSrc->m_pNPC && (pSrc->NPC_PetGetOwner() == this) && (pSrc->m_pNPC->m_Brain != NPCBRAIN_BERSERK) )
-			goto effect_bounce;
+		//if ( pSrc->m_pNPC && (pSrc->NPC_PetGetOwner() == this) && (pSrc->m_pNPC->m_Brain != NPCBRAIN_BERSERK) )
+			//goto effect_bounce;
 		if ( m_pArea )
 		{
 			if ( m_pArea->IsFlag(REGION_FLAG_SAFE) )
@@ -664,14 +664,14 @@ effect_bounce:
 	if ( IsAosFlagEnabled(FEATURE_AOS_UPDATE_B) )
 	{
 		CItem * pEvilOmen = LayerFind(LAYER_SPELL_Evil_Omen);
-		if ( pEvilOmen )
+		if ( pEvilOmen && !g_Cfg.GetSpellDef(SPELL_Evil_Omen)->IsSpellType(SPELLFLAG_SCRIPTED))
 		{
 			iDmg += iDmg / 4;
 			pEvilOmen->Delete();
 		}
 
 		CItem * pBloodOath = LayerFind(LAYER_SPELL_Blood_Oath);
-		if ( pBloodOath && pBloodOath->m_uidLink == pSrc->GetUID() && !(uType & DAMAGE_FIXED) )	// if DAMAGE_FIXED is set we are already receiving a reflected damage, so we must stop here to avoid an infinite loop.
+		if ( pBloodOath && pBloodOath->m_uidLink == pSrc->GetUID() && !(uType & DAMAGE_FIXED) && !g_Cfg.GetSpellDef(SPELL_Blood_Oath)->IsSpellType(SPELLFLAG_SCRIPTED))	// if DAMAGE_FIXED is set we are already receiving a reflected damage, so we must stop here to avoid an infinite loop.
 		{
 			iDmg += iDmg / 10;
 			pSrc->OnTakeDamage(iDmg * (100 - pBloodOath->m_itSpell.m_spelllevel) / 100, this, DAMAGE_MAGIC|DAMAGE_FIXED);
@@ -680,7 +680,8 @@ effect_bounce:
 
 	const CCharBase * pCharDef = Char_GetDef();
 	ASSERT(pCharDef);
-    const CCPropsChar *pCCPChar = GetCCPropsChar(), *pBaseCCPChar = pCharDef->GetCCPropsChar();
+	const CCPropsChar* pCCPChar = GetComponentProps<CCPropsChar>();
+	const CCPropsChar* pBaseCCPChar = pCharDef->GetComponentProps<CCPropsChar>();
 
 	// MAGICF_IGNOREAR bypasses defense completely
 	if ( (uType & DAMAGE_MAGIC) && IsSetMagicFlags(MAGICF_IGNOREAR) )
@@ -716,6 +717,8 @@ effect_bounce:
 				iDef /= 2;
 
 			iDmg -= iDef;
+			if (iDmg <= 0)
+				iDmg = 0;
 		}
 	}
 
@@ -824,7 +827,7 @@ effect_bounce:
             iDmg *= iDmgBonus;
         }
     }
-
+	
 	// Disturb magic spells (only players can be disturbed if NpCCanFizzleOnHit is false in sphere.ini)
 	if ( (m_pPlayer || g_Cfg.m_fNPCCanFizzleOnHit) && (pSrc != this) && !(uType & DAMAGE_NODISTURB) && g_Cfg.IsSkillFlag(Skill_GetActive(), SKF_MAGIC) )
 	{
@@ -899,16 +902,19 @@ effect_bounce:
 				if ( GetTopDist3D(pSrc) < 2 )
 				{
 					CItem* pReactive = LayerFind(LAYER_SPELL_Reactive);
-					int iReactiveDamage = (iDmg * pReactive->m_itSpell.m_PolyStr) / 100;
-					if (iReactiveDamage < 1)
+					if (pReactive)
 					{
-						iReactiveDamage = 1;
-					}
+						int iReactiveDamage = (iDmg * pReactive->m_itSpell.m_PolyStr) / 100;
+						if (iReactiveDamage < 1)
+						{
+							iReactiveDamage = 1;
+						}
 
-					iDmg -= iReactiveDamage;
-					pSrc->OnTakeDamage( iReactiveDamage, this, (DAMAGE_TYPE)(DAMAGE_FIXED | DAMAGE_REACTIVE), iDmgPhysical, iDmgFire, iDmgCold, iDmgPoison, iDmgEnergy );
-					pSrc->Sound( 0x1F1 );
-					pSrc->Effect( EFFECT_OBJ, ITEMID_FX_CURSE_EFFECT, this, 10, 16 );
+						iDmg -= iReactiveDamage;
+						pSrc->OnTakeDamage(iReactiveDamage, this, (DAMAGE_TYPE)(DAMAGE_FIXED | DAMAGE_REACTIVE), iDmgPhysical, iDmgFire, iDmgCold, iDmgPoison, iDmgEnergy);
+						pSrc->Sound(0x1F1);
+						pSrc->Effect(EFFECT_OBJ, ITEMID_FX_CURSE_EFFECT, this, 10, 16);
+					}
 				}
 			}
 		}
@@ -931,8 +937,8 @@ effect_bounce:
 			pSrc->m_pClient->addShowDamage( iDmg, (dword)(GetUID()) );
 		else
 		{
-			CChar * pSrcOwner = pSrc->GetOwner();
-			if ( pSrcOwner != nullptr )
+			CChar * pSrcOwner = pSrc->GetOwner(); 
+			if ( pSrcOwner != nullptr && pSrcOwner != this ) //If my pet damages somebody display the pop-up damage unless it's damaging me because i already received the pop-up damage on before.
 			{
 				if ( pSrcOwner->IsClientActive() )
 					pSrcOwner->m_pClient->addShowDamage( iDmg, (dword)(GetUID()) );
@@ -1380,6 +1386,12 @@ void CChar::Fight_HitTry()
 			}
 			return;
 		}
+		else
+		{
+				Skill_Start(SKILL_NONE);
+				m_Fight_Targ_UID.InitUID();
+		}
+		return;
 	}
 
 
@@ -1466,17 +1478,17 @@ void CChar::Fight_HitTry()
             {
                 if (retHit == WAR_SWING_EQUIPPING_NOWAIT)
                 {
-                    // Reactivate as soon as possible (without waiting for a new tick) the fighting routines, which are normally called by OnTick(), which in turn calls
+                    // Reactivate as soon as possible (without waiting for a new tick) the fighting routines, which are normally called by _OnTick(), which in turn calls
                     //  OnTickSkill() -> Skill_Done() -> Skill_Stage() -> Skill_Fighting() ->
                     //  -> Fight_HitTry() (which is this method) -> Fight_Hit() (which sets the recoil and swing delays and more) ...
-                    // If i use SetTimeout(1), i will lose a tick, since i'll start to set the timers for the new swing only on the next tick, not on the current.
+                    // If i use _SetTimeout(1), i will lose a tick, since i'll start to set the timers for the new swing only on the next tick, not on the current.
                     OnTickSkill();
                 }
                 else
                 {
                     // Wait a bit, then check again if i can hit. If i don't wait, the condition that leaded to this point will always be the same,
                     //  and the combat code and this function will be called recursively.
-                    SetTimeoutD(1);
+                    _SetTimeoutD(1);
                 }
             }
 			return;
@@ -1487,21 +1499,21 @@ void CChar::Fight_HitTry()
             {
 				Fight_Attack(NPC_FightFindBestTarget());	// keep attacking the same char or change the targ
             }
-            if (!IsTimerSet())	// If i haven't landed the hit yet...
+            if (!_IsTimerSet())	// If i haven't landed the hit yet...
             {
                 // Player & NPC: wait some time and check again if i can land the hit
                 // NPC: also keeps its AI alive, so that in NPCActFight the NPC can further approach his target.
-                SetTimeoutD(1);
+                _SetTimeoutD(1);
             }
 			return;
 		}
 		case WAR_SWING_SWINGING:	// must come back here again to complete
-            if (!IsTimerSet())
+            if (!_IsTimerSet())
             {
                 // This happens (only with both PreHit and Swing_NoRange on) if i can't land the hit right now, otherwise retHit
                 //  should be WAR_SWING_EQUIPPING. If this isn't the case, there's something wrong (asserts are placed to intercept this situations).
                 // Though, consider the case of custom combat systems, in that case the asserts may be invalid.
-                SetTimeoutD(1);
+                _SetTimeoutD(1);
                 //ASSERT(IsSetCombatFlags(COMBAT_FIRSTHIT_INSTANT) && IsSetCombatFlags(COMBAT_SWING_NORANGE|COMBAT_PREHIT));
             }
 			return;
@@ -1660,7 +1672,8 @@ WAR_SWING_TYPE CChar::Fight_Hit( CChar * pCharTarg )
                 if ( iDmgType & DAMAGE_FIXED )
                     iDmgType &= ~DAMAGE_FIXED;
 
-                const CCPropsChar *pCCPChar = GetCCPropsChar(), *pBaseCCPChar = Base_GetDef()->GetCCPropsChar();
+				const CCPropsChar* pCCPChar = GetComponentProps<CCPropsChar>();
+				const CCPropsChar* pBaseCCPChar = Base_GetDef()->GetComponentProps<CCPropsChar>();
 
                 pCharTarg->OnTakeDamage(
                     Fight_CalcDamage(m_uidWeapon.ItemFind()),
@@ -1729,8 +1742,9 @@ WAR_SWING_TYPE CChar::Fight_Hit( CChar * pCharTarg )
 
         if ( pWeapon )
         {
-            CResourceID ridAmmo = pWeapon->Weapon_GetRangedAmmoRes();
-            if ( ridAmmo )
+            const CResourceID ridAmmo(pWeapon->Weapon_GetRangedAmmoRes());
+	
+			if (ridAmmo.IsValidUID() && ridAmmo.GetObjUID() > 0 ) 
             {
                 pAmmo = pWeapon->Weapon_FindRangedAmmo(ridAmmo);
                 if ( !pAmmo && m_pPlayer )
@@ -1813,7 +1827,7 @@ WAR_SWING_TYPE CChar::Fight_Hit( CChar * pCharTarg )
                 m_atFight.m_iSwingAnimationDelay = 0;
         }
 
-        SetTimeoutD(m_atFight.m_iRecoilDelay);   // Wait for the recoil time.
+        _SetTimeoutD(m_atFight.m_iRecoilDelay);   // Wait for the recoil time.
         m_atFight.m_iWarSwingState = WAR_SWING_READY;
         return WAR_SWING_READY;
     }
@@ -1846,7 +1860,7 @@ WAR_SWING_TYPE CChar::Fight_Hit( CChar * pCharTarg )
 		UpdateAnimate((ANIM_TYPE)m_atFight.m_iSwingAnimation, false, false, iSwingAnimationDelayInSeconds );
 
         // Now that i have waited the recoil time, start the hit animation and wait for it to end
-        SetTimeoutD(m_atFight.m_iSwingAnimationDelay);
+        _SetTimeoutD(m_atFight.m_iSwingAnimationDelay);
 		return WAR_SWING_SWINGING;
 	}
 
@@ -1877,8 +1891,8 @@ WAR_SWING_TYPE CChar::Fight_Hit( CChar * pCharTarg )
 		if ( IsTrigUsed(TRIGGER_HITMISS) )
 		{
 			CScriptTriggerArgs Args(0, 0, pWeapon);
-			if ( pAmmo )
-				Args.m_VarsLocal.SetNum("Arrow", pAmmo->GetUID());
+			if ( pAmmo && pAmmo->GetUID().IsValidUID())
+				Args.m_VarsLocal.SetNum("Arrow", (dword)pAmmo->GetUID());
 			if ( OnTrigger(CTRIG_HitMiss, pCharTarg, &Args) == TRIGRET_RET_TRUE )
 				return WAR_SWING_EQUIPPING_NOWAIT;
 
@@ -1926,42 +1940,55 @@ WAR_SWING_TYPE CChar::Fight_Hit( CChar * pCharTarg )
 	// We hit
 	// Calculate the damage and check for parrying
 	int	iDmg = Fight_CalcDamage(pWeapon);
-	int iParryReduction = 0;
+	int iParryReduction = 100;
 
 	if ( !(iDmgType & DAMAGE_GOD) )
 	{
-		CItem * pItemHit = nullptr;
-		if (pCharTarg->Fight_Parry(pItemHit))
-		{
-			const CSkillDef * pSkillDef = g_Cfg.GetSkillDef(SKILL_PARRYING);
-			
-			if ( IsPriv(PRIV_DETAIL) )
-				SysMessageDefault(DEFMSG_COMBAT_PARRY);
+		CItem* pItemHit = nullptr;
+		SKILL_TYPE ParrySkill = SKILL_PARRYING;
+		const CSkillDef* pSkillDef = g_Cfg.GetSkillDef(ParrySkill);
+		int iParryChance = g_Cfg.Calc_CombatChanceToParry(pCharTarg, pItemHit);
 
-			// If Effect property is defined on the Parrying skill use it instead of the hardcoded value of 100.
-			iParryReduction = 100;
-			if (!pSkillDef->m_vcEffect.m_aiValues.empty())
-				iParryReduction = pSkillDef->m_vcEffect.GetLinear(pCharTarg->Skill_GetAdjusted(SKILL_PARRYING));
-
-			/*
+		// If Effect property is defined on the Parrying skill use it instead of the hardcoded value of 100.
+		if (!pSkillDef->m_vcEffect.m_aiValues.empty())
+			iParryReduction = pSkillDef->m_vcEffect.GetLinear(pCharTarg->Skill_GetAdjusted(ParrySkill));
+	
+		/*
 			ARGN1 = Percent of damage that will be reduced.
 			ARGN2 =  Damage type.
 			ARGO  = The weapon/shield used for parry, if any.
+			local.ParryChance = The chance to parry, will be used in SkillUseQuick check, default 100.
+			local.ParrySkill = The skill used for parrying, default is Parrying.
 			local.ItemParryDamage = The chance that the parrying item will be damaged.
 			local.Damage = The amount of damage (raw) before parrying reduction.
-			*/
-			CScriptTriggerArgs Args(iParryReduction, iDmgType, pItemHit);
-			Args.m_VarsLocal.SetNum("ItemParryDamageChance", 100);
-			Args.m_VarsLocal.SetNum("Damage", iDmg);
-			if (IsTrigUsed(TRIGGER_HITPARRY))
-			{
-				if (pCharTarg->OnTrigger(CTRIG_HitParry, this, &Args) == TRIGRET_RET_TRUE)
-					return WAR_SWING_EQUIPPING_NOWAIT;
+		*/
+		CScriptTriggerArgs Args(iParryReduction, iDmgType, pItemHit);
+		Args.m_VarsLocal.SetNum("ParryChance", iParryChance);
+		Args.m_VarsLocal.SetNum("ParrySkillID", ParrySkill);
+		Args.m_VarsLocal.SetNum("ItemParryDamageChance", 100);
+		Args.m_VarsLocal.SetNum("Damage", iDmg);
 
-				iParryReduction  = (int)(Args.m_iN1);
-				iDmgType = (DAMAGE_TYPE)(Args.m_iN2);
-				iDmg = (int)Args.m_VarsLocal.GetKeyNum("Damage");
-			}
+		if (IsTrigUsed(TRIGGER_HITPARRY))
+		{
+			if (pCharTarg->OnTrigger(CTRIG_HitParry, this, &Args) == TRIGRET_RET_TRUE)
+				return WAR_SWING_EQUIPPING_NOWAIT;
+
+			iParryReduction = (int)(Args.m_iN1);
+			iDmgType = (DAMAGE_TYPE)(Args.m_iN2);
+			iDmg = (int)Args.m_VarsLocal.GetKeyNum("Damage");
+			iParryChance = (int)Args.m_VarsLocal.GetKeyNum("ParryChance");
+			ParrySkill = (SKILL_TYPE)Args.m_VarsLocal.GetKeyNum("ParrySkillID");
+		}
+
+		if (iParryChance > 0 && pCharTarg->Skill_UseQuick(ParrySkill, iParryChance, true, false))
+		{
+			if ( IsPriv(PRIV_DETAIL) )
+				SysMessageDefault(DEFMSG_COMBAT_PARRY);
+
+			//If we are using the Samurai Empire Formula and we are not wearing a shield also raise Bushido.
+			if (g_Cfg.m_iFeatureSE & FEATURE_SE_NINJASAM && g_Cfg.m_iCombatParryingEra & PARRYERA_SEFORMULA && !pCharTarg->IsStatFlag(STATF_HASSHIELD))
+				pCharTarg->Skill_Experience(SKILL_BUSHIDO, iParryChance);
+
 			int iParryDamageChance = (int)(Args.m_VarsLocal.GetKeyNum("ItemParryDamageChance"));
 			if ( pItemHit && (iParryDamageChance > Calc_GetRandVal(100)) )
 				pItemHit->OnTakeDamage(1, this, iDmgType);
@@ -1969,17 +1996,19 @@ WAR_SWING_TYPE CChar::Fight_Hit( CChar * pCharTarg )
 			//Effect(EFFECT_OBJ, ITEMID_FX_GLOW, this, 10, 16);		// moved to scripts (@UseQuick on Parrying skill)
 			if (iParryReduction >= 100)
 				return WAR_SWING_EQUIPPING_NOWAIT;
+
+			// Apply parrying reduction (if there's any)
+			if (iParryReduction > 0)
+				iDmg -= IMulDiv(iDmg, iParryReduction, 100);
 		}
 	}
 
-	// Apply parrying reduction (if there's any)
-	if (iParryReduction > 0)
-		iDmg -= IMulDiv(iDmg, iParryReduction, 100);
+	
 
 	CScriptTriggerArgs Args(iDmg, iDmgType, pWeapon);
 	Args.m_VarsLocal.SetNum("ItemDamageChance", 25);
-	if ( pAmmo )
-		Args.m_VarsLocal.SetNum("Arrow", pAmmo->GetUID());
+	if ( pAmmo && pAmmo->GetUID().IsValidUID() )
+		Args.m_VarsLocal.SetNum("Arrow",(dword)pAmmo->GetUID());
 
 	if ( IsTrigUsed(TRIGGER_SKILLSUCCESS) )
 	{
@@ -2061,8 +2090,9 @@ WAR_SWING_TYPE CChar::Fight_Hit( CChar * pCharTarg )
 	}
 
 	// Took my swing. Do Damage !
-    const CCPropsChar *pCCPChar = GetCCPropsChar(), *pBaseCCPChar = Base_GetDef()->GetCCPropsChar();
-    pCharTarg->OnTakeDamage(
+	const CCPropsChar* pCCPChar = GetComponentProps<CCPropsChar>();
+	const CCPropsChar* pBaseCCPChar = Base_GetDef()->GetComponentProps<CCPropsChar>();
+	pCharTarg->OnTakeDamage(
         iDmg,
         this,
         iDmgType,
@@ -2155,7 +2185,7 @@ WAR_SWING_TYPE CChar::Fight_Hit( CChar * pCharTarg )
 		}
 
 		// Check for passive skill gain
-		if ( m_pPlayer && !pCharTarg->m_pArea->IsFlag(REGION_FLAG_NO_PVP) )
+		if ( m_pPlayer &&  (!pCharTarg->m_pArea->IsFlag(REGION_FLAG_NO_PVP) || !pCharTarg->IsPlayer()) )
 		{
 			Skill_Experience(skill, m_Act_Difficulty);
 			Skill_Experience(SKILL_TACTICS, m_Act_Difficulty);

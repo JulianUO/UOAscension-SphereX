@@ -229,7 +229,8 @@ enum ANIM_TYPE	// not all creatures animate the same for some reason.
 
     ANIM_QTY_ANI	= 13,
 
-    ANIM_QTY		= 0x32
+    ANIM_QTY		= 0x32,
+    ANIM_MASK_MAX   = 64    // CCharBase::m_Anims bitmask can hold a maximum of 64 values (1 << 63)
 };
 
 
@@ -330,7 +331,8 @@ enum DIR_TYPE	// Walking directions. m_dir
     DIR_NW,
     DIR_QTY,		// Also means "Center"
 
-    DIR_ANIM_QTY = 5	// Seems we only need 5 pics for an anim, assume ALL bi-symetrical creatures
+    DIR_ANIM_QTY = 5,	// Seems we only need 5 pics for an anim, assume ALL bi-symetrical creatures
+    DIR_MASK_RUNNING = 0x80
 };
 
 
@@ -550,6 +552,8 @@ enum LAYER_TYPE		// defined by UO. Only one item can be in a slot.
     LAYER_SPELL_Spell_Plague,
     LAYER_SPELL_Nether_Cyclone,
 
+    //Individual Spell Layers
+    LAYER_SPELL_Mana_Drain,
     LAYER_QTY
 };
 

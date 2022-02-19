@@ -1,10 +1,10 @@
-
-#include <cmath>
 #include <complex>
 #include "../game/CServerConfig.h"
 #include "sphere_library/CSRand.h"
 #include "CException.h"
 #include "CExpression.h"
+#include <algorithm>
+#include <cmath>
 
 tchar CExpression::sm_szMessages[DEFMSG_QTY][DEFMSG_MAX_LEN] =
 {
@@ -434,7 +434,7 @@ llong CExpression::GetSingle( lpctstr & pszArgs )
 	}
 	else if ( pszArgs[0] == '.' || IsDigit(pszArgs[0]) )
 	{
-		// A decminal number
+		// A decimal number
 try_dec:
 		llong iVal = 0;
 		for ( ; ; ++pszArgs )
@@ -939,11 +939,10 @@ llong CExpression::GetValMath( llong llVal, lpctstr & pExpr )
 			break;
 
 		case '-':
-			++pExpr;
 			llValSecond = GetVal(pExpr);
-			llVal -= llValSecond;
+			//++pExpr; No need to consume the negative sign, we need to keep it!
+			llVal += llValSecond; // a subtraction is an addiction with a negative number.
 			break;
-
 		case '*':
 			++pExpr;
 			llValSecond = GetVal(pExpr);
@@ -1517,8 +1516,8 @@ int64 CExpression::GetRangeNumber(lpctstr & pExpr)
 	llong llWeights[kiRangeMaxArgs]{};
 	for ( int i = 1; i+1 <= iQty; i += 2 )
 	{
-		if (pElementsStart[i] == nullptr)
-			break;	// Shouldn't really happen...
+		//if (pElementsStart[i] == nullptr)
+		//	break;	// Shouldn't really happen...
 
 		// Copy the weight element in a new string
 		const size_t iToParseLen = (pElementsStart[i][1] - pElementsStart[i][0]);
@@ -1550,6 +1549,7 @@ int64 CExpression::GetRangeNumber(lpctstr & pExpr)
 	const size_t iToParseLen = (pElementsStart[i][1] - pElementsStart[i][0]);
 
 	// Copy the value element in a new string
+	ASSERT(nullptr != pElementsStart[i][0]);
 	memcpy((void*)pToParse, pElementsStart[i][0], iToParseLen * sizeof(tchar));
 	pToParse[iToParseLen] = '\0';
 	
@@ -1592,8 +1592,8 @@ CSString CExpression::GetRangeString(lpctstr & pExpr)
     tchar pToParse[THREAD_STRING_LENGTH];
     for ( int i = 1; i+1 <= iQty; i += 2 )
     {
-		if (pElementsStart[i] == nullptr)
-			break;	// Shouldn't really happen...
+		//if (pElementsStart[i] == nullptr)
+		//	break;	// Shouldn't really happen...
 
         // Copy the weight element in a new string
         const size_t iToParseLen = (pElementsStart[i][1] - pElementsStart[i][0]);

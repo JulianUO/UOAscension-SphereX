@@ -411,19 +411,20 @@ bool CClient::OnTarg_Item_Link( CObjBase * pObj2 )
 			pItem1 = pItem2;
 			pItem2 = pTmp;
 		}
+
 		// pItem1 = the IT_KEY
-		if ( pItem2->m_itContainer.m_UIDLock )
-
+		if (pItem2->m_itContainer.m_UIDLock.IsValidUID())
+		{
 			pItem1->m_itKey.m_UIDLock = pItem2->m_itContainer.m_UIDLock;
-
-		else if ( pItem1->m_itKey.m_UIDLock )
-
+		}
+		else if (pItem1->m_itKey.m_UIDLock.IsValidUID())
+		{
 			pItem2->m_itContainer.m_UIDLock = pItem1->m_itKey.m_UIDLock;
-
+		}
 		else
-
+		{
 			pItem1->m_itKey.m_UIDLock = pItem2->m_itContainer.m_UIDLock = pItem2->GetUID();
-
+		}
 	}
 	else
 	{
@@ -1011,7 +1012,7 @@ int CClient::OnSkill_ArmsLore( CUID uid, int iSkillLevel, bool fTest )
 		case IT_CLOTHING:
 		case IT_JEWELRY:
 			fWeapon = false;
-			iHitsCur = pItem->m_itArmor.m_wHitsCur;
+			iHitsCur = pItem->m_itArmor.m_dwHitsCur;
 			iHitsMax = pItem->m_itArmor.m_wHitsMax;
 			len += snprintf( pszTemp, STR_TEMPLENGTH, g_Cfg.GetDefaultMsg( DEFMSG_ARMSLORE_DEF ), pItem->Armor_GetDefense());
 			break;
@@ -1027,7 +1028,7 @@ int CClient::OnSkill_ArmsLore( CUID uid, int iSkillLevel, bool fTest )
 		case IT_WEAPON_XBOW:
 		case IT_WEAPON_THROWING:
 			fWeapon = true;
-			iHitsCur = pItem->m_itWeapon.m_wHitsCur;
+			iHitsCur = pItem->m_itWeapon.m_dwHitsCur;
 			iHitsMax = pItem->m_itWeapon.m_wHitsMax;
 			len += snprintf( pszTemp, STR_TEMPLENGTH, g_Cfg.GetDefaultMsg( DEFMSG_ARMSLORE_DAM ), pItem->Weapon_GetAttack());
 			break;
@@ -1439,7 +1440,7 @@ bool CClient::OnTarg_Skill_Magery( CObjBase * pObj, const CPointMap & pt )
 				SysMessageDefault( DEFMSG_MAGERY_2 );
 				return true;
 			}
-			CChar * pChar = dynamic_cast<CChar*>(pObj);
+			CChar * pChar = static_cast<CChar*>(pObj);
 			if ( pSpell->IsSpellType( SPELLFLAG_TARG_NO_PLAYER ) && pChar->m_pPlayer )
 			{
 				SysMessageDefault( DEFMSG_MAGERY_7 );
@@ -1873,7 +1874,7 @@ bool CClient::OnTarg_Use_Item( CObjBase * pObjTarg, CPointMap & pt, ITEMID_TYPE 
 			return false;
 
 		case IT_FISH:
-			if ( ! m_pChar->CanUse( pItemTarg, true ))
+			if ( !pItemTarg || !m_pChar->CanUse(pItemTarg, true) )
 			{
 				SysMessageDefault( DEFMSG_ITEMUSE_FISH_UNABLE );
 				return false;
@@ -1889,7 +1890,7 @@ bool CClient::OnTarg_Use_Item( CObjBase * pObjTarg, CPointMap & pt, ITEMID_TYPE 
 		case IT_CORPSE:
 			if ( ! m_pChar->CanUse( pItemTarg, false ))
 				return false;
-			m_pChar->Use_CarveCorpse( dynamic_cast <CItemCorpse*>( pItemTarg ));
+			m_pChar->Use_CarveCorpse( dynamic_cast <CItemCorpse*>( pItemTarg ), pItemUse);
 			return true;
 
 		case IT_FRUIT:
@@ -2036,7 +2037,7 @@ bool CClient::OnTarg_Use_Item( CObjBase * pObjTarg, CPointMap & pt, ITEMID_TYPE 
 		CItem * pKey = nullptr;
 		bool fLockable = pItemTarg->IsTypeLockable();
 
-		if ( fLockable && pItemTarg->m_itContainer.m_UIDLock )
+		if ( fLockable && pItemTarg->m_itContainer.m_UIDLock.IsValidUID())
 		{
 			// try all the keys on the object.
 			pKey = pKeyRing->ContentFind( CResourceID(RES_TYPEDEF,IT_KEY), pItemTarg->m_itContainer.m_UIDLock );
@@ -2054,7 +2055,7 @@ bool CClient::OnTarg_Use_Item( CObjBase * pObjTarg, CPointMap & pt, ITEMID_TYPE 
 				}
 			}
 
-			if ( ! fLockable || ! pItemTarg->m_itContainer.m_UIDLock )
+			if ( ! fLockable || ! pItemTarg->m_itContainer.m_UIDLock.IsValidUID())
 				SysMessageDefault( DEFMSG_ITEMUSE_KEY_NOLOCK );
 			else
 				SysMessageDefault( DEFMSG_ITEMUSE_KEY_NOKEY );
