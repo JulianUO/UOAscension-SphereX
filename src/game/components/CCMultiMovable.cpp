@@ -276,36 +276,6 @@ bool CCMultiMovable::MoveDelta(const CPointMap& ptDelta, bool fUpdateViewFull)
         return false;
     }
 
-
-    // Make tiller move and rotate
-    /*
-    CItem* pTiller = pMultiThis->Multi_GetSign();
-    ASSERT(pTiller);
-    ITEMID_TYPE newDispID = pTiller->GetDispID();
-    switch ((int)newDispID)
-    {
-        case 0x3e4a:    newDispID = (ITEMID_TYPE)0x3e4b; break;
-        case 0x3e4b:    newDispID = (ITEMID_TYPE)0x3e4c; break;
-        case 0x3e4c:    newDispID = (ITEMID_TYPE)0x3e4a; break;
-
-        case 0x3e4d:    newDispID = (ITEMID_TYPE)0x3e4e; break;
-        case 0x3e4e:    newDispID = (ITEMID_TYPE)0x3e4f; break;
-        case 0x3e4f:    newDispID = (ITEMID_TYPE)0x3e4d; break;
-
-        case 0x3e50:    newDispID = (ITEMID_TYPE)0x3e51; break;
-        case 0x3e51:    newDispID = (ITEMID_TYPE)0x3e52; break;
-        case 0x3e52:    newDispID = (ITEMID_TYPE)0x3e50; break;
-
-        case 0x3e53:    newDispID = (ITEMID_TYPE)0x3e54; break;
-        case 0x3e54:    newDispID = (ITEMID_TYPE)0x3e55; break;
-        case 0x3e55:    newDispID = (ITEMID_TYPE)0x3e53; break;
-
-        default:        break;
-    }
-    pTiller->SetID(newDispID);
-    pTiller->Update();
-    */
-
     // Move the ship and everything on the deck
     CObjBase * ppObjs[MAX_MULTI_LIST_OBJS + 1];
     uint iCount = ListObjs(ppObjs);
@@ -1065,7 +1035,7 @@ bool CCMultiMovable::r_Verb(CScript & s, CTextConsole * pSrc) // Execute command
             if (!Face((DIR_TYPE)(pItemThis->m_itShip.m_DirMove)))
             {
                 pItemThis->m_itShip.m_DirMove = (uchar)(DirMove);
-                return false;
+                return true; //No need to return false, we just can't turn the ship. The command is valid and by returning false we will a console warning.
             }
             break;
         }
@@ -1101,7 +1071,7 @@ bool CCMultiMovable::r_Verb(CScript & s, CTextConsole * pSrc) // Execute command
             }
 
             if (!SetMoveDir(GetDirTurn(DirFace, DirMoveChange), SMT_NORMAL))
-                return false;
+                return false; //No need to return false, we just can't move the ship. The command is valid and by returning false we will a console warning.
 
             break;
         }
@@ -1325,7 +1295,8 @@ bool CCMultiMovable::r_WriteVal(lpctstr ptcKey, CSString & sVal, CTextConsole * 
             break;
         case CML_DIRFACE:
             sVal.FormatBVal(pItemThis->m_itShip.m_DirFace);
-            break;        case CML_PILOT:
+            break;
+        case CML_PILOT:
         {
             if (pItemThis->m_itShip.m_Pilot.IsValidUID())
                 sVal.FormatHex(pItemThis->m_itShip.m_Pilot);
