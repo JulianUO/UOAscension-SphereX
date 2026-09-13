@@ -23,10 +23,14 @@ Table Of Contents
     - [World spawner](#world-spawner)
   - [Next steps](#next-steps)
 
-# Getting Started With Sphere server
-This tutorial is directed to those that have no experience whatsoever with
-the Sphere Server. The objective is to just get started with a fully functional
-shard which, later on, can be tweaked and customised as needed.
+# Getting Started With Sphere Server
+
+This tutorial is directed to those that have no experience whatsoever with the Sphere Server. The objective is to just get started with a fully functional shard which, later on, can be tweaked and customised as needed.
+
+> [!NOTE]
+> - For full compilation, CMake build options, and Linux systemd service packaging, see the **[Installation Guide](installation.md)**.
+> - For a complete breakdown of `sphere.ini` settings and database options, see the **[Configuration Guide](configuration.md)**.
+> - For SphereScript language specifications, trigger details, and VSCode tooling, see the **[SphereWiki-X Repository](../../SphereWiki-X/README.md)**.
 
 ## Downloading the Sphere server
 The first obvious step is to download the Sphere server. 

@@ -1,223 +1,107 @@
 # SphereServer X
 
-Ultima Online game server, developed in C++.
-<br><br>
-[![GitHub License](https://img.shields.io/github/license/Sphereserver/Source-X?color=blue)](https://github.com/Sphereserver/Source-X/blob/master/LICENSE)
+Ultima Online game server emulator developed in modern C++20.
+
+<br>
+
+[![GitHub License](https://img.shields.io/github/license/Sphereserver/Source-X?color=blue)](LICENSE)
 &nbsp; &nbsp; [![GitHub Repo size](https://img.shields.io/github/repo-size/Sphereserver/Source-X.svg)](https://github.com/Sphereserver/Source-X/)
 &nbsp; &nbsp; [![GitHub Stars](https://img.shields.io/github/stars/Sphereserver/Source-X?logo=github)](https://github.com/Sphereserver/Source-X/stargazers)
 <br>
 [![Coverity Scan Build Status](https://scan.coverity.com/projects/20225/badge.svg)](https://scan.coverity.com/projects/sphereserver-source-x)
 &nbsp; &nbsp; [![GitHub Issues](https://img.shields.io/github/issues/Sphereserver/Source-X.svg)](https://github.com/Sphereserver/Source-X/issues)
 
-| Join the SphereServer Discord channel! |
+| Join the SphereServer Community Discord! |
 | :---: |
 | [![Discord Shield](https://discordapp.com/api/guilds/354358315373035542/widget.png?style=shield)](https://discord.gg/ZrMTXrs) |
 
-## Getting Started tutorial
-If you're new to the Sphere server and want to set up your first shard, [this is your go-to guide](docs/Getting-started.md)!
+---
 
-## Releases
+## 📚 Documentation Hub
 
-### **Core**
+Find comprehensive documentation for compiling, configuring, extending, and scripting SphereServer X:
 
-| Branch: Master <br> (most stable pre-releases)                                                                                                                                                                                                                                                                                                                                                                                                                                             | Branch: Dev <br> (most recent, potentially unstable)                                                                                                                                                                                                                                                                                                                                                                                                                               |
-|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [![GitHub last commit on Master branch](https://img.shields.io/github/last-commit/Sphereserver/Source-X/master.svg)](https://github.com/Sphereserver/Source-X/) &nbsp; <a href="https://github.com/Sphereserver/Source-X/blob/master/Changelog.txt">Changelog</a>                                                                                                                                                                                                                          | [![GitHub last commit on Dev branch](https://img.shields.io/github/last-commit/Sphereserver/Source-X/dev.svg)](https://github.com/Sphereserver/Source-X/tree/dev) &nbsp; <a href="https://github.com/Sphereserver/Source-X/blob/dev/Changelog.txt">Changelog</a>                                                                                                                                                                                                                   |
-| **Nightly builds:**                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | **Nightly builds:**                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| [![Build status: Windows x86_64](https://github.com/Sphereserver/Source-X/actions/workflows/build_win_x86_64.yml/badge.svg?branch=master)](https://github.com/Sphereserver/Source-X/actions/workflows/build_win_x86_64.yml?query=branch%3Amaster) [![Build status: Windows x86](https://github.com/Sphereserver/Source-X/actions/workflows/build_win_x86.yml/badge.svg?branch=master)](https://github.com/Sphereserver/Source-X/actions/workflows/build_win_x86.yml?query=branch%3Amaster) | [![Build status: Windows x86_64](https://github.com/Sphereserver/Source-X/actions/workflows/build_win_x86_64.yml/badge.svg?branch=dev)](https://github.com/Sphereserver/Source-X/actions/workflows/build_win_x86_64.yml?query=branch%3Adev) [![Build status: Windows x86](https://github.com/Sphereserver/Source-X/actions/workflows/build_win_x86.yml/badge.svg?branch=dev)](https://github.com/Sphereserver/Source-X/actions/workflows/build_win_x86.yml?query=branch%3Adev)     |
-| [![Build status: Linux x86_64](https://github.com/Sphereserver/Source-X/actions/workflows/build_linux_x86_64.yml/badge.svg?branch=master)](https://github.com/Sphereserver/Source-X/actions/workflows/build_linux_x86_64.yml) [![Build status: Linux x86](https://github.com/Sphereserver/Source-X/actions/workflows/build_linux_x86.yml/badge.svg?branch=master)](https://github.com/Sphereserver/Source-X/actions/workflows/build_linux_x86.yml?query=branch%3Amaster)                   | [![Build status: Linux x86_64](https://github.com/Sphereserver/Source-X/actions/workflows/build_linux_x86_64.yml/badge.svg?branch=dev)](https://github.com/Sphereserver/Source-X/actions/workflows/build_linux_x86_64.yml?query=branch%3Adev) [![Build status: Linux x86](https://github.com/Sphereserver/Source-X/actions/workflows/build_linux_x86.yml/badge.svg?branch=dev)](https://github.com/Sphereserver/Source-X/actions/workflows/build_linux_x86.yml?query=branch%3Adev) |
-| [![Build status: macOS x86_64](https://github.com/Sphereserver/Source-X/actions/workflows/build_osx_x86_64.yml/badge.svg?branch=master)](https://github.com/Sphereserver/Source-X/actions/workflows/build_osx_x86_64.yml?query=branch%3Amaster) [![Build status: macOS ARM](https://github.com/Sphereserver/Source-X/actions/workflows/build_osx_arm.yml/badge.svg?branch=master)](https://github.com/Sphereserver/Source-X/actions/workflows/build_osx_arm.yml?query=branch%3Amaster)     | [![Build status: macOS x86_64](https://github.com/Sphereserver/Source-X/actions/workflows/build_osx_x86_64.yml/badge.svg?branch=dev)](https://github.com/Sphereserver/Source-X/actions/workflows/build_osx_x86_64.yml?query=branch%3Adev) [![Build status: macOS ARM](https://github.com/Sphereserver/Source-X/actions/workflows/build_osx_arm.yml/badge.svg?branch=dev)](https://github.com/Sphereserver/Source-X/actions/workflows/build_osx_arm.yml?query=branch%3Adev)         |
+- 📖 **[Installation & Build Guide](docs/installation.md)** — C++20 compiler setup, CMake instructions for Windows/Linux/macOS, build configurations, and Debian systemd packaging.
+- ⚙️ **[Configuration Guide](docs/configuration.md)** — Detailed breakdown of `sphere.ini`, database options, MUL asset paths, and client flags.
+- 🚀 **[Getting Started Tutorial](docs/Getting-started.md)** — Step-by-step guide for first-time shard setup, world decorators, spawners, and GM admin commands.
+- ✨ **[SphereServer X Features Addition](docs/features/README.md)** — Catalog of custom engine features (UltimaLive, External Login Server, REST API, C++20 Concurrency, Ships & Housing, Movement Fixes).
+- 🏛️ **[Engine Architecture Blueprint](docs/architecture/architecture.md)** — Core memory models, threading loops, global singletons, and static analysis baselines.
+- 🔄 **[Migration & Porting Guide](docs/migration/porting-from-0.56-to-X.md)** — Upgrading scripts and server configurations from 0.55/0.56 to SphereServer X.
+- 🌐 **[SphereWiki-X Scripting Repository](../SphereWiki-X/README.md)** — Comprehensive generic wiki for SphereScript section blocks, triggers, function tables, flags, and VSCode extension tooling.
+- 🗺️ **[Complete Master Index](docs/INDEX.md)** — Full map of all documentation files in `docs/`.
 
-**Click the badges or follow the links:**
+---
 
-+ <a href="https://github.com/Sphereserver/Source-X/releases">GitHub Nightly builds</a>
-+ <a href="https://forum.spherecommunity.net/sshare.php?srt=4">SphereServer Website</a>
+## ✨ What makes SphereServer X different?
 
-### **ScriptPack**
+SphereServer X (`Source-X`) is a high-performance fork of SphereServer 0.56d modernized to C++20, featuring major architectural and gameplay enhancements:
 
-The official script pack is fully compatible with X new syntax, has all the new X features and preserves legacy/classic systems, which can be activated back in place
-of the new ones.
-<br>It is currently being revamped to add original OSI features.
-<br>**Beware, it's still not 100% complete!**
+- **UltimaLive World Engine**: Native real-time map/static tile streaming, character fog-of-war map discovery (`CUltimaLiveDiscovery`), C++ graphic harvesting with dynamic tree chopping & scheduled regrowth (`CUltimaLiveLumber`), dynamic vein mining (`CUltimaLiveMining`), and sector overlays.
+- **External Login Microservice**: Decoupled Python multi-shard login server with SQLite/MariaDB storage, AuthID token authentication, and optional native C++ `sphere_login_crypto` module.
+- **Internal REST API Server**: Embedded C++ HTTP REST server (`CInternalApiServer`) for external web tool integration, status polling, and session verification.
+- **Vendor Buy Transaction Engine**: Optimized purchasing helper (`VendorBuyHelper`) preventing container item overflows and eliminating memory bloat during shop transactions.
+- **Extended Ships & Housing**: Native multi-ship registry per account/character (`MaxShips`, `AddShip`, `DelShip`, `Ships`, `GetShipPos`, `SHIP.x` refs), house design item commit triggers (`@HouseDesignCommitItem`, `MAXZ`), and custom multi gump handling.
+- **Movement Prediction & Network Sync**: Rubber-banding elimination, sequence-aligned movement ACK/REJ pipeline (for 0x02 and 0xF0 SA packets), Enhanced Client (EC) speech color overrides (`SpeechColorOverride`), and client encryption 115/116 support.
+- **C++20 Concurrency & Memory Safety**: Smart pointer memory management (`std::unique_ptr`), lock hygiene, atomic ref-counts, and strict directory layering integrity (`check-layering.sh`).
 
-+ <a href="https://github.com/Sphereserver/Scripts-X">Current (most updated)</a>
-+ <a href="https://github.com/Sphereserver/Scripts-X/releases">Milestone releases</a>
+---
 
-## Resources
+## ⚡ Quick Start (Building from Source)
 
-+ <a href="https://wiki.spherecommunity.net/">Scripting guide</a>
-+ <a href="https://forum.spherecommunity.net/sshare.php">ScriptShare</a>
-+ <a href="https://www.sphereserver.net/">SphereCommunity website</a>
-
-### Coming from a different SphereServer version?
-
-+ From 0.56d? <a href="docs/Porting%20from%200.56%20to%20X.txt">Here</a> a list of major scripting changes!
-+ From an older 0.55 or 0.56 version? <a href="docs/Porting%20from%200.55%20to%200.56.txt">This</a> might help resuming major changes until 0.56d.
-
-## Why the fork?
-
-This branch started in 2016 from a slow and radical rework of SphereServer 0.56d, while trying to preserve script compatibility with the starting branch.
-Though, something has changed script-wise, so we suggest to take a look <a href="docs/Porting%20from%200.56%20to%20X.txt">here</a>.
-Most notable changes (right now) are:
-
-+ Bug fixes and heavy changing of some internal behaviours, with the aim to achieve truly better **speed** and **stability**;
-+ Support for x86_64 (64 bits) and ARM architectures, Mac OSX builds, Clang and GCC Linux builds, MinGW compiler for Windows;
-+ CMake is now the standard way to generate updated build and project files;
-+ Switched from MySQL 5.x to MariaDB client;
-+ Added (and still adding) comments to the code to make it more understandable;
-+ Reorganization of directories and files, avoiding big files with thousands of lines;
-+ Code refactoring, updating to most recent programming standards and to the conventions described below.
-
-## Running
-
-### Required libraries (Windows)
-
-+ `libmariadb.dll` (MariaDB Client v10.\* package), found in `lib/bin/*cpu_architecture*/mariadb/libmariadb.dll`
-
-### Required libraries (Linux)
-
-+ MariaDB Client library. Get it from the following sources.
-  + From MariaDB website  
-    See <https://mariadb.com/docs/skysql/connect/clients/mariadb-client/>
-  + Ubuntu and Debian repositories  
-    Ubuntu: Enable "universe" repository: `sudo add-apt-repository universe`  
-    Install MariaDB client: `sudo apt-get install mariadb-client` or `sudo apt-get install libmariadb3` (depends on the OS version)
-  + CentOS - Red Hat Enterprise Linux - Fedora repositories  
-    Then install MariaDB client via yum (CentOS or RH) or dnf (Fedora): `mariadb-connector-c`
-
-### Required libraries (MacOS)
-
-+ Install MariaDB Client library via `brew install mariadb-connector-c`
-
-## Building the server from the source
-
-### Generating the project files
-
-Only recent compilers are supported, since Sphere uses C++20 features: the newer the compiler, the better. Oldest compiler versions supporting C++20: Visual Studio 2019 version 16.11, GCC 8, MinGW distributions using GCC 8, Clang version 10.  
-No pre-built project files are included. You need to build Visual Studio solution (.sln), Makefiles or Ninja Build files (or project files for other IDE or build systems) with CMake.  
-Below there is a small guide.  
-You can use CMake GUI (graphical interface) or its CLI (command line interface).  
-To pass a flag to using the CLI, just prepend `-D` to the name of the variable, then assign the value with the equal sign, eg: `-DFOO=TRUE`.  
-  
-Before starting: does CMake give you an error? Ensure that you have Git installed, and if you are on Windows ensure also that the Git executable was added to the PATH environmental variable
- (you'll need to add it manually if you are using Git Desktop,
- <a href="https://stackoverflow.com/questions/26620312/installing-git-in-path-with-github-client-for-windows?answertab=votes#tab-top">here's a quick guide</a>).
-
-+ Select a **Generator**  
-  Tells CMake which kind of project file to generate (Visual Studio, makefile, ninja build file...)
-  + GUI: it's the first thing CMake will ask you (well, after Sphere source directory)
-  + CLI: use -G flag, example: `-G "Visual Studio 17 2022"` or `-G Ninja`.
-
-+ Select a **Toolchain**  
-  When generating project files, the easiest way is to use the provided OS-specific CMake toolchain file to automatically pass the right options to the selected compiler.  
-  You can find them in the `cmake/toolchains/` folder.  
-  If you don't specify a toolchain, CMake will pick the native one as default.  
-  How to set a toolchain:
-  + Via CMake GUI: when configuring for the first time the project, choose "Specify toolchain file for cross-compiling", then on the next step you'll be allowed to select the toolchain file.
-  + Via CMake CLI (command line interface): pass the parameter `-DCMAKE_TOOLCHAIN_FILE="..."`
-  
-+ Build **Configuration** (type)  
-  When using Makefiles or Ninja, you can specify a build type by setting (also this via GUI or CLI) `CMAKE_BUILD_TYPE="build"`, where build is **Nightly**, **Debug** or **Release**. If the build type was not set, by default the makefiles for all three build types are generated.  
-  **Debug** build is expected to be slow, and it's to be used, you guessed it, for debugging purposes (best coupled with a debugger or with sanitizers enabled, more on them right below), so don't use it for a live shard!  
-
-Other useful CMake flags:
-
-+ You can add other compiler flags with the custom variables `C_FLAGS_EXTRA`, `CXX_FLAGS_EXTRA`, `CMAKE_EXE_LINKER_FLAGS_EXTRA`.
-+ Enable Sanitizers: `USE_ASAN[=ON]`, `USE_UBSAN`, `USE_LSAN`, etc.
-  If you are using Address Sanitizer, Undefined Behaviour Sanitizer, Leak Sanitizer on Windows, it might be useful to redirect stderr to stdout to correctly show the output: `SphereSvrX64_nightly > Sphere_ASan_log.txt 2>&1`.
-  Remember to set up Sanitizers settings by setting the respective shell variables. To ease this, there are some batch/shell scripts doing that for you inside `utilities/`.
-+ `CROSSCOMPILING_ARCH`: set this to TRUE to tell the compiler you are building binary files for a different architecture (not from x86_64 to x86, but for example from x86 to ARM).
-
-Example to build makefiles on Linux for a 64 bits Nightly version, inside the "build" directory (run the command inside the project's root folder):  
+Requirements: C++20 compiler (VS 2019+, GCC 8+, Clang 10+), CMake 3.16+, Git.
 
 ```bash
+# Clone the repository
+git clone https://github.com/Sphereserver/Source-X.git
+cd Source-X
+
+# Configure with CMake (Linux 64-bit Nightly example)
 mkdir build
-cmake -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/Linux-GNU-x86_64.cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE="Nightly" -B ./build -S ./
+cmake -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/Linux-GNU-x86_64.cmake \
+      -G "Unix Makefiles" \
+      -DCMAKE_BUILD_TYPE="Nightly" \
+      -B ./build -S ./
+
+# Compile
+cmake --build ./build --config Nightly
 ```
 
-### Compiling
+For complete compilation parameters, sanitizers (`USE_ASAN`), and platform-specific guides, read the **[Installation Guide](docs/installation.md)**.
 
-#### Installing the required packages on Linux
+---
 
-Building will require more packages than the ones needed to run Sphere.
+## 📦 Releases & Scripts
 
-+ Ubuntu and Debian  
-  Install these additional packages:
-  + Build tools (other than the compiler): `sudo apt-get install git cmake`.
-  + MariaDB client: `sudo apt-get install libmariadb-dev` and  `libmariadb3` or `mariadb-client` (depends on the OS version)  
-  If you are on a 64 bits architecture, but you want to compile (or execute) a 32 bits binary, you will need to
-  install MariaDB packages adding the postfix `:i386` to each package name.
+### Server Core Releases
 
-+ CentOS - Red Hat Enterprise Linux - Fedora
-  Install these additional packages via yum (CentOS or RH) or dnf (Fedora).
-  + Build tools (other than the compiler): `git cmake glibc-devel`
-  + MariaDB client: `mariadb-connector-c mariadb-connector-c-devel`  
-  If you are on a 64 bits architecture, but you want to compile (or execute) a 32 bits binary, you will need to install MariaDB packages adding the postfix `.i686` to each package name.
+| Branch: Master (Stable Pre-Releases) | Branch: Dev (Active Development) |
+|:------------------------------------|:---------------------------------|
+| [![GitHub last commit on Master branch](https://img.shields.io/github/last-commit/Sphereserver/Source-X/master.svg)](https://github.com/Sphereserver/Source-X/) &nbsp; [Changelog](Changelog.txt) | [![GitHub last commit on Dev branch](https://img.shields.io/github/last-commit/Sphereserver/Source-X/dev.svg)](https://github.com/Sphereserver/Source-X/tree/dev) &nbsp; [Changelog](Changelog.txt) |
+| **Nightly Builds**: <a href="https://github.com/Sphereserver/Source-X/releases">GitHub Nightly Releases</a> | **Sphere Community**: <a href="https://forum.spherecommunity.net/sshare.php?srt=4">Downloads</a> |
 
-#### Compiling on Linux
+### Official ScriptPack
 
-Just run `cmake --build .` in the build directory (the one where you have asked CMake to create its files).
+The official script pack is fully compatible with SphereServer X syntax and features while preserving classic systems:
+- [Scripts-X GitHub Repository](https://github.com/Sphereserver/Scripts-X)
+- [Scripts-X Milestone Releases](https://github.com/Sphereserver/Scripts-X/releases)
 
-## Debian package
+---
 
-Debian package is an installation package for Linux Debian and its derivates (Ubuntu, Linux Mint, etc.) and intended to 
-be run as a service. Folder structure is as follows:
-- Binary is located in `/usr/bin/` directory (use `which sphereserver` to locate it).
-- Configuration files (ini) are in `/etc/sphereserver/` directory.
-- Log files are stored in `/var/log/sphereserver/` directory.
-- Everything else is in `/opt/sphereserver/`.
+## 🐧 Debian Daemon Package (`packaging/`)
 
-These paths are automatically replaced in sphere.ini during installation.
+SphereServer X can be compiled and installed as a native Linux `systemd` service:
+- Binary location: `/usr/bin/sphereserver`
+- Configuration: `/etc/sphereserver/sphere.ini`
+- Server root: `/opt/sphereserver/`
+- Logs: `/var/log/sphereserver/`
 
-### Build
+See [docs/installation.md#debian--ubuntu-package-installation-packaging](docs/installation.md#debian--ubuntu-package-installation-packaging) for build and installation steps (`sudo systemctl start sphereserver`).
 
-Building deb package is pretty straightforward. The requirements are the same, as you would compile code by hand. One
-extra requirement is _debhelper_ package (`sudo apt install debhelper`).
+---
 
-**Step by step building:**
-1) Clone repository.
-2) Change directory to wherever you cloned repository and then go to `packaging` directory.
-3) Since we are in nightly, there is no actual SemVer changelog that we can include, and we have to use workaround to
-   generate one. By running `cat debian/data/changelog | sed -e "s/@version@/$(git rev-list --count HEAD)/" -e "s/@date@/$(date -R)/" > debian/changelog`
-   you will generate one. This command takes deb changelog template (in `debian/data/changelog`) and replaces __version__ 
-   and __date__ variables with git revision and current date.
-4) Build package by running `dpkg-buildpackage -us -uc -b` (arguments are `-b` = build, `-us` and `-uc` = don't sign 
-   built files with OpenPGP key). This will compile sources and create debian package, which will be stored in the root 
-   of the project directory (i.e. `/home/dev/source-x/`). The cmake is predefined to build a Linux x86_64 Nightly version 
-   of SphereServer. All build commands and switches are defined in `debian/rules` file.
+## 👥 Contributing & Licensing
 
-### Installation
-
-When you download or build the package, you have to make it executable `sudo chmod +x FILENAME.deb`. Then you can 
-install the package by running `sudo apt install FILENAME.deb`. The installation process will download required 
-dependencies, show you some info about SphereServer being in nightly version, create an owner game account (admin/admin), 
-create dedicated linux user `sphereserver`, directory structure and service files for you.
-
-After installation, you will have to provide mul files and scripts to `/opt/sphereserver/mul/` and`/opt/sphereserver/scripts/` 
-folder and `AGREE=1` in sphere.ini.
-
-When you are finished with configuration, you can enable/start services by running `sudo systemctl enable sphereserver` 
-and `sudo systemctl start sphereserver`. To check, if service is running, type `systemctl status sphereserver`, check 
-the journal (`journalctl -u sphereserver`) or sphere logs.
-
-### Updating
-
-Updating is the same as installation, download / build package, run `sudo chmod +x FILENAME.deb` and `sudo apt install FILENAME.deb`. 
-If any changes happened in ini files and are in conflict with your settings, you will be asked to review them.
-
-### Removal
-
-To remove sphereserver, run `sudo apt remove sphereserver` and `sudo apt remove sphereserver --purge`. All files related
-to sphereserver will be deleted.
-
-## Contributing
-
-See [Contributors' Guide](CONTRIBUTING.md) for details.
-
-## Licensing
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details on code style, git workflows, and pull requests.
 
 Copyright 2026 SphereServer development team.  
-
-Licensed under the Apache License, Version 2.0 (the "License").  
-You may not use any file of this project except in compliance with the License.  
-You may obtain a copy of the License at <http://www.apache.org/licenses/LICENSE-2.0>
+Licensed under the **Apache License, Version 2.0**. See [LICENSE](LICENSE) for details.
