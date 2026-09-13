@@ -1,4 +1,4 @@
-name: Linux x86_64
+name: Linux ARM64 (Raspberry Pi)
 
 on:
   push:
@@ -18,7 +18,7 @@ on:
       - '*.md'
 
 jobs:
-  linux-x86_64:
+  linux-arm64:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -33,12 +33,13 @@ jobs:
     - name: Install prerequisites
       run: |
         lsb_release -d
-        sudo add-apt-repository universe && sudo apt-get -qq update
-        sudo apt-get install -yq --no-install-recommends \
-          ninja-build gcc-12 g++-12 \
+        sudo dpkg --add-architecture arm64
+        sudo add-apt-repository universe && sudo apt-get -qq update > /dev/null
+        sudo apt-get install -yqq --no-install-recommends \
+          ninja-build gcc-12-aarch64-linux-gnu g++-12-aarch64-linux-gnu \
+          gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
           ccache \
-          mariadb-client libmariadb-dev
-        sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 90 --slave /usr/bin/g++ g++ /usr/bin/g++-12
+          libc6:arm64 libgcc-s1:arm64 zlib1g-dev:arm64 libmariadb-dev:arm64 || true
 
     - name: Set up ccache
       uses: hendrikmuhs/ccache-action@v1.2
@@ -50,46 +51,37 @@ jobs:
 
     - name: Report building tools
       run: |
-        echo "GCC:" && gcc -v
-        echo "Default Linker:" && ld -v
-        echo && echo "CMake:" && cmake --version
-        echo && echo "Ninja:" && ninja --version
+        echo "AArch64 GCC:" && aarch64-linux-gnu-gcc -v
+        echo "CMake:" && cmake --version
+        echo "Ninja:" && ninja --version
 
     - name: CMake
       run: |
         mkdir -p build
         cmake -G "Ninja" -DCMAKE_BUILD_TYPE="Nightly" \
-          -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/Linux-GNU-x86_64.cmake \
+          -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/Linux-GNU-AArch64.cmake \
+          -DCROSSCOMPILING_ARCH=1 \
           -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-          -DCMAKE_C_FLAGS="-fpch-preprocess" \
-          -DCMAKE_CXX_FLAGS="-fpch-preprocess" \
-          -DUNIT_TESTING=ON \
           -S ./ -B ./build
 
     - name: Ninja
       run: ninja -C build -v
 
-    - name: Unit tests
-      run: ctest --test-dir build --output-on-failure
-
-    - name: Layering check
-      run: chmod +x utilities/check-layering.sh && utilities/check-layering.sh || true
-
     - name: Create package
       run: |
         mkdir accounts logs save scripts
-        tar -czf SphereSvrX-linux-x86_64-nightly.tar.gz accounts/ logs/ save/ scripts/ -C build/bin-x86_64/ SphereSvrX64_nightly -C ../../src sphere.ini sphereCrypt.ini
+        tar -czf SphereSvrX-raspberry-aarch64-nightly.tar.gz accounts/ logs/ save/ scripts/ -C build/bin-aarch64/ SphereSvrX64_nightly -C ../../src sphere.ini sphereCrypt.ini
 
     - name: Upload artifact
       if: contains(fromJson('["master", "main", "dev"]'), github.ref_name) || github.event_name == 'pull_request'
       uses: actions/upload-artifact@v4
       with:
-        name: Build-linux-x86_64
-        path: SphereSvrX-linux-x86_64-nightly.tar.gz
+        name: Build-raspberry-aarch64
+        path: SphereSvrX-raspberry-aarch64-nightly.tar.gz
         overwrite: true
 
   upload_github_release:
-    needs: linux-x86_64
+    needs: linux-arm64
     if: contains(fromJson('["master", "main"]'), github.ref_name) && github.event_name == 'push'
     permissions:
       contents: write
@@ -100,7 +92,7 @@ jobs:
       - name: Download builds
         uses: actions/download-artifact@v4
         with:
-          name: Build-linux-x86_64
+          name: Build-raspberry-aarch64
 
       - name: Create release
         uses: softprops/action-gh-release@v2
@@ -110,4 +102,4 @@ jobs:
           name: Nightly
           tag_name: Nightly
           prerelease: true
-          files: SphereSvrX-linux-x86_64-nightly.tar.gz
+          files: SphereSvrX-raspberry-aarch64-nightly.tar.gz

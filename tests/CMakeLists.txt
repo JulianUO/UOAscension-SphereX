@@ -19,7 +19,7 @@ function(setup_tests)
         target_link_libraries(${tgt} PRIVATE doctest::doctest)
         target_compile_definitions(${tgt} PRIVATE UNIT_TESTING)
         # Doctest for some reason uses NaN, which is disabled by -ffast-math
-        if("${CXX_COMPILER_ID}" STREQUAL "MSVC")
+        if(MSVC)
             target_compile_options(${tgt} PRIVATE /fp:precise)
         else()
             target_compile_options(${tgt} PRIVATE -fno-finite-math-only)
@@ -35,7 +35,11 @@ function(setup_tests)
 
         # Register with CTest
         add_test(NAME all_tests_${tgt}
-                COMMAND ${tgt})
+                COMMAND ${tgt}
+                WORKING_DIRECTORY "$<TARGET_FILE_DIR:${tgt}>")
+        set_tests_properties(all_tests_${tgt} PROPERTIES
+            WORKING_DIRECTORY "$<TARGET_FILE_DIR:${tgt}>"
+        )
     endforeach()
 endfunction()
 

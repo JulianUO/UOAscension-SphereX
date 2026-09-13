@@ -2,16 +2,12 @@ name: Windows x86
 
 on:
   push:
-#    branches:
-#      - 'master'
-#      - 'main'
-#      - 'dev'
-      paths-ignore:
-        - '.gitignore'
-        - '.gitattributes'
-        - '**.txt'
-        - '**.md'
-        - '**.rc'
+    paths-ignore:
+      - '.gitignore'
+      - '.gitattributes'
+      - '**.txt'
+      - '**.md'
+      - '**.rc'
   pull_request:
     branches:
       - 'master'
@@ -21,34 +17,34 @@ on:
 jobs:
   windows-x86:
     runs-on: windows-2022
-
     permissions:
       contents: read
       actions: read
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v6
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
+
     - name: Add msbuild to PATH
-      uses: microsoft/setup-msbuild@v3
+      uses: microsoft/setup-msbuild@v2
+
     - name: CMake
-      run: cmake -G "Visual Studio 17 2022" -A Win32 .\
+      run: cmake -G "Visual Studio 17 2022" -A Win32 -DCMAKE_BUILD_TYPE="Nightly" .\
+
     - name: MSBuild
       run: msbuild SphereServer.sln /verbosity:minimal /maxcpucount /p:Configuration=Nightly
-    - name: Create package
-      run:  |
-            pwd
-            mkdir accounts, logs, save, scripts
-            7z a SphereSvrX-win-x86-nightly.zip accounts\ logs\ save\ scripts\ .\bin-x86\Nightly\SphereSvrX32_nightly.exe .\src\sphere.ini .\src\sphereCrypt.ini .\lib\_bin\x86\mariadb\libmariadb.dll
 
-    # Upload artifact linked to the workflow run - only if the run is for a pull request, or for selected branches
+    - name: Create package
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force -Path accounts, logs, save, scripts | Out-Null
+        7z a SphereSvrX-win-x86-nightly.zip accounts logs save scripts .\bin-x86\Nightly\SphereSvrX32_nightly.exe .\src\sphere.ini .\src\sphereCrypt.ini .\lib\_bin\x86\mariadb\libmariadb.dll
+
     - name: Upload artifact
       if: contains(fromJson('["master", "main", "dev"]'), github.ref_name) || github.event_name == 'pull_request'
-      uses: actions/upload-artifact@v7
-      env:
-         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      uses: actions/upload-artifact@v4
       with:
         name: Build-win-x86
         path: SphereSvrX-win-x86-nightly.zip
@@ -56,8 +52,7 @@ jobs:
 
   upload_github_release:
     needs: windows-x86
-    # Upload artifact linked to GitHub RELEASE we are creating - only if the run is for a pull request, or for selected branches
-    if: contains(fromJson('["master", "main"]'), github.ref_name)
+    if: contains(fromJson('["master", "main"]'), github.ref_name) && github.event_name == 'push'
     permissions:
       contents: write
       actions: read
@@ -65,14 +60,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download builds
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: Build-win-x86
-          merge-multiple: true
-          run-id: ${{ github.run_id }}
 
       - name: Create release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -80,23 +73,3 @@ jobs:
           tag_name: Nightly
           prerelease: true
           files: SphereSvrX-win-x86-nightly.zip
-
-  upload_selfhost_release:
-    needs: windows-x86
-    if: contains(fromJson('["master", "main"]'), github.ref_name) && (github.repository == 'SphereServer/Source-X')
-    permissions:
-      contents: write
-      actions: read
-
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download builds
-        uses: actions/download-artifact@v8
-        with:
-          name: Build-win-x86
-          merge-multiple: true
-          run-id: ${{ github.run_id }}
-      - name: Push release
-        run: |
-          curl -sST "{SphereSvrX-win-x86-nightly.zip}" -u ${{secrets.UP_USER}}:${{secrets.UP_PASS}} ${{secrets.UP_WHERE}}
-          curl -sST "{SphereSvrX-win-x86-nightly.zip}" --ftp-pasv --ssl --ssl-reqd -u '${{secrets.FTP_USER}}:${{secrets.FTP_PASS}}' ${{secrets.FTP_LOC}}/release/prod/

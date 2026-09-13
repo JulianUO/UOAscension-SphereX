@@ -1,4 +1,4 @@
-name: Create/upload auxiliary files to the release.
+name: Create/upload auxiliary files to the release
 
 on:
   push:
@@ -12,9 +12,7 @@ on:
 
 jobs:
   upload_github_release:
-    # Upload artifact linked to GitHub RELEASE we are creating - only if the run is for a pull request, or for selected branches
-    #if: contains(fromJson('["master", "main"]'), github.ref_name)
-
+    if: contains(fromJson('["master", "main"]'), github.ref_name) && github.event_name == 'push'
     permissions:
       contents: write
       actions: read
@@ -22,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -30,7 +28,7 @@ jobs:
         run: git log --pretty=format:"%ad %an %s" --date=short > Git-Changelog.txt
 
       - name: Add auxiliary files to the release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:

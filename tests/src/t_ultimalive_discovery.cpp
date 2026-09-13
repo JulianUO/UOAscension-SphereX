@@ -3,13 +3,14 @@
  * Unit tests for UltimaLive per-character map discovery.
  */
 
-#include <catch2/catch_test_macros.hpp>
+#include <doctest/doctest.h>
 
 #include "../../src/game/ultimalive/CUltimaLive.h"
 #include "../../src/game/ultimalive/CUltimaLiveDiscovery.h"
 #include "../../src/common/CPointBase.h"
+#include "../../src/common/CScript.h"
 
-TEST_CASE("UltimaLive discovery reveal range", "[ultimalive][discovery]")
+TEST_CASE("UltimaLive discovery reveal range")
 {
 	CUltimaLiveDiscovery disc;
 	disc.SetEnabled(true);
@@ -30,7 +31,7 @@ TEST_CASE("UltimaLive discovery reveal range", "[ultimalive][discovery]")
 	CHECK_FALSE(disc.IsBlockInRevealRange(1, charBX, charBY, pt));
 }
 
-TEST_CASE("UltimaLive discovery mark and query", "[ultimalive][discovery]")
+TEST_CASE("UltimaLive discovery mark and query")
 {
 	CUltimaLiveDiscovery disc;
 	disc.SetEnabled(true);
@@ -47,7 +48,7 @@ TEST_CASE("UltimaLive discovery mark and query", "[ultimalive][discovery]")
 	CHECK(blocks[0] == 42);
 }
 
-TEST_CASE("UltimaLive discovery disabled passes through", "[ultimalive][discovery]")
+TEST_CASE("UltimaLive discovery disabled passes through")
 {
 	CUltimaLiveDiscovery disc;
 	disc.SetEnabled(false);
@@ -61,16 +62,23 @@ TEST_CASE("UltimaLive discovery disabled passes through", "[ultimalive][discover
 	CHECK(disc.IsBlockInRevealRange(0, 100, 100, pt));
 }
 
-TEST_CASE("UltimaLive discovery LoadKey", "[ultimalive][discovery]")
+TEST_CASE("UltimaLive discovery LoadKey")
 {
-	g_UltimaLive.LoadKey(CSString("ULTIMALIVEDISCOVERY=1"));
-	g_UltimaLive.LoadKey(CSString("ULTIMALIVEDISCOVERYVIEWBLOCKS=5"));
-	g_UltimaLive.LoadKey(CSString("ULTIMALIVEDISCOVERYREVEALONLOGIN=0"));
+	CScript s;
+	s.ParseKey("ULTIMALIVEDISCOVERY", "1");
+	g_UltimaLive.LoadKey(s);
+	s.ParseKey("ULTIMALIVEDISCOVERYVIEWBLOCKS", "5");
+	g_UltimaLive.LoadKey(s);
+	s.ParseKey("ULTIMALIVEDISCOVERYREVEALONLOGIN", "0");
+	g_UltimaLive.LoadKey(s);
 	CHECK(g_UltimaLive.IsDiscoveryEnabled() == false); // UltimaLive not enabled
-	g_UltimaLive.LoadKey(CSString("ULTIMALIVEENABLED=1"));
+	s.ParseKey("ULTIMALIVEENABLED", "1");
+	g_UltimaLive.LoadKey(s);
 	CHECK(g_UltimaLive.IsDiscoveryEnabled());
 	CHECK(g_UltimaLive.GetDiscoveryViewBlocks() == 5);
 	CHECK_FALSE(g_UltimaLive.IsDiscoveryRevealOnLogin());
-	g_UltimaLive.LoadKey(CSString("ULTIMALIVEENABLED=0"));
-	g_UltimaLive.LoadKey(CSString("ULTIMALIVEDISCOVERY=0"));
+	s.ParseKey("ULTIMALIVEENABLED", "0");
+	g_UltimaLive.LoadKey(s);
+	s.ParseKey("ULTIMALIVEDISCOVERY", "0");
+	g_UltimaLive.LoadKey(s);
 }

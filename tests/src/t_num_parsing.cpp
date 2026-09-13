@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 #include "../../src/common/CExpression.h"
+#include <ostream>
 #include <string>
 #include <string_view>
 #include <cctype> // toupper

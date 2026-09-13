@@ -3,10 +3,11 @@
  * Unit tests for UltimaLive Fletcher16 CRC and block id math.
  */
 
-#include <catch2/catch_test_macros.hpp>
+#include <doctest/doctest.h>
 
 #include "../../src/game/ultimalive/CUltimaLive.h"
 #include "../../src/game/uo_files/CUOMapList.h"
+#include "../../src/common/CScript.h"
 
 namespace
 {
@@ -23,7 +24,7 @@ namespace
 	}
 }
 
-TEST_CASE("UltimaLive Fletcher16 known vector", "[ultimalive]")
+TEST_CASE("UltimaLive Fletcher16 known vector")
 {
 	const byte data[] = { 1, 2, 3, 4, 5 };
 	const word crc = Fletcher16(data, sizeof(data));
@@ -31,11 +32,15 @@ TEST_CASE("UltimaLive Fletcher16 known vector", "[ultimalive]")
 	CHECK(crc != 0xFFFF);
 }
 
-TEST_CASE("UltimaLive LoadKey enables feature", "[ultimalive]")
+TEST_CASE("UltimaLive LoadKey enables feature")
 {
-	g_UltimaLive.LoadKey(CSString("ULTIMALIVEENABLED=1"));
-	g_UltimaLive.LoadKey(CSString("ULTIMALIVESHARDIDENTIFIER=TestShard"));
+	CScript s;
+	s.ParseKey("ULTIMALIVEENABLED", "1");
+	g_UltimaLive.LoadKey(s);
+	s.ParseKey("ULTIMALIVESHARDIDENTIFIER", "TestShard");
+	g_UltimaLive.LoadKey(s);
 	CHECK(g_UltimaLive.IsEnabled());
 	CHECK(strcmp(g_UltimaLive.GetShardIdentifier(), "TestShard") == 0);
-	g_UltimaLive.LoadKey(CSString("ULTIMALIVEENABLED=0"));
+	s.ParseKey("ULTIMALIVEENABLED", "0");
+	g_UltimaLive.LoadKey(s);
 }

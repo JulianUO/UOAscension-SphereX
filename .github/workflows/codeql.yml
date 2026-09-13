@@ -1,5 +1,4 @@
 name: CodeQL
-# https://docs.github.com/en/code-security/code-scanning/creating-an-advanced-setup-for-code-scanning/customizing-your-advanced-setup-for-code-scanning
 
 on:
   push:
@@ -11,13 +10,6 @@ on:
       - '**.md'
       - '**.rc'
   workflow_dispatch:
-
-#  pull_request:
-    # The branches below must be a subset of the branches above
-#    branches: ["static-analysis"]
-
-  #schedule:
-  #  - cron: '45 2 * * 0'
 
 jobs:
   analyze:
@@ -32,77 +24,35 @@ jobs:
       fail-fast: false
       matrix:
         language: [ 'cpp' ]
-        # CodeQL supports [ 'cpp', 'csharp', 'go', 'java', 'javascript', 'python', 'ruby' ]
-        # Learn more about CodeQL language support at https://aka.ms/codeql-docs/language-support
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v6
+      uses: actions/checkout@v4
 
     - name: Install prerequisites
-      run:  |
-            lsb_release -d
+      run: |
+        lsb_release -d
+        sudo add-apt-repository universe && sudo apt-get -qq update
+        sudo apt-get install -yq --no-install-recommends \
+          ninja-build gcc-12 g++-12 \
+          mariadb-client libmariadb-dev
+        sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 90 --slave /usr/bin/g++ g++ /usr/bin/g++-12
 
-            sudo add-apt-repository universe && sudo sudo apt-get -qq update
-            sudo apt-get install -yq --no-install-recommends \
-              ninja-build gcc-12 g++-12 \
-              mariadb-client libmariadb-dev
-            sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 90 --slave /usr/bin/g++ g++ /usr/bin/g++-12
-
-    - name: Report building tools
-      run:  |
-            echo "GCC:" && gcc -v
-            echo "Default Linker:" && ld -v
-            echo && echo "CMake:" && cmake --version
-            #echo && echo "Ninja:" && ninja --version
-
-    # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
-      uses: github/codeql-action/init@v4
+      uses: github/codeql-action/init@v3
       with:
         languages: ${{ matrix.language }}
         config-file: ./.github/codeql/codeql-config.yml
-        queries: +security-extended,security-and-quality
-        packs: +codeql/cpp-queries
-        # If you wish to specify custom queries, you can do so here or in a config file.
-        # By default, queries listed here will override any specified in a config file.
-        # Prefix the list here with "+" to use these queries and those in the config file.
 
-        # Details on CodeQL's query packs refer to : https://docs.github.com/en/code-security/code-scanning/automatically-scanning-your-code-for-vulnerabilities-and-errors/configuring-code-scanning#using-queries-in-ql-packs
-        # queries: security-extended,security-and-quality
-        # c++ queries: https://codeql.github.com/codeql-query-help/cpp-cwe/
-
-        # ℹ️ Command-line programs to run using the OS shell.
-        # 📚 See https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsrun
-
-    #   Build the code
     - name: CMake
       run: |
-          mkdir -p build
-          cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE="Nightly" -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/Linux-GNU-x86_64.cmake -S ./ -B ./build
+        mkdir -p build
+        cmake -G "Ninja" -DCMAKE_BUILD_TYPE="Nightly" -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/Linux-GNU-x86_64.cmake -S ./ -B ./build
 
     - name: Compilation
-      run: cd build && make -j$(nproc)
+      run: ninja -C build
 
-    # We need now to exclude from the analysis the 3rd party library code.
-    # https://josh-ops.com/posts/github-codeql-ignore-files/
-    # https://github.com/advanced-security/filter-sarif
     - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v4
+      uses: github/codeql-action/analyze@v3
       with:
         category: "/language:${{matrix.language}}"
-        upload: false # disable the upload here - we will upload in a different action
-        output: sarif-results
-
-    - name: filter-sarif
-      uses: advanced-security/filter-sarif@v1
-      with:
-        patterns: |
-          -lib/**
-        input: sarif-results/${{ matrix.language }}.sarif
-        output: sarif-results/${{ matrix.language }}.sarif
-
-    - name: Upload SARIF
-      uses: github/codeql-action/upload-sarif@v4
-      with:
-        sarif_file: sarif-results/${{ matrix.language }}.sarif

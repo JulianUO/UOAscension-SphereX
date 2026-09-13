@@ -211,13 +211,24 @@ function(toolchain_exe_stuff)
 
     if(CMAKE_CL_64)
         set(OUTDIR "${CMAKE_BINARY_DIR}/bin-x86_64/")
+        set(MARIADB_DLL "${CMAKE_SOURCE_DIR}/lib/_bin/x86_64/mariadb/libmariadb.dll")
     else()
         set(OUTDIR "${CMAKE_BINARY_DIR}/bin-x86/")
+        set(MARIADB_DLL "${CMAKE_SOURCE_DIR}/lib/_bin/x86/mariadb/libmariadb.dll")
     endif()
     set_target_properties(spheresvr PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${OUTDIR}")
     set_target_properties(spheresvr PROPERTIES RUNTIME_OUTPUT_RELEASE "${OUTDIR}/Release")
     set_target_properties(spheresvr PROPERTIES RUNTIME_OUTPUT_NIGHTLY "${OUTDIR}/Nightly")
     set_target_properties(spheresvr PROPERTIES RUNTIME_OUTPUT_DEBUG "${OUTDIR}/Debug")
+
+    if(EXISTS "${MARIADB_DLL}")
+        add_custom_command(TARGET spheresvr POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${MARIADB_DLL}"
+                "$<TARGET_FILE_DIR:spheresvr>"
+            COMMENT "Copying libmariadb.dll to spheresvr output directory"
+        )
+    endif()
 
     #-- Custom .vcxproj settings (for now, it only affects the debugger working directory).
 

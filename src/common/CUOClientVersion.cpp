@@ -255,54 +255,22 @@ void CUOClientVersion::ApplyVersionFromStringOldFormat(lptstr ptcVersion) noexce
 void CUOClientVersion::ApplyVersionFromStringNewFormat(lptstr ptcVersion, bool fEnhancedClient) noexcept
 {
     // Get version of newer clients, which use only 4 numbers separated by dots (example: 6.0.1.1)
-
-    constexpr auto np = std::string_view::npos;
-    const std::string_view sv(ptcVersion);
-
-    const size_t dot1 = sv.find_first_of('.', 0);
-    if (dot1 == np)
+    tchar *piVer[4]{};
+    lptstr ptcVersionParsed = ptcVersion;
+    if (Str_ParseCmds(ptcVersionParsed, piVer, ARRAY_COUNT(piVer), ".") < 4)
     {
-    ret_err:
         g_Log.EventDebug("Invalid version string '%s' passed to CUOClientVersion::ApplyVersionFromStringNewFormat.\n", ptcVersion);
         return;
     }
 
-    const size_t dot2 = sv.find_first_of('.', dot1 + 1);
-    if (dot2 == np)
-        goto ret_err;
+    if (!piVer[0] || !piVer[1] || !piVer[2] || !piVer[3])
+        return;
 
-    const size_t dot3 = sv.find_first_of('.', dot2 + 1);
-    if (dot3 == np)
-        goto ret_err;
+    m_major = uint(atoi(piVer[0]));
+    m_minor = uint(atoi(piVer[1]));
+    m_revision = uint(atoi(piVer[2]));
+    m_build = uint(atoi(piVer[3]));
 
-    const std::string_view sv1(sv.data(), dot1);
-    const std::string_view sv2(sv.data() + dot1 + 1, dot2 - dot1 - 1);
-    const std::string_view sv3(sv.data() + dot2 + 1, dot3 - dot2 - 1);
-    const std::string_view sv4(sv.data() + dot3 + 1);
-
-    bool ok = true;
-    try
-    {
-        std::optional<uint> val1, val2, val3, val4;
-        ok = ok && (val1 = Str_ToU(sv1.data(), 10, sv1.length(), false)).has_value();
-        ok = ok && (val2 = Str_ToU(sv2.data(), 10, sv2.length(), false)).has_value();
-        ok = ok && (val3 = Str_ToU(sv3.data(), 10, sv3.length(), false)).has_value();
-        ok = ok && (val4 = Str_ToU(sv4.data(), 10, sv4.length(), false)).has_value();
-        if (!ok)
-            return;
-
-        m_major     = val1.value();
-        m_minor     = val2.value();
-        m_revision  = val3.value();
-        m_build     = val4.value();
-
-        if ((m_major < kuiECMajorVerOffset) && fEnhancedClient)
-            m_major += kuiECMajorVerOffset;
-    }
-    catch (std::bad_optional_access const&)
-    {
-        // Shouldn't really happen...
-        m_major = m_minor = m_revision = m_build = 0;
-        DEBUG_MSG(("std::bad_optional_access at CUOClientVersion::ApplyVersionFromStringNewFormat.\n"));
-    }
+    if ((m_major < kuiECMajorVerOffset) && fEnhancedClient)
+        m_major += kuiECMajorVerOffset;
 }

@@ -21,30 +21,31 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v5
+      uses: actions/checkout@v4
 
     - name: Install prerequisites
       run: |
-            sudo add-apt-repository universe && sudo apt-get -qq update
-            sudo apt-get install -yq --no-install-recommends \
-              ninja-build clang-18 \
-              mariadb-client libmariadb-dev
+        sudo add-apt-repository universe && sudo apt-get -qq update
+        sudo apt-get install -yq --no-install-recommends \
+          ninja-build clang-18 \
+          mariadb-client libmariadb-dev
 
     - name: Configure ASAN build with unit tests
       run: |
-            cmake -G "Ninja" -DCMAKE_BUILD_TYPE=Debug \
-              -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/Linux-Clang-x86_64.cmake \
-              -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18 \
-              -DUSE_ASAN=ON -DUSE_UBSAN=ON -DUSE_LSAN=ON \
-              -DUNIT_TESTING=ON \
-              -B build-asan -S .
+        cmake -G "Ninja" -DCMAKE_BUILD_TYPE=Debug \
+          -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/Linux-Clang-x86_64.cmake \
+          -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18 \
+          -DUSE_ASAN=ON -DUSE_UBSAN=ON -DUSE_LSAN=ON \
+          -DUNIT_TESTING=ON \
+          -B build-asan -S .
 
     - name: Build
       run: ninja -C build-asan
 
     - name: Run unit tests
       run: |
-            source utilities/configure-asan.sh
-            ctest --test-dir build-asan --output-on-failure
+        source utilities/configure-asan.sh
+        ctest --test-dir build-asan --output-on-failure
+
     - name: Layering baseline
       run: chmod +x utilities/check-layering.sh && utilities/check-layering.sh

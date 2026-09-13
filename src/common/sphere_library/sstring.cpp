@@ -263,12 +263,23 @@ bool cstr_to_num(
     // Check trailing characters
     if (!ignore_trailing_extra_chars)
     {
-        // Skip trailing whitespace
-        while (*str == ' ' || *str == '\t' || *str == '\r' || *str == '\n')
-            ++str;
+        if (stop_at_len)
+        {
+            while ((size_t(str - startDigits) < stop_at_len) && (*str == ' ' || *str == '\t' || *str == '\r' || *str == '\n'))
+                ++str;
 
-        if (*str != '\0')
-            return false;  // unexpected trailing characters
+            if ((size_t(str - startDigits) < stop_at_len) && *str != '\0')
+                return false;  // unexpected trailing characters within the slice
+        }
+        else
+        {
+            // Skip trailing whitespace
+            while (*str == ' ' || *str == '\t' || *str == '\r' || *str == '\n')
+                ++str;
+
+            if (*str != '\0')
+                return false;  // unexpected trailing characters
+        }
     }
 
     if (fIgnoreZeroDigits && ndigits == 0)

@@ -73,9 +73,9 @@ TEST_CASE("CPointBase::GetDir")\
     CPointBase ptOther;
     //DIR_TYPE def = DIR_N;
 
-    for (short x : {-20, -5, 0, 5, 20})
+    for (short x : {(short)-20, (short)-5, (short)0, (short)5, (short)20})
     {
-        for (short y : {-20, -5, 0, 5, 20})
+        for (short y : {(short)-20, (short)-5, (short)0, (short)5, (short)20})
         {
             ptOther = pt;
             ptOther.m_x += x;
