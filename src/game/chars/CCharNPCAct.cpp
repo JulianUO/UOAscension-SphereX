@@ -1244,10 +1244,10 @@ void CChar::NPC_Act_Wander()
     uint uiLookAroundChance = pTagOverride
                                           ? (uint)pTagOverride->GetValNum()
                                           : g_Cfg.m_iNPCWanderLookAroundChance;
-    uiLookAroundChance = maximum(uiLookAroundChance, 100);
+    uiLookAroundChance = minimum(uiLookAroundChance, 100);
 
     //if ( !(uiRand % (2u + TICKS_PER_SEC/2)) )
-    if (uiRand >= uiLookAroundChance)
+    if (uiRand < uiLookAroundChance)
     {
 		// NPC_LookAround() is very expensive, so since NPC_Act_Wander is called every tick for every char with ACTION == NPCACT_WANDER,
 		//	don't look around every time.

@@ -17,6 +17,7 @@
 #include "../CWorld.h"
 #include "../CWorldGameTime.h"
 #include "../CWorldMap.h"
+#include "../CWorldSearch.h"
 #include "../spheresvr.h"
 #include "../triggers.h"
 #include "CParty.h"
@@ -1268,6 +1269,53 @@ bool CClient::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command from
 				}
 			} break;
 
+        case CV_CLOSECONTAINER:
+        {
+            const CItem *pItem = nullptr;
+            if (s.HasArgs())
+            {
+                const CUID uid(s.GetArgDWVal());
+                if (!uid.IsItem())
+                    return false;
+                pItem = uid.ItemFind();
+            }
+            if (pItem != nullptr && pItem->IsType(IT_CONTAINER))
+                closeUIWindow(pItem, PacketCloseUIWindowType::Container);
+            break;
+        }
+
+        case CV_CLOSEVENDORMENU:
+        {
+            const CChar *pChar = m_pChar;
+            if (s.HasArgs())
+            {
+                const CUID uid(s.GetArgDWVal());
+                if (!uid.IsChar())
+                    return false;
+                pChar = uid.CharFind();
+                if (pChar)
+                    addVendorClose(pChar);
+            }
+            else
+            {
+                auto AreaChars = CWorldSearchHolder::GetInstance(pChar->GetTopPoint(), UO_MAP_VIEW_SIGHT);
+                for (;;)
+                {
+                    const CChar *pCharArea = AreaChars->GetChar();
+                    if (pCharArea == nullptr)
+                        break;
+                    if (pCharArea->m_pPlayer)
+                        continue;
+                    if (pCharArea == GetChar())
+                        continue;
+                    if (!pCharArea->NPC_IsVendor())
+                        continue;
+                    addVendorClose(pCharArea);
+                }
+            }
+            break;
+        }
+
 		case CV_CLOSEPAPERDOLL:
 			{
                 const CChar *pChar = m_pChar;
@@ -1489,6 +1537,12 @@ bool CClient::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command from
 			m_tmTile.m_ptFirst.InitPoint(); // Clear this first
 			m_tmTile.m_Code = CV_NUKECHAR;	// set nuke code.
 			addTarget( CLIMODE_TARG_TILE, g_Cfg.GetDefaultMsg( DEFMSG_SELECT_NUKE_CHAR_AREA ), true );
+			break;
+		case CV_NUKEITEM:
+			m_Targ_Text = s.GetArgRaw();
+			m_tmTile.m_ptFirst.InitPoint(); // Clear this first
+			m_tmTile.m_Code = CV_NUKEITEM;	// set nuke code.
+			addTarget( CLIMODE_TARG_TILE, g_Cfg.GetDefaultMsg( DEFMSG_SELECT_NUKE_AREA ), true );
 			break;
 
 		case CV_OPENPAPERDOLL:

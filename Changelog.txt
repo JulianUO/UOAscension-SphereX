@@ -4080,6 +4080,15 @@ When setting a property like MORE to the a spell or skill defname, trying to rea
 - Changed: Added 5 seconds timeout to DNS hostname resolution at startup (avoid getting stuck when connectivity is enabled but not working).
 - Changed: CANMASK formatted in worldsave files as hexadecimal number, instead of decimal.
 
+12-10-2025, Gladie
+- Fixed: Fight_Clear preserves pet ownership (MEMORY_IPET) and friend links by clearing combat bitmasks instead of deleting CItemMemory (#1497).
+
+25-11-2025, canerksk
+- Fixed: Fixed the issue where some items (hair, beard, etc.) were counted as items inside the corpse (Issue #1189) (#1523).
+
+19-12-2025, Gladie
+- Fixed: Corrected NpcLookAroundChance upper clamping (minimum vs maximum) and random roll evaluation logic in NPC_Act_Wander (#1535).
+
 2-12-2025, canerksk
 - Changed: Duplicate message deleted. (Issue #1519).
 
@@ -4121,6 +4130,12 @@ When setting a property like MORE to the a spell or skill defname, trying to rea
   - Added: Implemented Hit chance increase / decrease to sphere custom formula (0).
 - Fixed: Equiping armor and weapon with spelleffect could crash the SphereServer (#1538)
 
+24-03-2026, canerksk
+- Added: Optional bell curve parameter to SKILLCHECK (#1566).
+
+29-03-2026, DavideRei
+- Fixed: Restore light and weather update immediately when a player enters a new sector (#1568).
+
 31-03-2026, Drk84
 - Added: New locals for the @SpellEffect/@Effect triggers:
          local.IsSpellReflected (Read Only): Indicates if the spell was reflected because of the magic reflect flag.
@@ -4142,6 +4157,18 @@ When setting a property like MORE to the a spell or skill defname, trying to rea
 - Fixed: pre-AOS armor rating (AR) calculation (#1550).
 - Fixed NPCs can't cast spells from spellbook after respawn (#1551).
 
+26-05-2026, David Kindl
+- Fixed: Setup_Play allows login of lingering/reconnecting characters with idle warning instead of disconnection (mtwango/edebaa6).
+
+29-05-2026, canerksk
+- Added: NAME.PREFIX and NAME.SUFFIX support for items in addItemName, matching existing addCharName behaviour (#1587).
+
+30-05-2026, canerksk
+- Added: Ping-flood based speedhack detection via a 30-second sliding window on packet 0x73 (PingFloodMax in sphere.ini) (#1589).
+
+02-06-2026, canerksk
+- Added: CV_NUKEITEM command to delete only items in the region; CV_NUKE command now deletes both items and characters (#1590).
+
 01-07-2026, Julian (UOAscension port)
 - Added: UltimaLive full protocol integration (CUltimaLive, CUltimaLiveOverlay). Enables live on-the-fly map and static updates without client restart.
 - Added: UltimaLive Lumberjacking system (CUltimaLiveLumber) with dynamic tree falling and stump replacement driven by ultimalive/LumberHarvest/trees.ini.
@@ -4150,7 +4177,7 @@ When setting a property like MORE to the a spell or skill defname, trying to rea
 - Added: VendorBuyHelper module to ensure safe and transaction-safe multi-item vendor purchases without client packet desync.
 
 23-07-2026, canerksk
-- Added: New local variable local.Sound to @SpellFail/@Fail triggers (R/W). If you set local.sound = 0, no sound will be played.
+- Added: New local variable local.Sound to @SpellFail/@Fail triggers (R/W). If you set local.sound = 0, no sound will be played (#1520).
 
 15-08-2026, Julian (UOAscension port)
 - Added: Decoupled Python-based Login Server architecture (services/login-server/) supporting SQLite and MySQL backends for cross-shard account management.
@@ -4159,6 +4186,12 @@ When setting a property like MORE to the a spell or skill defname, trying to rea
 - Added: Session Registry (CSessionRegistry) to manage ephemeral one-time authentication tickets handed off from the Login Server to the game server.
 - Added: Comprehensive unit test suite (tests/) covering CUID, CSReferenceCount, UltimaLive streaming, discovery packets, and vendor transactions.
 - Added: Automated ASan and smoke test scripts for Linux and Windows pipelines (utilities/).
+
+11-09-2026, David Kindl
+- Fixed: Check if container owner really exists via dynamic_cast in CanContainerHold (#1600).
+
+13-09-2026, canerksk
+- Added: New client functions CLOSECONTAINER and CLOSEVENDORMENU (#1327).
 
 13-09-2026, Julian (UOAscension port)
 - Added: OptionFlags OF_UOAStatusBar. When enabled, PacketObjectStatus remaps Ascension status-bar fields:

@@ -1366,8 +1366,19 @@ bool CChar::Fight_Clear(CChar *pChar, bool fForced)
 		return false;
 
 	CItemMemory* pMemoryFight = Memory_FindObj(pChar->GetUID());
-	if ( pMemoryFight && ( pMemoryFight->IsMemoryTypes(MEMORY_FIGHT) || pMemoryFight->IsMemoryTypes(MEMORY_IRRITATEDBY) ) )
-		pMemoryFight->Delete();
+	if ( pMemoryFight )
+	{
+		const word wCombatTypes = MEMORY_FIGHT | MEMORY_IRRITATEDBY | MEMORY_HARMEDBY | MEMORY_AGGREIVED;
+		const word wRemainingTypes = pMemoryFight->GetMemoryTypes() & ~wCombatTypes;
+		if ( wRemainingTypes == MEMORY_NONE )
+		{
+			pMemoryFight->Delete();
+		}
+		else
+		{
+			pMemoryFight->SetMemoryTypes(wRemainingTypes);
+		}
+	}
 
 	// Go to my next target.
     if (m_Fight_Targ_UID == pChar->GetUID())
