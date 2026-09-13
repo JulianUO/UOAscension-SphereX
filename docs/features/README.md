@@ -1,6 +1,6 @@
-# SphereServer X — Features & Extensions Catalog
+# Sphere Server X — UOAscension Edition Features & Extensions Catalog
 
-This section details every major feature, architecture enhancement, microservice, and system module coded for the **SphereServer X** (`Source-X`) engine fork.
+This section details every major feature, architecture enhancement, microservice, and system module coded for the **Sphere Server X — UOAscension Edition** engine fork.
 
 ---
 

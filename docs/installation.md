@@ -1,6 +1,6 @@
-# SphereServer X — Installation & Compilation Guide
+# Sphere Server X — UOAscension Edition Installation & Compilation Guide
 
-This guide provides step-by-step instructions for installing dependencies, compiling **SphereServer X** (`Source-X`) from source code on Windows, Linux, and macOS, and deploying the server as a Linux systemd service via Debian packages.
+This guide provides step-by-step instructions for installing dependencies, compiling **Sphere Server X — UOAscension Edition** from source code on Windows, Linux, and macOS, and deploying the server as a Linux systemd service via Debian packages.
 
 ---
 

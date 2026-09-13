@@ -1,6 +1,6 @@
-# SphereServer X Documentation Index
+# Sphere Server X — UOAscension Edition Documentation Index
 
-Welcome to the **SphereServer X** (`Source-X`) documentation repository. Use this index to navigate server guides, architecture blueprints, feature specifications, and historical migration references.
+Welcome to the **Sphere Server X — UOAscension Edition** documentation repository. Use this index to navigate server guides, architecture blueprints, feature specifications, and historical migration references.
 
 ---
 

@@ -1,6 +1,6 @@
-# SphereServer X — Configuration Guide (`sphere.ini`)
+# Sphere Server X — UOAscension Edition Configuration Guide (`sphere.ini`)
 
-This document details the configuration of **SphereServer X** (`Source-X`) via `sphere.ini`, database connections, client protocol settings, and integration options for external services.
+This document details the configuration of **Sphere Server X — UOAscension Edition** via `sphere.ini`, database connections, client protocol settings, and integration options for external services.
 
 ---
 

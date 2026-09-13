@@ -1,6 +1,6 @@
-# SphereServer X
+# Sphere Server X — UOAscension Edition
 
-Ultima Online game server emulator developed in modern C++20.
+Ultima Online game server engine developed in modern C++20. A specialized engine fork of **SphereServer X** for UOAscension.
 
 <br>
 
@@ -32,9 +32,9 @@ Find comprehensive documentation for compiling, configuring, extending, and scri
 
 ---
 
-## ✨ What makes SphereServer X different?
+## ✨ What makes UOAscension Edition different?
 
-SphereServer X (`Source-X`) is a high-performance fork of SphereServer 0.56d modernized to C++20, featuring major architectural and gameplay enhancements:
+**Sphere Server X — UOAscension Edition** is a high-performance fork of SphereServer X (0.56d baseline) modernized to C++20, featuring major architectural and custom gameplay enhancements:
 
 - **UltimaLive World Engine**: Native real-time map/static tile streaming, character fog-of-war map discovery (`CUltimaLiveDiscovery`), C++ graphic harvesting with dynamic tree chopping & scheduled regrowth (`CUltimaLiveLumber`), dynamic vein mining (`CUltimaLiveMining`), and sector overlays.
 - **External Login Microservice**: Decoupled Python multi-shard login server with SQLite/MariaDB storage, AuthID token authentication, and optional native C++ `sphere_login_crypto` module.
