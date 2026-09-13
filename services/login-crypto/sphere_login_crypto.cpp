@@ -1,4 +1,6 @@
+#ifndef SPHERE_LOGIN_CRYPTO_EXPORTS
 #define SPHERE_LOGIN_CRYPTO_EXPORTS
+#endif
 #include "sphere_login_crypto.h"
 
 #include <cstring>

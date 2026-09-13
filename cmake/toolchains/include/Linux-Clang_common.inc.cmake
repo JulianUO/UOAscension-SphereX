@@ -82,13 +82,28 @@ function(toolchain_exe_stuff_common)
         target_compile_definitions(spheresvr_debug PRIVATE _DEBUG THREAD_TRACK_CALLSTACK _PACKETDUMP)
     endif(TARGET spheresvr_debug)
 
+    if(lib_mariadb_with_path)
+        set(link_mariadb ${lib_mariadb_with_path})
+    else()
+        set(link_mariadb mariadb)
+    endif()
+
+    if(lib_dl_with_path)
+        set(link_dl ${lib_dl_with_path})
+    else()
+        set(link_dl dl)
+    endif()
+
     #-- Now add back the common compiler options, preprocessor macros, linker targets and options.
 
     foreach(tgt ${TARGETS})
         target_compile_options(${tgt} PRIVATE ${cxx_compiler_options_common})
         target_compile_definitions(${tgt} PRIVATE ${cxx_compiler_definitions_common})
         target_link_options(${tgt} PRIVATE ${cxx_linker_options_common})
-        target_link_libraries(${tgt} PRIVATE ${lib_mariadb_with_path} ${lib_dl_with_path})
+        if(lib_search_paths)
+            target_link_directories(${tgt} PRIVATE ${lib_search_paths})
+        endif()
+        target_link_libraries(${tgt} PRIVATE ${link_mariadb} ${link_dl})
     endforeach()
 
     #-- Set different output folders for each build type

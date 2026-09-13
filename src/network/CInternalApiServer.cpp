@@ -41,7 +41,7 @@ namespace
 			lpctstr eol = strstr(line, "\r\n");
 			if (!eol)
 				break;
-			if (_strnicmp(line, headerName, nameLen) == 0 && line[nameLen] == ':')
+			if (strnicmp(line, headerName, nameLen) == 0 && line[nameLen] == ':')
 			{
 				lpctstr value = line + nameLen + 1;
 				while (*value == ' ')
@@ -131,7 +131,7 @@ bool CInternalApiServer::authorizeRequest(lpctstr authHeader) const
 	lpctstr token = authHeader;
 	while (*token == ' ')
 		++token;
-	if (_strnicmp(token, "Bearer ", 7) == 0)
+	if (strnicmp(token, "Bearer ", 7) == 0)
 		token += 7;
 	while (*token == ' ')
 		++token;
