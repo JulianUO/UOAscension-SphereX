@@ -182,8 +182,8 @@ PacketObjectStatus::PacketObjectStatus(const CClient* target, CObjBase* object) 
 		if ( objectChar )
 		{
             fCanRename = objectChar->IsOwnedBy(character);
-			iHitsCurrent = (word)objectChar->Stat_GetVal(STAT_STR);
-            iHitsMax = (word)objectChar->Stat_GetMaxAdjusted(STAT_STR);
+		    const ushort tmpMaxHits = objectChar->Stat_GetMaxAdjusted(STAT_STR);
+		    iHitsCurrent = static_cast<word>((objectChar->Stat_GetVal(STAT_STR) * 100) / maximum(tmpMaxHits, 1));
 		}
 		else
 		{
@@ -193,8 +193,8 @@ PacketObjectStatus::PacketObjectStatus(const CClient* target, CObjBase* object) 
                 CCItemDamageable *pItem = static_cast<CCItemDamageable*>(object->GetComponent(COMP_ITEMDAMAGEABLE));
                 if (pItem)
                 {
-                    iHitsCurrent = pItem->GetCurHits();
-                    iHitsMax = pItem->GetMaxHits();
+                    const ushort tmpMaxHits = pItem->GetMaxHits();
+                    iHitsCurrent = static_cast<word>((pItem->GetCurHits() * 100) / maximum(tmpMaxHits, 1));
                 }
                 else
                 {

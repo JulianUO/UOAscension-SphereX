@@ -2688,6 +2688,29 @@ bool PacketScreenSize::onReceive(CNetState* net)
     ushort y = readInt16();
     skip(2);
 
+	//DEBUG_MSG(("PacketScreenSize::onReceive 0x%hx - 0x%hx (%hu-%hu)\n", x, y, x, y));
+    // Set default height only if client send width and no height.
+	if (net->isClientVersionNumber(MINCLIVER_NEWBOOK) && x > 0 && y == 0)
+	{
+		switch (x)
+		{
+		case 800:
+			y = 600;
+			break;
+		case 1024:
+			y = 768;
+			break;
+		case 1152:
+			y = 864;
+			break;
+		case 1280:
+			y = 720;
+			break;
+		default:
+			y = 480;
+			break;
+		}
+	}
 	client->SetScreenSize(x, y);
 	return true;
 }

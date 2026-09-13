@@ -1788,7 +1788,11 @@ bool CServerConfig::r_WriteVal( lpctstr ptcKey, CSString & sVal, CTextConsole * 
 					int iSecNumber = Exp_GetVal(ptcKey);
 					SKIP_SEPARATORS(ptcKey);
                     CSector* pSector = CWorldMap::GetSectorByIndex(iMapNumber, iSecNumber);
-					return !pSector ? false : pSector->r_WriteVal(ptcKey, sVal, pSrc);
+                    if (!pSector)
+                        return false;
+                    if (*ptcKey == '\0')
+                        return true;
+                    return pSector->r_WriteVal(ptcKey, sVal, pSrc);
 				}
 			}
 			g_Log.EventError("Unsupported Map %d\n", iMapNumber);
@@ -2053,7 +2057,7 @@ bool CServerConfig::r_WriteVal( lpctstr ptcKey, CSString & sVal, CTextConsole * 
 				CUOItemInfo itemInfo((ITEMID_TYPE)id);
 				switch (iAttr)
 				{
-					case TTATTR_FLAGS:	sVal.FormatU64Val(itemInfo.m_flags);    break;
+                    case TTATTR_FLAGS:	sVal.FormatULLHex(itemInfo.m_flags);    break;
 					case TTATTR_WEIGHT:	sVal.FormatBVal(itemInfo.m_weight);	    break;
 					case TTATTR_LAYER:	sVal.FormatBVal(itemInfo.m_layer);	    break;
 					case TTATTR_UNK11:	sVal.FormatDWVal(itemInfo.m_dwUnk11);   break;
@@ -3448,7 +3452,7 @@ bool CServerConfig::LoadResourceSection( CScript * pScript, bool fInsertSorted )
 			}
 			else
 			{
-                g_ExprGlobals.mtEngineLockedWriter()->m_VarDefs.SetStr(ptcKey, false, pScript->GetArgStr(), false);
+                g_ExprGlobals.mtEngineLockedWriter()->m_VarDefs.SetStr(ptcKey, false, pScript->GetArgStr(), false, true);
 			}
 		}
 
@@ -3461,7 +3465,7 @@ bool CServerConfig::LoadResourceSection( CScript * pScript, bool fInsertSorted )
 		while (pScript->ReadKeyParse())
 		{
 			const lpctstr ptcKey = pScript->GetKey();
-            gwrite->m_VarResDefs.SetStr(ptcKey, false, pScript->GetArgStr(), false);
+            gwrite->m_VarResDefs.SetStr(ptcKey, false, pScript->GetArgStr(), false, true);
 		}
 		return true;
     }
@@ -4113,7 +4117,7 @@ bool CServerConfig::LoadResourceSection( CScript * pScript, bool fInsertSorted )
 				ptcKey = ptcKey + 4;
 
             lpctstr ptcArg = pScript->GetArgStr( &fQuoted );
-            g_ExprGlobals.mtEngineLockedWriter()->m_VarGlobals.SetStr( ptcKey, fQuoted, ptcArg );
+            g_ExprGlobals.mtEngineLockedWriter()->m_VarGlobals.SetStr( ptcKey, fQuoted, ptcArg, false, true );
 		}
 		return true;
 	case RES_WORLDLISTS:
@@ -4296,6 +4300,7 @@ CResourceID CServerConfig::ResourceGetNewID( RES_TYPE restype, lpctstr pszName, 
 			Str_Parse( pArg1, &pArg2 );
 
 			// For dialog resources, we use the page bits to mark if it's the TEXT or BUTTON block
+            // TODO: shouldn't we offload this to a static method of CDialogDef? Too much centralization here...
 			if ( !strnicmp( pArg2, "TEXT", 4 ) )
 				wPage = RES_DIALOG_TEXT;
 			else if ( !strnicmp( pArg2, "BUTTON", 6 ) )
@@ -4625,7 +4630,7 @@ CResourceID CServerConfig::ResourceGetNewID( RES_TYPE restype, lpctstr pszName, 
 
 	if ( pszName )
 	{
-        CVarDefContNum* pVarTemp = g_ExprGlobals.mtEngineLockedWriter()->m_VarResDefs.SetNum( pszName, rid.GetPrivateUID() );
+        CVarDefContNum* pVarTemp = g_ExprGlobals.mtEngineLockedWriter()->m_VarResDefs.SetNum( pszName, rid.GetPrivateUID(), true, true );
         ASSERT(pVarTemp);
 		*ppVarNum = pVarTemp;
 	}
@@ -4876,6 +4881,7 @@ void CServerConfig::PrintEFOFFlags(bool bEF, bool bOF, CTextConsole *pSrc)
 		if ( IsSetEF(EF_UsePingServer) )			catresname(zExperimentalFlags, "UsePingServer");
 		if ( IsSetEF(EF_FixCanSeeInClosedConts) )	catresname(zExperimentalFlags, "FixCanSeeInClosedConts");
         if ( IsSetEF(EF_WalkCheckHeightMounted) )	catresname(zExperimentalFlags, "WalkCheckHeightMounted");
+        if (IsSetEF(EF_WalkBypassMonsters))			catresname(zExperimentalFlags, "WalkBypassMonsters");
 
 		if ( zExperimentalFlags[0] != '\0' )
 		{
@@ -5070,6 +5076,8 @@ bool CServerConfig::Load( bool fResync )
 	// Now load the *TABLES.SCP file.
 	if ( ! fResync )
 	{
+        g_Log.Event(LOGL_EVENT|LOGM_INIT, "\n");
+
 		if ( ! OpenResourceFind( m_scpTables, SPHERE_FILE "tables" SPHERE_SCRIPT_EXT ))
 		{
 			g_Log.Event( LOGL_FATAL|LOGM_INIT, "Error opening table definitions file (" SPHERE_FILE "tables" SPHERE_SCRIPT_EXT ")...\n" );
