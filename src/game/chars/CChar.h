@@ -14,6 +14,7 @@
 #include "../game_macros.h"
 #include "CCharBase.h"
 #include "CCharPlayer.h"
+#include <memory>
 
 
 class CCharNPC;
@@ -126,8 +127,8 @@ public:
 
 	static const char *m_sClassName;
 
-	CCharPlayer * m_pPlayer;	// May even be an off-line player !
-	CCharNPC * m_pNPC;			// we can be both a player and an NPC if "controlled" ?
+	std::unique_ptr<CCharPlayer> m_pPlayer;	// May even be an off-line player !
+	std::unique_ptr<CCharNPC> m_pNPC;			// we can be both a player and an NPC if "controlled" ?
 	CPartyDef * m_pParty;		// What party am I in ?
 	CRegionWorld * m_pArea;		// What region are we in now. (for guarded message)
 	CRegion * m_pRoom;		// What room we are in now.
@@ -1108,12 +1109,27 @@ public:
 	void Memory_Fight_Start( const CChar * pTarg );
 	bool Memory_Fight_OnTick( CItemMemory * pMemory );
 
+	static bool Fight_IsValidDamageableItem( const CItem * pItem ) noexcept;
+
 	bool Fight_Attack( CChar * pCharTarg, bool fToldByMaster = false );
+	bool Fight_AttackItem( CItem * pItemTarg );
 	bool Fight_Clear( CChar * pCharTarg , bool fForced = false );
 	void Fight_ClearAll();
 	void Fight_HitTry();
 	WAR_SWING_TYPE Fight_Hit( CChar * pCharTarg );
+	WAR_SWING_TYPE Fight_HitItem( CItem * pItemTarg );
 	WAR_SWING_TYPE Fight_CanHit(CChar * pCharTarg, bool fSwingNoRange = false);
+	WAR_SWING_TYPE Fight_CanHitItem(CItem * pItemTarg, bool fSwingNoRange = false);
+
+private:
+	WAR_SWING_TYPE Fight_CanHitPoint( const CPointMap & ptTarg, const CChar * pCharTarg, bool fSwingNoRange );
+	WAR_SWING_TYPE Fight_CheckArcherReady( SKILL_TYPE skill ) const;
+	WAR_SWING_TYPE Fight_CheckWeaponRange( const CPointMap & ptTarg, CItem * pWeapon, SKILL_TYPE skill, bool fSwingNoRange, int dist ) const;
+	WAR_SWING_TYPE Fight_DoSwingPhases( CObjBaseTemplate * pTarg, CItem * pWeapon, bool fSwingNoRange, int dist );
+	WAR_SWING_TYPE Fight_DoMissSwing( CObjBaseTemplate * pTarg, CItem * pWeapon, SKILL_TYPE skill, bool fRanged, CChar * pCharTarg = nullptr, CItem * pAmmo = nullptr );
+	void Fight_HitTry_HandleSwingResult( WAR_SWING_TYPE retHit, bool fItemTarget, CChar * pCharTarg );
+
+public:
 	SKILL_TYPE Fight_GetWeaponSkill() const;
     DAMAGE_TYPE Fight_GetWeaponDamType(const CItem* pWeapon = nullptr) const;
     int Fight_CalcDamage( const CItem * pWeapon, bool fNoRandom = false, bool fGetMax = true ) const;

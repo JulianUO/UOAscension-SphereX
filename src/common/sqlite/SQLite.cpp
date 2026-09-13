@@ -1,3 +1,4 @@
+#include "../CTextConsole.h"
 #include "../../common/CLog.h"
 #include "../../sphere/threads.h"
 #include "../CExpression.h" // included in the precompiled header
@@ -462,6 +463,12 @@ bool CSQLite::r_Verb(CScript & s, CTextConsole * pSrc)
 {
 	ADDTOCALLSTACK("CSQLite::r_Verb");
 	EXC_TRY("Verb");
+
+	if ( pSrc == nullptr || pSrc->GetPrivLevel() < PLEVEL_Admin )
+	{
+		g_Log.EventError("SQLITE.%s denied: insufficient privilege.\n", s.GetKey());
+		return false;
+	}
 
 	int index = FindTableSorted(s.GetKey(), sm_szVerbKeys, ARRAY_COUNT(sm_szVerbKeys)-1);
 	switch ( index )

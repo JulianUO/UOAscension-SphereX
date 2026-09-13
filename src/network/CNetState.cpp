@@ -228,53 +228,53 @@ void CNetState::init(SOCKET socket, CSocketAddress addr)
     detectAsyncMode();
 }
 
-bool CNetState::isInUse(const CClient* client) const volatile noexcept
+bool CNetState::isInUse(const CClient* client) const noexcept
 {
-    if (m_isInUse == false)
+    if (m_isInUse.load(std::memory_order_relaxed) == false)
         return false;
 
     return client == nullptr || m_client == client;
 }
 
-void CNetState::markReadClosed(void) volatile
+void CNetState::markReadClosed(void)
 {
     ADDTOCALLSTACK("CNetState::markReadClosed");
 
     DEBUGNETWORK(("%x:Client being closed by read-thread\n", m_id));
-    m_isReadClosed = true;
+    m_isReadClosed.store(true, std::memory_order_release);
     if (m_parent != nullptr && m_parent->getPriority() == ThreadPriority::Disabled)
         m_parent->awaken();
 }
 
-void CNetState::markWriteClosed(void) volatile
+void CNetState::markWriteClosed(void)
 {
     DEBUGNETWORK(("%x:Client being closed by write-thread\n", m_id));
-    m_isWriteClosed = true;
+    m_isWriteClosed.store(true, std::memory_order_release);
 }
 
-void CNetState::markFlush(bool needsFlush) volatile noexcept
+void CNetState::markFlush(bool needsFlush) noexcept
 {
-    m_needsFlush = needsFlush;
+    m_needsFlush.store(needsFlush, std::memory_order_release);
 }
 
-void CNetState::setAsyncMode(bool isAsync) volatile noexcept
+void CNetState::setAsyncMode(bool isAsync) noexcept
 {
-    m_useAsync = isAsync;
+    m_useAsync.store(isAsync, std::memory_order_release);
 }
 
-bool CNetState::isAsyncMode(void) const volatile noexcept
+bool CNetState::isAsyncMode(void) const noexcept
 {
-    return m_useAsync;
+    return m_useAsync.load(std::memory_order_relaxed);
 }
 
-bool CNetState::isSendingAsync(void) const volatile noexcept
+bool CNetState::isSendingAsync(void) const noexcept
 {
-    return m_isSendingAsync;
+    return m_isSendingAsync.load(std::memory_order_relaxed);
 }
 
-void CNetState::setSendingAsync(bool isSending) volatile noexcept
+void CNetState::setSendingAsync(bool isSending) noexcept
 {
-    m_isSendingAsync = isSending;
+    m_isSendingAsync.store(isSending, std::memory_order_release);
 }
 
 void CNetState::detectAsyncMode(void)

@@ -8,6 +8,8 @@
 
 #include "../common/common.h"
 
+#include <memory>
+
 class CNetState;
 class CNetworkThread;
 class PacketSend;
@@ -24,12 +26,12 @@ private:
 
 private:
 	CNetworkThread* m_thread;	// owning network thread
-	byte* m_encryptBuffer;		// buffer for encrpyted data
+	std::unique_ptr<byte[]> m_encryptBuffer;		// buffer for encrypted data
 
 public:
 	static const char* m_sClassName;
 	CNetworkOutput(void);
-	~CNetworkOutput(void);
+	~CNetworkOutput(void) = default;
 
 private:
 	CNetworkOutput(const CNetworkOutput& copy);

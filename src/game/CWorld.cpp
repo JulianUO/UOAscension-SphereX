@@ -18,6 +18,7 @@
 #include "CWorldMap.h"
 #include "CWorldTickingList.h"
 #include "CWorld.h"
+#include "ultimalive/CUltimaLive.h"
 
 #ifndef _WIN32
     #include <sys/statvfs.h>
@@ -1002,6 +1003,8 @@ failedstage:
 	}
 
     g_Serv.SetServerMode(ServMode::Run);			// Game is up and running
+	if (fSuccess)
+		g_UltimaLive.OnWorldSave();
 	return fSuccess;
 }
 
@@ -1492,6 +1495,8 @@ bool CWorld::LoadAll() // Load world from script
 
 	// Set the current version now.
 	r_SetVal("VERSION", SPHERE_VER_ID_STR);	// Set m_iLoadVersion
+
+	g_UltimaLive.OnWorldLoad();
 
 	return true;
 }

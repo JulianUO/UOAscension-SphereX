@@ -52,6 +52,9 @@ public:
 
     CSReferenceCounted& operator=(CSReferenceCounted const& other) noexcept
     {
+        if (this == &other)
+            return *this;
+        _owner->_counted_references -= 1;
         _owner = other._owner;
         _owner->_counted_references += 1;
         return *this;

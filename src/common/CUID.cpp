@@ -1,59 +1,27 @@
-#include "../game/chars/CChar.h"
-#include "../game/items/CItem.h"
-#include "../game/CWorld.h"
 #include "CUID.h"
 
-
-CObjBase * CUID::ObjFindFromUID(dword dwPrivateUID, bool fInvalidateBeingDeleted) noexcept    // static
-{
-    if ( IsResource(dwPrivateUID) || !IsValidUID(dwPrivateUID) )
-        return nullptr;
-
-	CObjBase *pObj = g_World.FindUID(dwPrivateUID & UID_O_INDEX_MASK);
-
-	if (fInvalidateBeingDeleted && (!pObj || pObj->_IsBeingDeleted()))
-		return nullptr;
-	return pObj;
-}
-
-CItem * CUID::ItemFindFromUID(dword dwPrivateUID, bool fInvalidateBeingDeleted) noexcept     // static
-{
-    // Does item still exist or has it been deleted?
-    // IsItem() may be faster ?
-    return dynamic_cast<CItem *>(ObjFindFromUID(dwPrivateUID, fInvalidateBeingDeleted));
-}
-CChar * CUID::CharFindFromUID(dword dwPrivateUID, bool fInvalidateBeingDeleted) noexcept    // static
-{
-    // Does character still exists?
-    return dynamic_cast<CChar *>(ObjFindFromUID(dwPrivateUID, fInvalidateBeingDeleted));
-}
-
-
-bool CUID::IsValidUID(dword dwPrivateUID) noexcept // static
+bool CUID::IsValidUID(dword dwPrivateUID) noexcept
 {
 	return ( dwPrivateUID && ( dwPrivateUID & UID_O_INDEX_MASK ) != UID_O_INDEX_MASK );
 }
 
-bool CUID::IsResource(dword dwPrivateUID) noexcept  // static
+bool CUID::IsResource(dword dwPrivateUID) noexcept
 {
     return (dwPrivateUID & UID_F_RESOURCE);
 }
 
-bool CUID::IsValidResource(dword dwPrivateUID) noexcept  // static
+bool CUID::IsValidResource(dword dwPrivateUID) noexcept
 {
     return (IsResource(dwPrivateUID) && IsValidUID(dwPrivateUID));
 }
 
-bool CUID::IsItem(dword dwPrivateUID) noexcept 	// static
+bool CUID::IsItem(dword dwPrivateUID) noexcept
 {
-	// It's NOT a resource, and it's an item
-	// might be static in client ?
 	return ((dwPrivateUID & (UID_F_RESOURCE | UID_F_ITEM)) == UID_F_ITEM);
 }
 
-bool CUID::IsChar(dword dwPrivateUID) noexcept // static
+bool CUID::IsChar(dword dwPrivateUID) noexcept
 {
-	// It's NOT a resource, and it's not an item
 	if ( ( dwPrivateUID & (UID_F_RESOURCE|UID_F_ITEM)) == 0 )
 		return IsValidUID(dwPrivateUID);
 	return false;
@@ -91,6 +59,5 @@ dword CUID::GetObjUID() const noexcept
 
 void CUID::SetObjUID( dword dwVal ) noexcept
 {
-	// can be set to -1 by the client.
 	m_dwInternalVal = ( dwVal & (UID_O_INDEX_MASK|UID_F_ITEM) ) | UID_O_DISCONNECT;
 }

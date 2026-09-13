@@ -9,6 +9,7 @@
 #include "../components/CCPropsChar.h"
 #include "../components/CCPropsItemEquippable.h"
 #include "../components/CCPropsItemWeapon.h"
+#include "../items/CItem.h"
 #include "../items/CItemMemory.h"
 #include "../CWorldGameTime.h"
 #include "../CWorldSearch.h"
@@ -1486,6 +1487,41 @@ bool CChar::Fight_Attack( CChar *pCharTarg, bool fToldByMaster )
 	return true;
 }
 
+bool CChar::Fight_AttackItem( CItem *pItemTarg )
+{
+	ADDTOCALLSTACK("CChar::Fight_AttackItem");
+
+	if ( !Fight_IsValidDamageableItem(pItemTarg) || IsStatFlag(STATF_DEAD) )
+		return false;
+
+	if ( m_pNPC && !CanSee(pItemTarg) )
+	{
+		Skill_Start(SKILL_NONE);
+		return false;
+	}
+
+	if ( !IsStatFlag(STATF_WAR) )
+	{
+		StatFlag_Set(STATF_WAR);
+		UpdateModeFlag();
+		if ( IsClientActive() )
+			GetClientActive()->addPlayerWarMode();
+	}
+
+	const SKILL_TYPE skillWeapon = Fight_GetWeaponSkill();
+	const SKILL_TYPE skillActive = Skill_GetActive();
+
+	if ( (skillActive == skillWeapon) && (m_Fight_Targ_UID == pItemTarg->GetUID()) )
+		return true;
+
+	if ( g_Cfg.IsSkillFlag(skillActive, SKF_MAGIC) )
+		return true;
+
+	m_Fight_Targ_UID = pItemTarg->GetUID();
+	Skill_Start(skillWeapon);
+	return true;
+}
+
 // A timer has expired so try to take a hit.
 // I am ready to swing or already swinging.
 // but i might not be close enough.
@@ -1496,6 +1532,20 @@ void CChar::Fight_HitTry()
 	ASSERT( Fight_IsActive() );
 
 	CChar *pCharTarg = m_Fight_Targ_UID.CharFind();
+	if ( !pCharTarg )
+	{
+		CItem *pItemTarg = m_Fight_Targ_UID.ItemFind();
+		if ( Fight_IsValidDamageableItem(pItemTarg) )
+		{
+			if ( m_atFight.m_iWarSwingState == WAR_SWING_EQUIPPING )
+				Fight_SetDefaultSwingDelays();
+
+			const WAR_SWING_TYPE retHitItem = Fight_HitItem(pItemTarg);
+			Fight_HitTry_HandleSwingResult(retHitItem, true, nullptr);
+			return;
+		}
+	}
+
 	/*
 	  We still need to check if player is hidden/invisible but do not need to make anything if the attacker is player,
 	  So we only check Statf_Dead,stone,insub and invul for players to avoid continue attack the not attackable targets.
@@ -1577,69 +1627,7 @@ void CChar::Fight_HitTry()
         }
     }
 
-	switch ( retHit )
-	{
-		case WAR_SWING_INVALID:		// target is invalid
-		{
-			Fight_Clear(pCharTarg);
-			if ( m_pNPC )
-            {
-				Fight_Attack(NPC_FightFindBestTarget());
-            }
-			return;
-		}
-		case WAR_SWING_EQUIPPING:	// keep hitting the same target
-        case WAR_SWING_EQUIPPING_NOWAIT:
-		{
-            if ((m_atFight.m_iWarSwingState == WAR_SWING_EQUIPPING)
-                || (IsSetCombatFlags(COMBAT_SWING_NORANGE) && (m_atFight.m_iWarSwingState == WAR_SWING_READY)) ) // Ready to start a new swing, check swingTypeHold in Fight_Hit
-            {
-                if (retHit == WAR_SWING_EQUIPPING_NOWAIT)
-                {
-                    // Reactivate as soon as possible (without waiting for a new tick) the fighting routines, which are normally called by _OnTick(), which in turn calls
-                    //  OnTickSkill() -> Skill_Done() -> Skill_Stage() -> Skill_Fighting() ->
-                    //  -> Fight_HitTry() (which is this method) -> Fight_Hit() (which sets the recoil and swing delays and more) ...
-                    // If i use _SetTimeout(1), i will lose a tick, since i'll start to set the timers for the new swing only on the next tick, not on the current.
-                    OnTickSkill();
-                }
-                else
-                {
-                    // Wait a bit, then check again if i can hit. If i don't wait, the condition that leaded to this point will always be the same,
-                    //  and the combat code and this function will be called recursively.
-                    _SetTimeoutD(1);
-                }
-            }
-			return;
-		}
-		case WAR_SWING_READY:		// probably too far away, can't take my swing right now
-		{
-			if ( m_pNPC )
-            {
-				Fight_Attack(NPC_FightFindBestTarget());	// keep attacking the same char or change the targ
-            }
-            if (!_IsTimerSet())	// If i haven't landed the hit yet...
-            {
-                // Player & NPC: wait some time and check again if i can land the hit
-                // NPC: also keeps its AI alive, so that in NPCActFight the NPC can further approach his target.
-                _SetTimeoutD(1);
-            }
-			return;
-		}
-		case WAR_SWING_SWINGING:	// must come back here again to complete
-            if (!_IsTimerSet())
-            {
-                // This happens (only with both PreHit and Swing_NoRange on) if i can't land the hit right now, otherwise retHit
-                //  should be WAR_SWING_EQUIPPING. If this isn't the case, there's something wrong (asserts are placed to intercept this situations).
-                // Though, consider the case of custom combat systems, in that case the asserts may be invalid.
-                _SetTimeoutD(1);
-                //ASSERT(IsSetCombatFlags(COMBAT_FIRSTHIT_INSTANT) && IsSetCombatFlags(COMBAT_SWING_NORANGE|COMBAT_PREHIT));
-            }
-			return;
-		default:
-			break;
-	}
-
-	ASSERT(0);
+	Fight_HitTry_HandleSwingResult(retHit, false, pCharTarg);
 }
 
 // Distance from which I can hit
@@ -1678,65 +1666,436 @@ void CChar::Fight_SetDefaultSwingDelays()
     }
 }
 
-WAR_SWING_TYPE CChar::Fight_CanHit(CChar * pCharSrc, bool fSwingNoRange)
+// Proceed to impact (miss/damage) after swing animation completed.
+static constexpr WAR_SWING_TYPE WAR_SWING_PROCEED_IMPACT = (WAR_SWING_TYPE)11;
+
+bool CChar::Fight_IsValidDamageableItem( const CItem * pItem ) noexcept
 {
-	ADDTOCALLSTACK("CChar::Fight_CanHit");
-	//	Very basic check on possibility to hit
-	//	return:
-	//  WAR_SWING_INVALID	= target is invalid
-	//	WAR_SWING_EQUIPPING	= recoiling weapon / swing made
-	//  WAR_SWING_READY		= Ready to hit, will switch to WAR_SWING_SWINGING ASAP.
-	//  WAR_SWING_SWINGING	= taking my swing now
+	if ( !pItem || !pItem->Can(CAN_I_DAMAGEABLE) || pItem->IsDisconnected() )
+		return false;
+	return ( pItem->GetTopLevelObj()->IsChar() == false );
+}
 
-	// We can't hit them. Char deleted? Target deleted? Am I dead or stoned? or Is target Dead, stone, invul, insub or slept?
-	if (IsDisconnected() || pCharSrc->IsDisconnected() || IsStatFlag(STATF_DEAD | STATF_STONE) || (pCharSrc->IsStatFlag(STATF_DEAD | STATF_STONE | STATF_INVUL | STATF_INSUBSTANTIAL)) || (pCharSrc->IsSleeping()))
-	{
-		return WAR_SWING_INVALID;
-	}
-	// We can't hit them right now. Because we can't see them or reach them (invis/hidden).
-	// Why the target is freeze we are change the attack type to swinging? Player can still attack paralyzed or sleeping characters.
-	// We make sure that the target is freeze or sleeping must wait ready for attack!
-	else if ( (pCharSrc->IsStatFlag(STATF_HIDDEN | STATF_INVISIBLE | STATF_SLEEPING)) || (IsStatFlag(STATF_FREEZE) && (!IsSetCombatFlags(COMBAT_PARALYZE_CANSWING))) || (IsStatFlag(STATF_SLEEPING)) ) // STATF_FREEZE | STATF_SLEEPING
-	{
-		return WAR_SWING_SWINGING;
-	}
-	if (pCharSrc->m_pArea && pCharSrc->m_pArea->IsFlag(REGION_FLAG_SAFE)) //Is area safe zone?
+WAR_SWING_TYPE CChar::Fight_CanHitPoint( const CPointMap & ptTarg, const CChar * pCharTarg, bool fSwingNoRange )
+{
+	ADDTOCALLSTACK("CChar::Fight_CanHitPoint");
+
+	if ( IsDisconnected() || IsStatFlag(STATF_DEAD | STATF_STONE) )
 		return WAR_SWING_INVALID;
 
-    // Ignore the distance and the line of sight if fSwingNoRange is true, but only if i'm starting the swing. To land the hit i need to be in range.
-    if (!fSwingNoRange ||
-        (IsSetCombatFlags(COMBAT_ANIM_HIT_SMOOTH) && (m_atFight.m_iWarSwingState == WAR_SWING_SWINGING)) ||
-        (!IsSetCombatFlags(COMBAT_ANIM_HIT_SMOOTH) && (m_atFight.m_iWarSwingState == WAR_SWING_READY)))
-    {
-        int dist = GetTopDist3D(pCharSrc);
-        if (dist > GetVisualRange())
-        {
-            if (!IsSetCombatFlags(COMBAT_STAYINRANGE))
-                return WAR_SWING_SWINGING; //Keep loading the hit or keep it loaded and ready.
-
-            return WAR_SWING_INVALID;
-        }
-        word wLOSFlags = (g_Cfg.IsSkillFlag( Skill_GetActive(), SKF_RANGED )) ? LOS_NB_WINDOWS : 0;
-        if (!CanSeeLOS(pCharSrc, wLOSFlags, true))
-            return WAR_SWING_SWINGING;
-    }
-
-	// I am on ship. Should be able to combat only inside the ship to avoid free sea and ground characters hunting
-	if ((m_pArea != pCharSrc->m_pArea) && !IsSetCombatFlags(COMBAT_ALLOWHITFROMSHIP))
+	if ( pCharTarg )
 	{
-		if (m_pArea && m_pArea->IsFlag(REGION_FLAG_SHIP))
+		if ( pCharTarg->IsDisconnected() || pCharTarg->IsStatFlag(STATF_DEAD | STATF_STONE | STATF_INVUL | STATF_INSUBSTANTIAL) || pCharTarg->IsSleeping() )
+			return WAR_SWING_INVALID;
+
+		if ( (pCharTarg->IsStatFlag(STATF_HIDDEN | STATF_INVISIBLE | STATF_SLEEPING)) || (IsStatFlag(STATF_FREEZE) && (!IsSetCombatFlags(COMBAT_PARALYZE_CANSWING))) || (IsStatFlag(STATF_SLEEPING)) )
+			return WAR_SWING_SWINGING;
+
+		if ( pCharTarg->m_pArea && pCharTarg->m_pArea->IsFlag(REGION_FLAG_SAFE) )
+			return WAR_SWING_INVALID;
+
+		if ( (m_pArea != pCharTarg->m_pArea) && !IsSetCombatFlags(COMBAT_ALLOWHITFROMSHIP) )
 		{
-			SysMessageDefault(DEFMSG_COMBAT_OUTSIDESHIP);
+			if ( m_pArea && m_pArea->IsFlag(REGION_FLAG_SHIP) )
+			{
+				SysMessageDefault(DEFMSG_COMBAT_OUTSIDESHIP);
+				return WAR_SWING_INVALID;
+			}
+			if ( pCharTarg->m_pArea && pCharTarg->m_pArea->IsFlag(REGION_FLAG_SHIP) )
+			{
+				SysMessageDefault(DEFMSG_COMBAT_INSIDESHIP);
+				return WAR_SWING_INVALID;
+			}
+		}
+	}
+	else
+	{
+		if ( m_pArea && m_pArea->IsFlag(REGION_FLAG_SAFE) )
+			return WAR_SWING_INVALID;
+	}
+
+	if ( !fSwingNoRange ||
+		(IsSetCombatFlags(COMBAT_ANIM_HIT_SMOOTH) && (m_atFight.m_iWarSwingState == WAR_SWING_SWINGING)) ||
+		(!IsSetCombatFlags(COMBAT_ANIM_HIT_SMOOTH) && (m_atFight.m_iWarSwingState == WAR_SWING_READY)) )
+	{
+		const int distView = GetTopPoint().GetDist3D(ptTarg);
+		if ( distView > GetVisualRange() )
+		{
+			if ( !IsSetCombatFlags(COMBAT_STAYINRANGE) )
+				return WAR_SWING_SWINGING;
 			return WAR_SWING_INVALID;
 		}
-		if (pCharSrc->m_pArea && pCharSrc->m_pArea->IsFlag(REGION_FLAG_SHIP))
+
+		const word wLOSFlags = (g_Cfg.IsSkillFlag(Skill_GetActive(), SKF_RANGED)) ? LOS_NB_WINDOWS : 0;
+		if ( !CanSeeLOS(ptTarg, nullptr, GetVisualRange(), wLOSFlags, true) )
+			return WAR_SWING_SWINGING;
+	}
+
+	return WAR_SWING_READY;
+}
+
+WAR_SWING_TYPE CChar::Fight_CheckArcherReady( SKILL_TYPE skill ) const
+{
+	ADDTOCALLSTACK("CChar::Fight_CheckArcherReady");
+
+	if ( !g_Cfg.IsSkillFlag(skill, SKF_RANGED) )
+		return WAR_SWING_READY;
+
+	if ( IsStatFlag(STATF_HASSHIELD) )
+	{
+		SysMessageDefault(DEFMSG_ITEMUSE_BOW_SHIELD);
+		return WAR_SWING_INVALID;
+	}
+
+	if ( !IsSetCombatFlags(COMBAT_ARCHERYCANMOVE) && !IsStatFlag(STATF_ARCHERCANMOVE) )
+	{
+		if ( m_pClient && ( (CWorldGameTime::GetCurrentTime().GetTimeDiff(m_pClient->m_timeLastEventWalk) / MSECS_PER_TENTH) < g_Cfg.m_iCombatArcheryMovementDelay) )
+			return WAR_SWING_EQUIPPING;
+	}
+
+	return WAR_SWING_READY;
+}
+
+WAR_SWING_TYPE CChar::Fight_CheckWeaponRange( const CPointMap & ptTarg, CItem * pWeapon, SKILL_TYPE skill, bool fSwingNoRange, int dist ) const
+{
+	ADDTOCALLSTACK("CChar::Fight_CheckWeaponRange");
+	UnreferencedParameter(ptTarg);
+
+	const bool fSkillRanged = g_Cfg.IsSkillFlag(skill, SKF_RANGED);
+	const WAR_SWING_TYPE warSwingState = m_atFight.m_iWarSwingState;
+
+	if ( fSkillRanged )
+	{
+		if ( !fSwingNoRange || (warSwingState == WAR_SWING_SWINGING) )
 		{
-			SysMessageDefault(DEFMSG_COMBAT_INSIDESHIP);
-			return WAR_SWING_INVALID;
+			const WAR_SWING_TYPE swingTypeHold = fSwingNoRange ? warSwingState : WAR_SWING_READY;
+
+			int iMinDist = pWeapon ? pWeapon->GetRangeL() : g_Cfg.m_iArcheryMinDist;
+			int iMaxDist = pWeapon ? pWeapon->GetRangeH() : g_Cfg.m_iArcheryMaxDist;
+			if ( !iMaxDist || (iMinDist == 0 && iMaxDist == 1) )
+				iMaxDist = g_Cfg.m_iArcheryMaxDist;
+			if ( !iMinDist )
+				iMinDist = g_Cfg.m_iArcheryMinDist;
+
+			if ( dist < iMinDist )
+			{
+				SysMessageDefault(DEFMSG_COMBAT_ARCH_TOOCLOSE);
+				if ( !IsSetCombatFlags(COMBAT_STAYINRANGE) || (warSwingState != WAR_SWING_SWINGING) )
+					return swingTypeHold;
+				return WAR_SWING_EQUIPPING;
+			}
+			else if ( dist > iMaxDist )
+			{
+				if ( !IsSetCombatFlags(COMBAT_STAYINRANGE) || (warSwingState != WAR_SWING_SWINGING) )
+					return swingTypeHold;
+				return WAR_SWING_EQUIPPING;
+			}
+		}
+	}
+	else
+	{
+		if ( !fSwingNoRange || (warSwingState == WAR_SWING_SWINGING) )
+		{
+			const WAR_SWING_TYPE swingTypeHold = fSwingNoRange ? warSwingState : WAR_SWING_READY;
+
+			const int iMinDist = pWeapon ? pWeapon->GetRangeL() : 0;
+			const int iMaxDist = Fight_CalcRange(pWeapon);
+			if ( (dist < iMinDist) || (dist > iMaxDist) )
+			{
+				if ( !IsSetCombatFlags(COMBAT_STAYINRANGE) || (warSwingState != WAR_SWING_SWINGING) )
+					return swingTypeHold;
+				return WAR_SWING_EQUIPPING;
+			}
 		}
 	}
 
 	return WAR_SWING_READY;
+}
+
+WAR_SWING_TYPE CChar::Fight_DoSwingPhases( CObjBaseTemplate * pTarg, CItem * pWeapon, bool fSwingNoRange, int dist )
+{
+	ADDTOCALLSTACK("CChar::Fight_DoSwingPhases");
+
+	if ( m_atFight.m_iWarSwingState == WAR_SWING_EQUIPPING )
+	{
+		m_atFight.m_iSwingAnimation = (int16)GenerateAnimate(ANIM_ATTACK_WEAPON);
+
+		if ( IsTrigUsed(TRIGGER_HITTRY) )
+		{
+			int16& iARGN1Var = IsSetCombatFlags(COMBAT_ANIM_HIT_SMOOTH) ? m_atFight.m_iSwingAnimationDelay : m_atFight.m_iRecoilDelay;
+			int16& iAnimDelayVar = IsSetCombatFlags(COMBAT_ANIM_HIT_SMOOTH) ? m_atFight.m_iRecoilDelay : m_atFight.m_iSwingAnimationDelay;
+
+			CScriptTriggerArgsPtr pScriptArgs = CScriptParserBufs::GetCScriptTriggerArgsPtr();
+			pScriptArgs->Init(iARGN1Var, 0, 0, pWeapon);
+			pScriptArgs->m_VarsLocal.SetNum("Anim", m_atFight.m_iSwingAnimation);
+			pScriptArgs->m_VarsLocal.SetNum("AnimDelay", iAnimDelayVar);
+
+			CTextConsole * pTrigTarg = (pTarg && pTarg->IsChar()) ? static_cast<CChar *>(pTarg) : nullptr;
+			if ( OnTrigger(CTRIG_HitTry, pScriptArgs, pTrigTarg) == TRIGRET_RET_TRUE )
+				return WAR_SWING_READY;
+
+			m_atFight.m_iSwingAnimation = (int16)(pScriptArgs->m_VarsLocal.GetKeyNum("Anim"));
+			iARGN1Var = (int16)(pScriptArgs->m_iN1);
+			iAnimDelayVar = (int16)(pScriptArgs->m_VarsLocal.GetKeyNum("AnimDelay"));
+			if ( m_atFight.m_iRecoilDelay < 1 )
+				m_atFight.m_iRecoilDelay = 1;
+			if ( m_atFight.m_iSwingAnimationDelay < 0 )
+				m_atFight.m_iSwingAnimationDelay = 0;
+		}
+
+		_SetTimeoutD(m_atFight.m_iRecoilDelay);
+		m_atFight.m_iWarSwingState = WAR_SWING_READY;
+		return WAR_SWING_READY;
+	}
+
+	if ( m_atFight.m_iWarSwingState == WAR_SWING_READY )
+	{
+		if ( fSwingNoRange )
+		{
+			const int iMinDist = pWeapon ? pWeapon->GetRangeL() : 0;
+			const int iMaxDist = Fight_CalcRange(pWeapon);
+			if ( dist < iMinDist || dist > iMaxDist )
+				return WAR_SWING_READY;
+		}
+
+		m_atFight.m_iWarSwingState = WAR_SWING_SWINGING;
+		Reveal();
+
+		if ( !IsSetCombatFlags(COMBAT_NODIRCHANGE) && pTarg && CanSee(pTarg) )
+			UpdateDir(pTarg);
+
+		byte iSwingAnimationDelayInSeconds = 1;
+		if ( IsSetCombatFlags(COMBAT_PREHIT) && !IsSetCombatFlags(COMBAT_ANIM_HIT_SMOOTH) )
+			iSwingAnimationDelayInSeconds = 1;
+		else
+		{
+			if ( IsSetCombatFlags(COMBAT_PREHIT) )
+				iSwingAnimationDelayInSeconds = (byte)(m_atFight.m_iRecoilDelay / 10);
+			else
+				iSwingAnimationDelayInSeconds = (byte)(m_atFight.m_iSwingAnimationDelay / 10);
+			if ( iSwingAnimationDelayInSeconds <= 0 )
+				iSwingAnimationDelayInSeconds = 1;
+		}
+		UpdateAnimate((ANIM_TYPE)m_atFight.m_iSwingAnimation, false, false, iSwingAnimationDelayInSeconds);
+
+		if ( !IsSetCombatFlags(COMBAT_ANIM_HIT_SMOOTH) )
+			_SetTimeoutD(m_atFight.m_iSwingAnimationDelay);
+		else
+			_SetTimeoutD(iSwingAnimationDelayInSeconds * TENTHS_PER_SEC);
+		return WAR_SWING_SWINGING;
+	}
+
+	return WAR_SWING_PROCEED_IMPACT;
+}
+
+WAR_SWING_TYPE CChar::Fight_DoMissSwing( CObjBaseTemplate * pTarg, CItem * pWeapon, SKILL_TYPE skill, bool fRanged, CChar * pCharTarg, CItem * pAmmo )
+{
+	ADDTOCALLSTACK("CChar::Fight_DoMissSwing");
+	UnreferencedParameter(pTarg);
+	UnreferencedParameter(skill);
+
+	m_atFight.m_iWarSwingState = WAR_SWING_EQUIPPING;
+
+	if ( pCharTarg && IsTrigUsed(TRIGGER_HITMISS) )
+	{
+		CScriptTriggerArgsPtr pScriptArgs = CScriptParserBufs::GetCScriptTriggerArgsPtr();
+		pScriptArgs->m_pO1 = pWeapon;
+		if ( pAmmo && pAmmo->GetUID().IsValidUID() )
+			pScriptArgs->m_VarsLocal.SetNum("Arrow", (dword)pAmmo->GetUID());
+
+		if ( OnTrigger(CTRIG_HitMiss, pScriptArgs, pCharTarg) == TRIGRET_RET_TRUE )
+			return WAR_SWING_EQUIPPING_NOWAIT;
+
+		if ( pScriptArgs->m_VarsLocal.GetKeyNum("ArrowHandled") != 0 )
+			pAmmo = nullptr;
+	}
+
+	if ( pAmmo && m_pPlayer )
+	{
+		if ( 40 >= g_Rand.Get16ValFast(100) )
+		{
+			pAmmo->UnStackSplit(1);
+			pAmmo->MoveToDecay(pCharTarg->GetTopPoint(), g_Cfg.m_iDecay_Item);
+		}
+		else
+			pAmmo->ConsumeAmount(1);
+	}
+
+	if ( IsPriv(PRIV_DETAIL) && pTarg )
+		SysMessagef(g_Cfg.GetDefaultMsg(DEFMSG_COMBAT_MISSS), pTarg->GetName());
+
+	if ( pCharTarg && pCharTarg->IsPriv(PRIV_DETAIL) )
+		pCharTarg->SysMessagef(g_Cfg.GetDefaultMsg(DEFMSG_COMBAT_MISSO), GetName());
+
+	SOUND_TYPE iSound = SOUND_NONE;
+	if ( pWeapon )
+		iSound = pWeapon->Weapon_GetSoundMiss();
+	if ( iSound == SOUND_NONE )
+	{
+		if ( fRanged )
+		{
+			static constexpr SOUND_TYPE sm_Snd_Miss_Ranged[] = { 0x233, 0x238 };
+			iSound = sm_Snd_Miss_Ranged[(size_t)g_Rand.Get16ValFast(ARRAY_COUNT(sm_Snd_Miss_Ranged))];
+		}
+		else
+		{
+			static constexpr SOUND_TYPE sm_Snd_Miss[] = { 0x238, 0x239, 0x23a };
+			iSound = sm_Snd_Miss[(size_t)g_Rand.Get16ValFast(ARRAY_COUNT(sm_Snd_Miss))];
+		}
+	}
+	Sound(iSound);
+
+	return WAR_SWING_EQUIPPING_NOWAIT;
+}
+
+void CChar::Fight_HitTry_HandleSwingResult( WAR_SWING_TYPE retHit, bool fItemTarget, CChar * pCharTarg )
+{
+	ADDTOCALLSTACK("CChar::Fight_HitTry_HandleSwingResult");
+
+	switch ( retHit )
+	{
+		case WAR_SWING_INVALID:
+			if ( fItemTarget )
+			{
+				Skill_Start(SKILL_NONE);
+				m_Fight_Targ_UID.InitUID();
+			}
+			else
+			{
+				Fight_Clear(pCharTarg);
+				if ( m_pNPC )
+					Fight_Attack(NPC_FightFindBestTarget());
+			}
+			return;
+
+		case WAR_SWING_EQUIPPING:
+		case WAR_SWING_EQUIPPING_NOWAIT:
+			if ( (m_atFight.m_iWarSwingState == WAR_SWING_EQUIPPING) || (IsSetCombatFlags(COMBAT_SWING_NORANGE) && (m_atFight.m_iWarSwingState == WAR_SWING_READY)) )
+			{
+				if ( retHit == WAR_SWING_EQUIPPING_NOWAIT )
+					OnTickSkill();
+				else
+					_SetTimeoutD(1);
+			}
+			return;
+
+		case WAR_SWING_READY:
+			if ( !fItemTarget && m_pNPC )
+				Fight_Attack(NPC_FightFindBestTarget());
+			if ( !_IsTimerSet() )
+				_SetTimeoutD(1);
+			return;
+
+		case WAR_SWING_SWINGING:
+			if ( !_IsTimerSet() )
+				_SetTimeoutD(1);
+			return;
+
+		default:
+			break;
+	}
+
+	ASSERT(0);
+}
+
+WAR_SWING_TYPE CChar::Fight_CanHitItem(CItem * pItemTarg, bool fSwingNoRange)
+{
+	ADDTOCALLSTACK("CChar::Fight_CanHitItem");
+
+	if ( !Fight_IsValidDamageableItem(pItemTarg) )
+		return WAR_SWING_INVALID;
+
+	return Fight_CanHitPoint(pItemTarg->GetTopPoint(), nullptr, fSwingNoRange);
+}
+
+WAR_SWING_TYPE CChar::Fight_CanHit(CChar * pCharSrc, bool fSwingNoRange)
+{
+	ADDTOCALLSTACK("CChar::Fight_CanHit");
+
+	if ( !pCharSrc )
+		return WAR_SWING_INVALID;
+
+	return Fight_CanHitPoint(pCharSrc->GetTopPoint(), pCharSrc, fSwingNoRange);
+}
+
+// Attempt to hit a damageable item (CAN_I_DAMAGEABLE).
+WAR_SWING_TYPE CChar::Fight_HitItem( CItem * pItemTarg )
+{
+	ADDTOCALLSTACK("CChar::Fight_HitItem");
+
+	if ( !Fight_IsValidDamageableItem(pItemTarg) )
+		return WAR_SWING_INVALID;
+
+	CItem *pWeapon = m_uidWeapon.ItemFind();
+	DAMAGE_TYPE iDmgType = Fight_GetWeaponDamType(pWeapon);
+	const bool fSwingNoRange = (bool)(IsSetCombatFlags(COMBAT_SWING_NORANGE));
+
+	const WAR_SWING_TYPE iHitCheck = Fight_CanHitItem(pItemTarg, fSwingNoRange);
+	if ( iHitCheck != WAR_SWING_READY )
+		return iHitCheck;
+
+	const SKILL_TYPE skill = Skill_GetActive();
+	const CPointMap ptTarg = pItemTarg->GetTopPoint();
+	const int dist = GetTopPoint().GetDist3D(ptTarg);
+	const bool fSkillRanged = g_Cfg.IsSkillFlag(skill, SKF_RANGED);
+
+	const WAR_SWING_TYPE iArcherCheck = Fight_CheckArcherReady(skill);
+	if ( iArcherCheck != WAR_SWING_READY )
+		return iArcherCheck;
+
+	const WAR_SWING_TYPE iRangeCheck = Fight_CheckWeaponRange(ptTarg, pWeapon, skill, fSwingNoRange, dist);
+	if ( iRangeCheck != WAR_SWING_READY )
+		return iRangeCheck;
+
+	const WAR_SWING_TYPE iSwingPhase = Fight_DoSwingPhases(pItemTarg, pWeapon, fSwingNoRange, dist);
+	if ( iSwingPhase != WAR_SWING_PROCEED_IMPACT )
+		return iSwingPhase;
+
+	if ( fSkillRanged && pWeapon )
+	{
+		ITEMID_TYPE AnimID = ITEMID_NOTHING;
+		dword AnimHue = 0, AnimRender = 0;
+		pWeapon->Weapon_GetRangedAmmoAnim(AnimID, AnimHue, AnimRender);
+		pItemTarg->Effect(EFFECT_BOLT, AnimID, this, 18, 1, false, AnimHue, AnimRender);
+	}
+
+	if ( m_Act_Difficulty < 0 )
+		return Fight_DoMissSwing(pItemTarg, pWeapon, skill, fSkillRanged);
+
+	m_atFight.m_iWarSwingState = WAR_SWING_EQUIPPING;
+
+	int iDmg = Fight_CalcDamage(pWeapon);
+	if ( IsTrigUsed(TRIGGER_HIT) )
+	{
+		CScriptTriggerArgsPtr pScriptArgs = CScriptParserBufs::GetCScriptTriggerArgsPtr();
+		pScriptArgs->Init(iDmg, iDmgType, 0, pItemTarg);
+		if ( OnTrigger(CTRIG_Hit, pScriptArgs, nullptr) == TRIGRET_RET_TRUE )
+			return WAR_SWING_EQUIPPING;
+
+		iDmg = (int)(pScriptArgs->m_iN1);
+		iDmgType = (DAMAGE_TYPE)(pScriptArgs->m_iN2);
+	}
+
+	SoundChar(CRESND_HIT);
+
+	if ( pWeapon )
+	{
+		const int iDamageChance = 25;
+		if ( iDamageChance > g_Rand.GetVal(100) )
+			pWeapon->OnTakeDamage(iDmg, this, iDmgType);
+	}
+
+	const int iDmgDone = pItemTarg->OnTakeDamage(iDmg, this, iDmgType);
+	if ( iDmgDone == INT32_MAX || pItemTarg->IsDisconnected() )
+		return WAR_SWING_INVALID;
+
+	if ( m_pPlayer && iDmgDone > 0 )
+	{
+		Skill_Experience(skill, m_Act_Difficulty);
+		Skill_Experience(SKILL_TACTICS, m_Act_Difficulty);
+	}
+
+	return WAR_SWING_EQUIPPING_NOWAIT;
 }
 
 // Attempt to hit our target.
@@ -1844,161 +2203,33 @@ WAR_SWING_TYPE CChar::Fight_Hit( CChar * pCharTarg )
 	const int dist = GetTopDist3D(pCharTarg);
 	const bool fSkillRanged = g_Cfg.IsSkillFlag(skill, SKF_RANGED);
 
-	if (fSkillRanged)
+	const WAR_SWING_TYPE iArcherCheck = Fight_CheckArcherReady(skill);
+	if ( iArcherCheck != WAR_SWING_READY )
+		return iArcherCheck;
+
+	if ( fSkillRanged && pWeapon )
 	{
-		if ( IsStatFlag(STATF_HASSHIELD) )		// this should never happen
+		const CResourceID ridAmmo(pWeapon->Weapon_GetRangedAmmoRes());
+
+		if ( ridAmmo.IsValidUID() && ridAmmo.GetObjUID() > 0 )
 		{
-			SysMessageDefault(DEFMSG_ITEMUSE_BOW_SHIELD);
-			return WAR_SWING_INVALID;
+			pAmmo = pWeapon->Weapon_FindRangedAmmo(ridAmmo);
+			if ( !pAmmo && m_pPlayer )
+			{
+				SysMessageDefault(DEFMSG_COMBAT_ARCH_NOAMMO);
+				return WAR_SWING_INVALID;
+			}
 		}
-		else if ( !IsSetCombatFlags(COMBAT_ARCHERYCANMOVE) && !IsStatFlag(STATF_ARCHERCANMOVE) )
-		{
-			// Only start the swing this much tenths of second after the char stopped moving.
-			//  (Values changed between expansions. SE:0,25s / AOS:0,5s / pre-AOS:1,0s)
-			if ( m_pClient && ( (CWorldGameTime::GetCurrentTime().GetTimeDiff(m_pClient->m_timeLastEventWalk) / MSECS_PER_TENTH) < g_Cfg.m_iCombatArcheryMovementDelay) )
-				return WAR_SWING_EQUIPPING;
-		}
-
-        if ( pWeapon )
-        {
-            const CResourceID ridAmmo(pWeapon->Weapon_GetRangedAmmoRes());
-
-			if (ridAmmo.IsValidUID() && ridAmmo.GetObjUID() > 0 )
-            {
-                pAmmo = pWeapon->Weapon_FindRangedAmmo(ridAmmo);
-                if ( !pAmmo && m_pPlayer )
-                {
-                    SysMessageDefault(DEFMSG_COMBAT_ARCH_NOAMMO);
-                    return WAR_SWING_INVALID;
-                }
-            }
-        }
-
-        if (!fSwingNoRange || (m_atFight.m_iWarSwingState == WAR_SWING_SWINGING))
-        {
-            // If we are using Swing_NoRange, we can start the swing regardless of the distance, but we can land the hit only when we are at the right distance
-            const WAR_SWING_TYPE swingTypeHold = fSwingNoRange ? m_atFight.m_iWarSwingState : WAR_SWING_READY;
-
-            int	iMinDist = pWeapon ? pWeapon->GetRangeL() : g_Cfg.m_iArcheryMinDist;
-            int	iMaxDist = pWeapon ? pWeapon->GetRangeH() : g_Cfg.m_iArcheryMaxDist;
-            if ( !iMaxDist || (iMinDist == 0 && iMaxDist == 1) )
-                iMaxDist = g_Cfg.m_iArcheryMaxDist;
-            if ( !iMinDist )
-                iMinDist = g_Cfg.m_iArcheryMinDist;
-
-            if ( dist < iMinDist )
-            {
-                SysMessageDefault(DEFMSG_COMBAT_ARCH_TOOCLOSE);
-                if ( !IsSetCombatFlags(COMBAT_STAYINRANGE) || (m_atFight.m_iWarSwingState != WAR_SWING_SWINGING) )
-                    return swingTypeHold;
-                return WAR_SWING_EQUIPPING;
-            }
-            else if ( dist > iMaxDist )
-            {
-                if ( !IsSetCombatFlags(COMBAT_STAYINRANGE) || (m_atFight.m_iWarSwingState != WAR_SWING_SWINGING) )
-                    return swingTypeHold;
-                return WAR_SWING_EQUIPPING;
-            }
-        }
-	}
-	else
-	{
-        if (!fSwingNoRange || (m_atFight.m_iWarSwingState == WAR_SWING_SWINGING))
-        {
-            // If we are using PreHit_NoRange, we can start the swing regardless of the distance, but we can land the hit only when we are at the right distance
-            const WAR_SWING_TYPE swingTypeHold = fSwingNoRange ? m_atFight.m_iWarSwingState : WAR_SWING_READY;
-
-		    int	iMinDist = pWeapon ? pWeapon->GetRangeL() : 0;
-		    int	iMaxDist = Fight_CalcRange(pWeapon);
-		    if ( (dist < iMinDist) || (dist > iMaxDist) )
-		    {
-			    if ( !IsSetCombatFlags(COMBAT_STAYINRANGE) || (m_atFight.m_iWarSwingState != WAR_SWING_SWINGING) )
-				    return swingTypeHold;
-			    return WAR_SWING_EQUIPPING;
-		    }
-        }
 	}
 
-    // Do i have to wait for the recoil time?
-    if (m_atFight.m_iWarSwingState == WAR_SWING_EQUIPPING)
-    {
-        m_atFight.m_iSwingAnimation = (int16)GenerateAnimate(ANIM_ATTACK_WEAPON);
+	const CPointMap ptTarg = pCharTarg->GetTopPoint();
+	const WAR_SWING_TYPE iRangeCheck = Fight_CheckWeaponRange(ptTarg, pWeapon, skill, fSwingNoRange, dist);
+	if ( iRangeCheck != WAR_SWING_READY )
+		return iRangeCheck;
 
-        if ( IsTrigUsed(TRIGGER_HITTRY) )
-        {
-            int16& iARGN1Var = IsSetCombatFlags(COMBAT_ANIM_HIT_SMOOTH) ? m_atFight.m_iSwingAnimationDelay : m_atFight.m_iRecoilDelay;
-            int16& iAnimDelayVar = IsSetCombatFlags(COMBAT_ANIM_HIT_SMOOTH) ? m_atFight.m_iRecoilDelay : m_atFight.m_iSwingAnimationDelay;
-
-            CScriptTriggerArgsPtr pScriptArgs = CScriptParserBufs::GetCScriptTriggerArgsPtr();
-            pScriptArgs->Init(iARGN1Var, 0, 0, pWeapon);
-            pScriptArgs->m_VarsLocal.SetNum("Anim", m_atFight.m_iSwingAnimation);
-            pScriptArgs->m_VarsLocal.SetNum("AnimDelay", iAnimDelayVar);
-
-            if ( OnTrigger(CTRIG_HitTry, pScriptArgs, pCharTarg) == TRIGRET_RET_TRUE )
-                return WAR_SWING_READY;
-
-            m_atFight.m_iSwingAnimation = (int16)(pScriptArgs->m_VarsLocal.GetKeyNum("Anim"));
-            iARGN1Var = (int16)(pScriptArgs->m_iN1);
-            iAnimDelayVar = (int16)(pScriptArgs->m_VarsLocal.GetKeyNum("AnimDelay"));
-            //if (m_atFight.m_iSwingAnimation < (ANIM_TYPE)-1)  // -1 is a valid value
-            //    m_atFight.m_iSwingAnimation = (int16)animSwingDefault;
-            if ( m_atFight.m_iRecoilDelay < 1 )
-                m_atFight.m_iRecoilDelay = 1;
-            if ( m_atFight.m_iSwingAnimationDelay < 0 )
-                m_atFight.m_iSwingAnimationDelay = 0;
-        }
-
-        _SetTimeoutD(m_atFight.m_iRecoilDelay);   // Wait for the recoil time.
-        m_atFight.m_iWarSwingState = WAR_SWING_READY;
-        return WAR_SWING_READY;
-    }
-
-	// I have waited for the recoil time, then i can start the swing
-	if ( m_atFight.m_iWarSwingState == WAR_SWING_READY )
-	{
-		if (fSwingNoRange) // We don't want the animation to display if we are outside of range.
-		{
-			int	iMinDist = pWeapon ? pWeapon->GetRangeL() : 0;
-			int	iMaxDist = Fight_CalcRange(pWeapon);
-			if (dist <  iMinDist || dist > iMaxDist)
-				return WAR_SWING_READY;
-		}
-		m_atFight.m_iWarSwingState = WAR_SWING_SWINGING;
-		Reveal();
-
-		if ( !IsSetCombatFlags(COMBAT_NODIRCHANGE) && CanSee(pCharTarg) )
-        {
-			UpdateDir(pCharTarg);
-        }
-        byte iSwingAnimationDelayInSeconds;
-        if (IsSetCombatFlags(COMBAT_PREHIT) && !IsSetCombatFlags(COMBAT_ANIM_HIT_SMOOTH))
-            iSwingAnimationDelayInSeconds = 1;
-        else
-        {
-            if (IsSetCombatFlags(COMBAT_PREHIT))
-                iSwingAnimationDelayInSeconds = (byte)(m_atFight.m_iRecoilDelay / 10);
-            else
-                iSwingAnimationDelayInSeconds = (byte)(m_atFight.m_iSwingAnimationDelay / 10);
-            if (iSwingAnimationDelayInSeconds <= 0)
-                iSwingAnimationDelayInSeconds = 1;
-            //if ((m_atFight.m_iSwingAnimationDelay % 10) >= 5)
-            //    iSwingAnimationDelayInSeconds += 1; // round up
-
-        }
-		UpdateAnimate((ANIM_TYPE)m_atFight.m_iSwingAnimation, false, false, iSwingAnimationDelayInSeconds );
-
-        // Now that i have waited the recoil time, start the hit animation and wait for it to end
-		/*
-		// If COMBAT_ANIM_SMOOTH is set we can't set m_iSwingAnimationDelay as the timeout value because otherwise
-		there will be a delay between the end of the animation and the damage display. This is very noticeable when
-		the m_iSwingAnimationDelay property is near the next digit. (If m_iSwingAnimationDelay is 3.8 the iSwingAnimationDelayInSeconds will be 3 and the damage will be displayed around a 0.8 second later!
-		*/
-		if (!IsSetCombatFlags(COMBAT_ANIM_HIT_SMOOTH))
-			_SetTimeoutD(m_atFight.m_iSwingAnimationDelay);
-		else
-			_SetTimeoutD(iSwingAnimationDelayInSeconds * TENTHS_PER_SEC);
-		return WAR_SWING_SWINGING;
-	}
+	const WAR_SWING_TYPE iSwingPhase = Fight_DoSwingPhases(pCharTarg, pWeapon, fSwingNoRange, dist);
+	if ( iSwingPhase != WAR_SWING_PROCEED_IMPACT )
+		return iSwingPhase;
 
 	if ( fSkillRanged && pWeapon )
 	{
@@ -2018,62 +2249,10 @@ WAR_SWING_TYPE CChar::Fight_Hit( CChar * pCharTarg )
 		}
 	}
 
-	// We made our swing. Apply the damage and start the recoil.
-	m_atFight.m_iWarSwingState = WAR_SWING_EQUIPPING;
-
-	// We missed
 	if ( m_Act_Difficulty < 0 )
-	{
-		if ( IsTrigUsed(TRIGGER_HITMISS) )
-		{
-            CScriptTriggerArgsPtr pScriptArgs = CScriptParserBufs::GetCScriptTriggerArgsPtr();
-            pScriptArgs->m_pO1 = pWeapon;
-			if ( pAmmo && pAmmo->GetUID().IsValidUID())
-                pScriptArgs->m_VarsLocal.SetNum("Arrow", (dword)pAmmo->GetUID());
+		return Fight_DoMissSwing(pCharTarg, pWeapon, skill, fSkillRanged, pCharTarg, pAmmo);
 
-            if ( OnTrigger(CTRIG_HitMiss, pScriptArgs, pCharTarg) == TRIGRET_RET_TRUE )
-				return WAR_SWING_EQUIPPING_NOWAIT;
-
-            if ( pScriptArgs->m_VarsLocal.GetKeyNum("ArrowHandled") != 0 )		// if arrow is handled by script, do nothing with it further!
-				pAmmo = nullptr;
-		}
-
-		if ( pAmmo && m_pPlayer  )
-		{
-			if (40 >= g_Rand.Get16ValFast(100))
-			{
-				pAmmo->UnStackSplit(1);
-				pAmmo->MoveToDecay(pCharTarg->GetTopPoint(), g_Cfg.m_iDecay_Item);
-			}
-			else
-				pAmmo->ConsumeAmount(1);
-		}
-
-		if ( IsPriv(PRIV_DETAIL) )
-			SysMessagef(g_Cfg.GetDefaultMsg(DEFMSG_COMBAT_MISSS), pCharTarg->GetName());
-		if ( pCharTarg->IsPriv(PRIV_DETAIL) )
-			pCharTarg->SysMessagef(g_Cfg.GetDefaultMsg(DEFMSG_COMBAT_MISSO), GetName());
-
-		SOUND_TYPE iSound = SOUND_NONE;
-		if ( pWeapon )
-			iSound = pWeapon->Weapon_GetSoundMiss();
-		if ( iSound == SOUND_NONE)
-		{
-			if ( g_Cfg.IsSkillFlag(skill, SKF_RANGED) )
-			{
-				static constexpr SOUND_TYPE sm_Snd_Miss_Ranged[] = { 0x233, 0x238 };
-				iSound = sm_Snd_Miss_Ranged[(size_t)g_Rand.Get16ValFast(ARRAY_COUNT(sm_Snd_Miss_Ranged))];
-			}
-			else
-			{
-				static constexpr SOUND_TYPE sm_Snd_Miss[] = { 0x238, 0x239, 0x23a };
-				iSound = sm_Snd_Miss[(size_t)g_Rand.Get16ValFast(ARRAY_COUNT(sm_Snd_Miss))];
-			}
-		}
-		Sound(iSound);
-
-		return WAR_SWING_EQUIPPING_NOWAIT;
-	}
+	m_atFight.m_iWarSwingState = WAR_SWING_EQUIPPING;
 
 	// We hit
 	// Calculate the damage and check for parrying

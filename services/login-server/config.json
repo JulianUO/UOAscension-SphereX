@@ -1,0 +1,19 @@
+{
+  "listen_host": "0.0.0.0",
+  "listen_port": 2592,
+  "shared_secret": "change-me",
+  "md5_passwords": true,
+  "status_poll_seconds": 30,
+  "accounts": {
+    "scp_path": "../accounts/sphereaccu.scp"
+  },
+  "shards": [
+    {
+      "name": "Ultima Online: Ascension (Live)",
+      "host": "127.0.0.1",
+      "port": 2593,
+      "internal_url": "http://127.0.0.1:2590",
+      "timezone": 0
+    }
+  ]
+}

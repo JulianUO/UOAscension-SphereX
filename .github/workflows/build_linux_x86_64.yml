@@ -64,9 +64,14 @@ jobs:
               -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
               -DCMAKE_C_FLAGS="-fpch-preprocess" \
               -DCMAKE_CXX_FLAGS="-fpch-preprocess" \
+              -DUNIT_TESTING=ON \
               -S ./ -B ./build
     - name: Ninja
       run: ninja -C build -v
+    - name: Unit tests
+      run: ctest --test-dir build --output-on-failure
+    - name: Layering check
+      run: chmod +x utilities/check-layering.sh && utilities/check-layering.sh || true
     - name: Create package
       run:  |
             mkdir accounts logs save scripts

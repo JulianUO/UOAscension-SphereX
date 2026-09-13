@@ -1245,22 +1245,6 @@ bool CScriptObj::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command f
 			CScript script(ptcKey, s.GetArgStr());
 			script.CopyParseState(s);
 
-			if ( dynamic_cast<CAccount*>(pRef) != nullptr)
-			{
-				// Dirty fix:
-				// If the REF is an ACCOUNT, it does special checks with the SRC to compare the PrivLevel to allow read/write its values.
-				//	If i'm running in a trigger, so in a script, get the max privileges and change the SRC.
-				CObjBase* pThisObj = dynamic_cast<CObjBase*>(this);
-				if (pThisObj)
-				{
-					if (pThisObj->IsRunningTrigger())
-					{
-						pSrc = &g_Serv;
-						ASSERT(pSrc);
-					}
-				}
-			}
-
 			return pRef->r_Verb( script, pSrc );
 		}
 		// else just fall through. as they seem to be setting the pointer !?
@@ -1538,7 +1522,7 @@ bool CScriptObj::Execute_Call(CScript& s, CScriptTriggerArgsPtr const& pScriptAr
             int64 iN1 = pScriptArgs->m_iN1;
             int64 iN2 = pScriptArgs->m_iN2;
             int64 iN3 = pScriptArgs->m_iN3;
-            CScriptObj* pO1 = pScriptArgs->m_pO1;
+            CScriptObj* pO1 = pScriptArgs->m_pO1.get();
             CSString s1 = pScriptArgs->m_s1;
             CSString s1_raw = pScriptArgs->m_s1_buf_vec;
             pScriptArgs->m_v.clear();
@@ -1611,7 +1595,7 @@ bool CScriptObj::Execute_FullTrigger(CScript& s, CScriptTriggerArgsPtr const& pS
             int64 iN1 = pScriptArgs->m_iN1;
             int64 iN2 = pScriptArgs->m_iN2;
             int64 iN3 = pScriptArgs->m_iN3;
-            CScriptObj* pO1 = pScriptArgs->m_pO1;
+            CScriptObj* pO1 = pScriptArgs->m_pO1.get();
             CSString s1 = pScriptArgs->m_s1;
             CSString s1_raw = pScriptArgs->m_s1_buf_vec;
             pScriptArgs->m_v.clear();

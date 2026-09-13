@@ -46,6 +46,11 @@ bool CChar::Noto_IsEvil() const
 	// animals and humans given more leeway.
 	if ( Noto_IsMurderer() )
 		return true;
+
+	// TAG.MurdererNPC=1: NPC shows as evil (red name) without requiring murderer kills.
+	if ( !m_pPlayer && (GetKeyNum("MurdererNPC") == 1) )
+		return true;
+
 	switch ( GetNPCBrainGroup() )
 	{
 		case NPCBRAIN_MONSTER:

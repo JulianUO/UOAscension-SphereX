@@ -1,0 +1,30 @@
+# Static analysis baseline — Source-X foundation audit
+# Generated as part of Phase 0 documentation. Re-run periodically.
+
+## Layering (src/common upward includes to game/)
+Run: utilities/check-layering.sh
+Baseline target: reduce over time; CUID lookup moved to src/game/CUIDGame.cpp
+UO enums moved to src/common/uo_types/uofiles_enums.h
+
+## CppCheck
+Enable: cmake -DUSE_CPPCHECK=ON -B build -S .
+Output: build/cppcheck.log
+Suppressions: static_analysis/cppcheck-suppressions.txt
+
+## clang-tidy
+Config: .clang-tidy
+Script: static_analysis/run-clang-tidy-config.sh (requires compile_commands.json)
+
+## Manual review priorities
+- src/common/CDataBase.cpp — SQL verbs (admin-gated)
+- src/common/CScriptObj.cpp — script capabilities
+- src/network/receive.cpp — packet handlers
+- src/network/CNetworkInput.cpp — buffer limits
+
+## Unit tests (UNIT_TESTING=ON)
+- t_CSReferenceCount.cpp
+- t_vendor_buy.cpp (VendorBuyHelper)
+- t_CUID.cpp
+- t_num_parsing.cpp, t_CPointBase.cpp, t_CUOClientVersion.cpp
+
+Last updated: foundation audit implementation phase 0.

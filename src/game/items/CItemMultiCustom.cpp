@@ -1376,6 +1376,8 @@ void CItemMultiCustom::ClearFloor(int8 iFloor)
         {
             CUID uid(_lSecureContainers[i]);
             CItemContainer *pCont = static_cast<CItemContainer*>(uid.ItemFind());
+            if ( pCont == nullptr )
+                continue;
             if ((pCont->GetTopPoint().m_z >= iMinZ) && (pCont->GetTopPoint().m_z <= iMaxZ))
             {
                 Release(uid, true);

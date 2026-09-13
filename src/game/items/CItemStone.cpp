@@ -22,6 +22,7 @@ CItemStone::CItemStone( ITEMID_TYPE id, CItemBase * pItemDef ) :
     _pMultiStorage = new CMultiStorage(CUID());
     _iMaxShips = g_Cfg._iMaxShipsGuild;
     _iMaxHouses = g_Cfg._iMaxHousesGuild;
+	_uidAlliance.InitUID();
 
 	EXC_CATCH;
 }
@@ -126,6 +127,8 @@ void CItemStone::r_Write( CScript & s )
 	ADDTOCALLSTACK_DEBUG("CItemStone::r_Write");
 	CItem::r_Write( s );
 	s.WriteKeyVal( "ALIGN", GetAlignType());
+	if ( _uidAlliance.IsValidUID() )
+		s.WriteKeyHex( "ALLIANCE", _uidAlliance.GetObjUID() );
 	if ( ! m_sAbbrev.IsEmpty())
 		s.WriteKeyStr( "ABBREV", m_sAbbrev.GetBuffer() );
 
@@ -356,6 +359,25 @@ bool CItemStone::r_LoadVal( CScript & s ) // Load an item Script
 		case STC_ALIGN: // "ALIGN"
 			SetALIGNTYPE(static_cast<STONEALIGN_TYPE>(s.GetArgVal()));
 			return true;
+		case STC_ALLIANCE:
+			{
+				if ( s.HasArgs() )
+				{
+					CUID uidNewAlliance(s.GetArgDWVal());
+					CItem * pItem = uidNewAlliance.ItemFind();
+					if ( !pItem )
+					{
+						DEBUG_ERR(("ALLIANCE called on non item 0%x uid.\n", (dword)uidNewAlliance));
+						return false;
+					}
+
+					_uidAlliance = uidNewAlliance;
+					return true;
+				}
+
+				_uidAlliance.ClearUID();
+				return true;
+			}
 		case STC_MASTERUID:
 			{
 				if ( s.HasArgs() )
@@ -456,6 +478,27 @@ bool CItemStone::r_WriteVal( lpctstr ptcKey, CSString & sVal, CTextConsole * pSr
 	EXC_TRY("WriteVal");
 	CChar * pCharSrc = pSrc->GetChar();
 
+	if ( !strnicmp("alliance.", ptcKey, 9) )
+	{
+		if ( !_uidAlliance.IsValidUID() )
+		{
+			sVal.FormatHex(0);
+			return true;
+		}
+
+		lpctstr pszCmd = ptcKey + 9;
+		if ( !strnicmp("MASTER", pszCmd, 6) )
+		{
+			CItem * pAllyStone = _uidAlliance.ItemFind();
+			if ( !pAllyStone )
+			{
+				sVal.FormatHex(0);
+				return true;
+			}
+			sVal.FormatHex((dword)pAllyStone->m_uidLink);
+			return true;
+		}
+	}
 	if ( !strnicmp("member.",ptcKey,7) )
 	{
 		lpctstr pszCmd = ptcKey + 7;
@@ -654,6 +697,9 @@ bool CItemStone::r_WriteVal( lpctstr ptcKey, CSString & sVal, CTextConsole * pSr
 			return true;
 		case STC_ALIGN:
 			sVal.FormatVal( GetAlignType());
+			return true;
+		case STC_ALLIANCE:
+			sVal.FormatHex(_uidAlliance.IsValidUID() ? (dword)_uidAlliance : 0);
 			return true;
 		case STC_WEBPAGE: // "WEBPAGE"
 			sVal = GetWebPageURL();

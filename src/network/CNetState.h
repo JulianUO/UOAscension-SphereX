@@ -39,13 +39,13 @@ protected:
     CNetworkThread* m_parent;
     int64 m_iConnectionTimeMs;
 
-    volatile std::atomic_bool m_isInUse;		// is currently in use
-    volatile std::atomic_bool m_isReadClosed;	// is closed by read thread
-    volatile std::atomic_bool m_isWriteClosed;	// is closed by write thread
-    volatile std::atomic_bool m_needsFlush;		// does data need to be flushed
+    std::atomic<bool> m_isInUse{false};		// is currently in use
+    std::atomic<bool> m_isReadClosed{true};	// is closed by read thread
+    std::atomic<bool> m_isWriteClosed{true};	// is closed by write thread
+    std::atomic<bool> m_needsFlush{false};		// does data need to be flushed
 
-    volatile std::atomic_bool m_useAsync;        // is this socket using asynchronous sends
-    volatile std::atomic_bool m_isSendingAsync;  // is a packet currently being sent asynchronously?
+    std::atomic<bool> m_useAsync{false};        // is this socket using asynchronous sends
+    std::atomic<bool> m_isSendingAsync{false};  // is a packet currently being sent asynchronously?
 
     bool m_seeded;	// is seed received
     bool m_newseed; // is the client using new seed
@@ -105,32 +105,32 @@ public:
     void clearQueues(void);					// clears outgoing data queues
 
     void init(SOCKET socket, CSocketAddress addr);		// initialized socket
-    bool isInUse(const CClient* client = nullptr) const volatile noexcept; // does this socket still belong to this/a client?
+    bool isInUse(const CClient* client = nullptr) const noexcept; // does this socket still belong to this/a client?
     bool hasPendingData(void) const;			// is there any data waiting to be sent?
     bool canReceive(PacketSend* packet) const;	// can the state receive the given packet?
 
     void detectAsyncMode(void);
-    void setAsyncMode(bool isAsync) volatile noexcept;   // set asynchronous mode
-    bool isAsyncMode(void) const volatile noexcept;      // get asyncronous mode
+    void setAsyncMode(bool isAsync) noexcept;   // set asynchronous mode
+    bool isAsyncMode(void) const noexcept;      // get asyncronous mode
 #ifdef _LIBEV
     struct ev_io* iocb(void) { return &m_eventWatcher; };		// get io callback
 #endif
-    bool isSendingAsync(void) const volatile noexcept;				// get if async packeet is being sent
-    void setSendingAsync(bool isSending) volatile noexcept;	// set if async packet is being sent
+    bool isSendingAsync(void) const noexcept;				// get if async packeet is being sent
+    void setSendingAsync(bool isSending) noexcept;	// set if async packet is being sent
 
     GAMECLIENT_TYPE getClientType(void) const { return m_clientType; };	// determined client type
     dword getCryptVersion(void) const { return m_clientVersionNumber; };		// version as determined by encryption
     dword getReportedVersion(void) const { return m_reportedVersionNumber; }; // version as reported by client
 
-    void markReadClosed(void) volatile;		// mark socket as closed by read thread
-    void markWriteClosed(void) volatile;	// mark socket as closed by write thread
-    bool isClosing(void) const volatile { return m_isReadClosed || m_isWriteClosed; }	// is the socket closing?
-    bool isClosed(void) const volatile { return m_isReadClosed && m_isWriteClosed; }	// is the socket closed?
-    bool isReadClosed(void) const volatile { return m_isReadClosed; }	// is the socket closed by read-thread?
-    bool isWriteClosed(void) const volatile { return m_isWriteClosed; }	// is the socket closed by write-thread?
+    void markReadClosed(void);		// mark socket as closed by read thread
+    void markWriteClosed(void);	// mark socket as closed by write thread
+    bool isClosing(void) const { return m_isReadClosed.load(std::memory_order_relaxed) || m_isWriteClosed.load(std::memory_order_relaxed); }	// is the socket closing?
+    bool isClosed(void) const { return m_isReadClosed.load(std::memory_order_relaxed) && m_isWriteClosed.load(std::memory_order_relaxed); }	// is the socket closed?
+    bool isReadClosed(void) const { return m_isReadClosed.load(std::memory_order_relaxed); }	// is the socket closed by read-thread?
+    bool isWriteClosed(void) const { return m_isWriteClosed.load(std::memory_order_relaxed); }	// is the socket closed by write-thread?
 
-    void markFlush(bool needsFlush) volatile noexcept; // mark socket as needing a flush
-    bool needsFlush(void) const volatile noexcept{ return m_needsFlush; } // does the socket need to be flushed?
+    void markFlush(bool needsFlush) noexcept; // mark socket as needing a flush
+    bool needsFlush(void) const noexcept { return m_needsFlush.load(std::memory_order_relaxed); } // does the socket need to be flushed?
 
     CClient* getClient(void) const { return m_client; } // get linked client
 

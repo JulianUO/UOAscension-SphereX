@@ -6,6 +6,7 @@
 //#include "../../common/CScriptParserBufs.h" // included in the precompiled header via CExpression.h
 #include "../../common/CUOClientVersion.h"
 #include "../../network/CClientIterator.h"
+#include "../ultimalive/CUltimaLive.h"
 #include "../../network/CNetworkManager.h"
 #include "../../network/CIPHistoryManager.h"
 #include "../../network/send.h"
@@ -166,6 +167,7 @@ bool CClient::CanInstantLogOut() const
 void CClient::CharDisconnect()
 {
 	ADDTOCALLSTACK("CClient::CharDisconnect");
+	g_UltimaLive.OnClientDisconnect(this);
 	// Disconnect the CChar from the client.
 	// Even tho the CClient might stay active.
 	if ( !m_pChar )
@@ -295,7 +297,18 @@ void CClient::SetScreenSize(ushort x, ushort y)
 {
     m_ScreenSize.x = x;
     m_ScreenSize.y = y;
+
+    if (x > 0 && y > 0)
+    {
+        // Isometric calculation: tile distance to viewport corner (44px tile diameter)
+        double maxDistTiles = sqrt(static_cast<double>(x) * x + static_cast<double>(y) * y) / 44.0;
+        int screenBlocks = static_cast<int>(ceil(maxDistTiles / 8.0));
+        // Reveal almost everything on screen except 1 outer edge block
+        int revealBlocks = std::max(2, screenBlocks - 1);
+        m_UltimaLiveDiscovery.SetViewBlocks(revealBlocks);
+    }
 }
+
 
 PLEVEL_TYPE CClient::GetPrivLevel() const
 {
@@ -1308,6 +1321,14 @@ bool CClient::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command from
             break;
         }
 
+		case CV_CURRENTPLACE:
+			addCurrentPlace(s.GetArgStr());
+			break;
+
+		case CV_DISCOVEREDPLACE:
+			addDiscoveredPlace(s.GetArgStr());
+			break;
+
 		case CV_DYE:
 			if ( s.HasArgs() )
 			{
@@ -1711,6 +1732,16 @@ bool CClient::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command from
 				m_tmTile.m_ptFirst.InitPoint(); // Clear this first
 				m_tmTile.m_Code = CV_TILE;
 				addTarget( CLIMODE_TARG_TILE, "Pick 1st corner:", true );
+			}
+			break;
+		case CV_UNIVERSALCOMMAND:
+			{
+				tchar * ppCmd[2];
+				if ( Str_ParseCmds( s.GetArgRaw(), ppCmd, ARRAY_COUNT(ppCmd) ) > 0 )
+				{
+					word cmdId = (word)Exp_GetVal(ppCmd[0]);
+					addUniversalCommand(cmdId, ppCmd[1] ? ppCmd[1] : "");
+				}
 			}
 			break;
 		case CV_VERSION:	// "SHOW VERSION"

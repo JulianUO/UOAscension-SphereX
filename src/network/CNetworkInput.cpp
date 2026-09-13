@@ -13,22 +13,16 @@
 #include "CNetworkInput.h"
 
 #define NETWORK_BUFFERSIZE		0xF000	// size of receive buffer
+#define MAX_INCOMING_REASSEMBLY	(128u * 1024u)	// max decrypted stream buffer per connection
 #define NETWORK_SEEDLEN_OLD		(sizeof( dword ))
 #define NETWORK_SEEDLEN_NEW		(1 + (sizeof( dword ) * 5))
 
 
-CNetworkInput::CNetworkInput(void) : m_thread(nullptr)
+CNetworkInput::CNetworkInput(void) :
+    m_thread(nullptr),
+    m_receiveBuffer(std::make_unique<byte[]>(NETWORK_BUFFERSIZE)),
+    m_decryptBuffer(std::make_unique<byte[]>(NETWORK_BUFFERSIZE))
 {
-    m_receiveBuffer = new byte[NETWORK_BUFFERSIZE];
-    m_decryptBuffer = new byte[NETWORK_BUFFERSIZE];
-}
-
-CNetworkInput::~CNetworkInput()
-{
-    if (m_receiveBuffer != nullptr)
-        delete[] m_receiveBuffer;
-    if (m_decryptBuffer != nullptr)
-        delete[] m_decryptBuffer;
 }
 
 void CNetworkInput::setOwner(CNetworkThread* thread)
@@ -97,7 +91,7 @@ void CNetworkInput::receiveData()
 
         // receive data
         EXC_SET_BLOCK("messages - receive");
-        int received = state->m_socket.Receive(m_receiveBuffer, NETWORK_BUFFERSIZE, 0);
+        int received = state->m_socket.Receive(m_receiveBuffer.get(), NETWORK_BUFFERSIZE, 0);
         state->_iInByteCounter += abs(received);
         if (received <= 0 || received > NETWORK_BUFFERSIZE)
         {
@@ -113,7 +107,7 @@ void CNetworkInput::receiveData()
 
         // our objective here is to take the received data and separate it into packets to
         // be stored in CNetState::m_incoming.rawPackets
-        byte* buffer = m_receiveBuffer;
+        byte* buffer = m_receiveBuffer.get();
         while (received > 0)
         {
             // currently we just take the data and push it into a queue for the main thread
@@ -180,11 +174,11 @@ void CNetworkInput::processData()
 
         EXC_SET_BLOCK("messages - process");
         // we've already received some raw data, we just need to add it to any existing data we have
-        while (state->m_incoming.rawPackets.empty() == false)
+        Packet* packet = nullptr;
+        while (state->m_incoming.rawPackets.try_pop(packet))
         {
-            Packet* packet = state->m_incoming.rawPackets.front();
-            state->m_incoming.rawPackets.pop();
-            ASSERT(packet != nullptr);
+            if (packet == nullptr)
+                continue;
 
             EXC_SET_BLOCK("packet - queue data");
             if (state->m_incoming.rawBuffer == nullptr)
@@ -305,7 +299,7 @@ bool CNetworkInput::processGameClientData(CNetState* state, Packet* buffer)
     ASSERT(client != nullptr);
 
     EXC_SET_BLOCK("decrypt message");
-    if (!client->m_Crypt.Decrypt(m_decryptBuffer, buffer->getRemainingData(), MAX_BUFFER, buffer->getRemainingLength()))
+    if (!client->m_Crypt.Decrypt(m_decryptBuffer.get(), buffer->getRemainingData(), MAX_BUFFER, buffer->getRemainingLength()))
     {
         g_Log.EventError("NET-IN: processGameClientData failed (Decrypt).\n");
         return false;
@@ -313,15 +307,25 @@ bool CNetworkInput::processGameClientData(CNetState* state, Packet* buffer)
 
     if (state->m_incoming.buffer == nullptr)
     {
-        // create new buffer
-        state->m_incoming.buffer = new Packet(m_decryptBuffer, buffer->getRemainingLength());
+        if (buffer->getRemainingLength() > MAX_INCOMING_REASSEMBLY)
+        {
+            g_Log.EventError("NET-IN: incoming buffer exceeds limit (%u).\n", buffer->getRemainingLength());
+            return false;
+        }
+        state->m_incoming.buffer = new Packet(m_decryptBuffer.get(), buffer->getRemainingLength());
     }
     else
     {
+        const uint newLength = state->m_incoming.buffer->getLength() + buffer->getRemainingLength();
+        if (newLength > MAX_INCOMING_REASSEMBLY)
+        {
+            g_Log.EventError("NET-IN: incoming buffer exceeds limit (%u).\n", newLength);
+            return false;
+        }
         // append to buffer
         uint pos = state->m_incoming.buffer->getPosition();
         state->m_incoming.buffer->seek(state->m_incoming.buffer->getLength());
-        state->m_incoming.buffer->writeData(m_decryptBuffer, buffer->getRemainingLength());
+        state->m_incoming.buffer->writeData(m_decryptBuffer.get(), buffer->getRemainingLength());
         state->m_incoming.buffer->seek(pos);
     }
 

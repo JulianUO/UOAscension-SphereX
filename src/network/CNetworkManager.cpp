@@ -289,7 +289,15 @@ void CNetworkManager::acceptNewConnection(void)
         EXC_SET_BLOCK("no slot available");
         _printIPBlocked();
 
-        g_Log.Event(LOGM_CLIENTS_LOG | LOGL_ERROR, "Reject reason: CLIENTMAX reached.\n");
+        int iSlotsInUse = 0;
+        for (int slot = 0; slot < m_stateCount; ++slot)
+        {
+            if (m_states[slot]->isInUse())
+                ++iSlotsInUse;
+        }
+        g_Log.Event(LOGM_CLIENTS_LOG | LOGL_ERROR,
+            "Reject reason: CLIENTMAX reached (%d/%d slots in use, ClientMax=%d). Check " SPHERE_FILE ".ini and any f_onserver_start script that sets CLIENTMAX.\n",
+            iSlotsInUse, m_stateCount, g_Cfg.m_iClientsMax);
         CLOSESOCKET(h);
         return;
     }
@@ -356,11 +364,20 @@ void CNetworkManager::start(void)
         g_Log.EventWarn("ClientsMax setting > %d (system limit), defaulting to max.\n", kMaxFd);
         g_Cfg.m_iClientsMax = kMaxFd;
     }
-    m_states = new CNetState * [g_Cfg.m_iClientsMax];
-    for (int l = 0; l < g_Cfg.m_iClientsMax; ++l)
+    // ClientMax<=0 is a login policy (locals/admin only), but we still need at least one
+    // connection slot or every inbound TCP connection is rejected before login can run.
+    const int iSlotCount = maximum(g_Cfg.m_iClientsMax, 1);
+    if (g_Cfg.m_iClientsMax < 1)
+    {
+        g_Log.EventWarn("ClientMax=%d: allocating %d connection slot(s) so local login policy can be enforced.\n",
+            g_Cfg.m_iClientsMax, iSlotCount);
+    }
+    m_states = new CNetState * [iSlotCount];
+    for (int l = 0; l < iSlotCount; ++l)
         m_states[l] = new CNetState(l);
-    m_stateCount = g_Cfg.m_iClientsMax;
+    m_stateCount = iSlotCount;
 
+    g_Log.Event(LOGM_INIT, "Network: %d connection slot(s) ready (ClientMax=%d).\n", m_stateCount, g_Cfg.m_iClientsMax);
     DEBUGNETWORK(("Created %d network slots (system limit of %d clients)\n", m_stateCount, kMaxFd));
 
     // create network threads

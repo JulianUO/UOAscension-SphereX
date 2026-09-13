@@ -8,9 +8,9 @@
 
 #include "../common/CUID.h"
 #include "../common/sphereproto.h"
-#include "../game/uo_files/uofiles_enums.h"
 #include "../game/uo_files/uofiles_enums_itemid.h"
 #include "../game/uo_files/uofiles_types.h"
+#include "VendorBuyHelper.h"
 #include "packet.h"
 
 
@@ -246,13 +246,6 @@ public:
  *
  *
  ***************************************************************************/
-struct VendorItem
-{
-	CUID m_serial;
-	word m_vcAmount;
-	dword m_price;
-};
-
 class PacketVendorBuyReq : public Packet
 {
 public:

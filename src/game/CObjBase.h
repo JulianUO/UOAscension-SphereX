@@ -14,6 +14,7 @@
 #include "CEntity.h"
 #include "CBase.h"
 #include "CServerConfig.h"
+#include <memory>
 
 
 class PacketSend;
@@ -91,7 +92,7 @@ public:
     HUE_TYPE m_wHue;			// Hue or skin color. (CItems must be < 0x4ff or so)
 
 protected:
-    PacketPropertyList* m_PropertyList;	// currently cached property list packet
+    std::unique_ptr<PacketPropertyList> m_PropertyList;	// currently cached property list packet
     dword m_PropertyHash;				// latest property list hash
     dword m_PropertyRevision;			// current property list revision
 
@@ -937,16 +938,10 @@ public:
      *
      * @return  null if it fails, else the property list.
      */
-	PacketPropertyList* GetPropertyList(void) const { return m_PropertyList; }
+	PacketPropertyList* GetPropertyList(void) const { return m_PropertyList.get(); }
 
-    /**
-     * @fn  void CObjBase::SetPropertyList(PacketPropertyList* propertyList);
-     *
-     * @brief   Sets property list.
-     *
-     * @param [in,out]  propertyList    If non-null, list of properties.
-     */
-	void SetPropertyList(PacketPropertyList* propertyList);
+	void SetPropertyList(std::unique_ptr<PacketPropertyList> propertyList);
+	void SetPropertyList(PacketPropertyList* propertyList); // takes ownership
 
     /**
      * @fn  void CObjBase::FreePropertyList(void);

@@ -48,15 +48,8 @@ static void CALLBACK SendCompleted_Winsock(DWORD dwError, DWORD cbTransferred, L
 #endif
 
 
-CNetworkOutput::CNetworkOutput() : m_thread(nullptr)
+CNetworkOutput::CNetworkOutput() : m_thread(nullptr), m_encryptBuffer(std::make_unique<byte[]>(MAX_BUFFER))
 {
-	m_encryptBuffer = new byte[MAX_BUFFER];
-}
-
-CNetworkOutput::~CNetworkOutput()
-{
-	if (m_encryptBuffer != nullptr)
-		delete[] m_encryptBuffer;
 }
 
 bool CNetworkOutput::processOutput()
@@ -221,11 +214,8 @@ size_t CNetworkOutput::processPacketQueue(CNetState* state, uint priority)
 		// select next transaction
 		while (state->m_outgoing.currentTransaction == nullptr)
 		{
-			if (state->m_outgoing.queue[priority].empty())
+			if (!state->m_outgoing.queue[priority].try_pop(state->m_outgoing.currentTransaction))
 				break;
-
-			state->m_outgoing.currentTransaction = state->m_outgoing.queue[priority].front();
-			state->m_outgoing.queue[priority].pop();
 		}
 
 		PacketTransaction* transaction = state->m_outgoing.currentTransaction;
@@ -251,11 +241,7 @@ size_t CNetworkOutput::processPacketQueue(CNetState* state, uint priority)
 			continue;
 		}
 
-		EXC_TRY("processPacketQueue");
-		lengthProcessed += packet->getLength();
-		++packetsProcessed;
-
-		EXC_SET_BLOCK("sending");
+		// send packet
 		if (sendPacket(state, packet) == false)
 		{
 			state->clearQueues();
@@ -263,11 +249,8 @@ size_t CNetworkOutput::processPacketQueue(CNetState* state, uint priority)
 			break;
 		}
 
-		EXC_CATCH;
-		EXC_DEBUG_START;
-		g_Log.EventDebug("id='%x', pri='%u', packet '%" PRIuSIZE_T "' of '%" PRIuSIZE_T "' to send, length '%" PRIuSIZE_T "' of '%" PRIuSIZE_T "'\n",
-			state->id(), priority, packetsProcessed, maxPacketsToProcess, lengthProcessed, maxLengthToProcess);
-		EXC_DEBUG_END;
+		packetsProcessed++;
+		lengthProcessed += packet->getLength();
 	}
 
 	if (packetsProcessed >= maxPacketsToProcess)
@@ -300,11 +283,8 @@ size_t CNetworkOutput::processAsyncQueue(CNetState* state)
 
 	// select the next packet to send
 	PacketSend* packet = nullptr;
-	while (state->m_outgoing.asyncQueue.empty() == false)
+	while (state->m_outgoing.asyncQueue.try_pop(packet))
 	{
-		packet = state->m_outgoing.asyncQueue.front();
-		state->m_outgoing.asyncQueue.pop();
-
 		if (packet != nullptr)
 		{
 			// check if the client is allowed this
@@ -419,7 +399,7 @@ bool CNetworkOutput::sendPacketData(CNetState* state, PacketSend* packet)
 		EXC_SET_BLOCK("compress and encrypt");
 
 		// compress
-		uint compressLength = client->xCompress(m_encryptBuffer, packet->getData(), MAX_BUFFER, packet->getLength());
+		uint compressLength = client->xCompress(m_encryptBuffer.get(), packet->getData(), MAX_BUFFER, packet->getLength());
         if (compressLength == 0)
         {
             g_Log.EventError("NET-OUT: Trying to compress (Huffman) too much data. Packet will not be sent. (Probably it's a dialog with a lot of data inside).\n");
@@ -429,14 +409,14 @@ bool CNetworkOutput::sendPacketData(CNetState* state, PacketSend* packet)
 		// encrypt
         if (client->m_Crypt.GetEncryptionType() == ENC_TFISH)
         {
-            if (!client->m_Crypt.Encrypt(m_encryptBuffer, m_encryptBuffer, MAX_BUFFER, compressLength))
+            if (!client->m_Crypt.Encrypt(m_encryptBuffer.get(), m_encryptBuffer.get(), MAX_BUFFER, compressLength))
             {
                 g_Log.EventError("NET-OUT: Trying to compress (TFISH/MD5) too much data. Packet will not be sent. (Probably it's a dialog with a lot of data inside).\n");
                 return false;
             }
         }
 
-		sendBuffer = m_encryptBuffer;
+		sendBuffer = m_encryptBuffer.get();
 		sendBufferLength = compressLength;
 	}
 	else

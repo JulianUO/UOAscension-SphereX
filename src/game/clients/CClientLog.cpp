@@ -11,6 +11,8 @@
 #include "../../network/CNetworkManager.h"
 #include "../../network/send.h"
 #include "../CServer.h"
+#include "../ultimalive/CUltimaLive.h"
+#include "../clients/CSessionRegistry.h"
 #include "CClient.h"
 
 namespace zlib {
@@ -97,6 +99,61 @@ void CClient::SetConnectType( CONNECT_TYPE iType )
 
 //---------------------------------------------------------------------
 // Push world display data to this client only.
+
+void CClient::ApplyRegisteredLoginSession(dword clientVersion, dword reportedVersion)
+{
+	ADDTOCALLSTACK("CClient::ApplyRegisteredLoginSession");
+	if ( reportedVersion != 0 )
+	{
+		GetNetState()->m_reportedVersionNumber = reportedVersion;
+		if ( clientVersion == 0 && m_Crypt.GetClientVerNumber() == 0 )
+			m_Crypt.SetClientVerFromNumber(reportedVersion, false);
+	}
+	else if ( clientVersion != 0 )
+	{
+		m_Crypt.SetClientVerFromNumber(clientVersion, false);
+		GetNetState()->m_clientVersionNumber = clientVersion;
+	}
+	GetNetState()->detectAsyncMode();
+}
+
+static void SetAccountClientVersionTags(CAccount * pAcc, dword tmVer, dword tmVerReported)
+{
+	if ( pAcc == nullptr )
+		return;
+	if ( tmVer )
+		pAcc->m_TagDefs.SetNum("clientversion", tmVer);
+	if ( tmVerReported )
+		pAcc->m_TagDefs.SetNum("reportedcliver", tmVerReported);
+}
+
+static void ClearAccountClientVersionTags(CAccount * pAcc)
+{
+	if ( pAcc == nullptr )
+		return;
+	pAcc->m_TagDefs.DeleteKey("clientversion");
+	pAcc->m_TagDefs.DeleteKey("reportedcliver");
+}
+
+void CClient::PrepareExternalLoginAccountTags(lpctstr pszAccount, dword clientVersion, dword reportedVersion)
+{
+	ADDTOCALLSTACK("CClient::PrepareExternalLoginAccountTags");
+	ApplyRegisteredLoginSession(clientVersion, reportedVersion);
+
+	dword tmVer = clientVersion;
+	dword tmVerReported = reportedVersion;
+	if ( tmVer == 0 )
+		tmVer = m_Crypt.GetClientVerNumber();
+	if ( tmVerReported == 0 )
+		tmVerReported = GetNetState()->getReportedVersion();
+	SetAccountClientVersionTags(g_Accounts.Account_Find(pszAccount), tmVer, tmVerReported);
+}
+
+void CClient::ClearExternalLoginAccountTags(lpctstr pszAccount)
+{
+	ADDTOCALLSTACK("CClient::ClearExternalLoginAccountTags");
+	ClearAccountClientVersionTags(g_Accounts.Account_Find(pszAccount));
+}
 
 bool CClient::addLoginErr(byte code)
 {
@@ -305,6 +362,9 @@ bool CClient::Login_Relay( uint iRelay ) // Relay player to a selected IP
 byte CClient::Login_ServerList( const char * pszAccount, const char * pszPassword )
 {
 	ADDTOCALLSTACK("CClient::Login_ServerList");
+	if ( g_Cfg.m_fUseExternalLogin )
+		return PacketLoginError::Other;
+
 	// XCMD_ServersReq
 	// Initial login (Login on "loginserver", new format)
 	// If the messages are garbled make sure they are terminated to correct length.
@@ -334,7 +394,13 @@ byte CClient::Login_ServerList( const char * pszAccount, const char * pszPasswor
 		return( lErr );
 	}
 
+	dword tmVer = m_Crypt.GetClientVerNumber();
+	dword tmVerReported = GetNetState()->getReportedVersion();
+	SetAccountClientVersionTags(GetAccount(), tmVer, tmVerReported);
+
 	new PacketServerList(this);
+	if (g_UltimaLive.IsEnabled())
+		g_UltimaLive.OnServerList(this);
 
 	m_Targ_Mode = CLIMODE_SETUP_SERVERS;
 	return( PacketLoginError::Success );
@@ -902,6 +968,12 @@ bool CClient::xProcessClientSetup( CEvent * pEvent, uint uiLen )
 	{
 		case XCMD_ServersReq:
 		{
+			if ( g_Cfg.m_fUseExternalLogin )
+			{
+				addLoginErr(PacketLoginError::Other);
+				return false;
+			}
+
 			if ( uiLen < sizeof( pEvent->ServersReq ))
 				return false;
 
@@ -934,48 +1006,69 @@ bool CClient::xProcessClientSetup( CEvent * pEvent, uint uiLen )
 			if ( uiLen < sizeof( pEvent->CharListReq ))
 				return false;
 
+			Str_GetBare( szAccount, pEvent->CharListReq.m_acctname, sizeof(szAccount)-1 );
+			dword tmSid = static_cast<dword>(pEvent->CharListReq.m_Account);
+			dword tmVer = 0;
+			dword tmVerReported = 0;
+			CAccount * pAcc = g_Accounts.Account_Find( szAccount );
+
+			if ( g_Cfg.m_fUseExternalLogin )
+			{
+				if ( !CSessionRegistry::get().ConsumeSession(tmSid, szAccount, tmVer, tmVerReported) )
+				{
+					addLoginErr(PacketLoginError::BadAuthID);
+					return false;
+				}
+
+				PrepareExternalLoginAccountTags(szAccount, tmVer, tmVerReported);
+			}
+
 			lErr = Setup_ListReq( pEvent->CharListReq.m_acctname, pEvent->CharListReq.m_acctpass, true );
+
+			if ( g_Cfg.m_fUseExternalLogin )
+				ClearExternalLoginAccountTags(szAccount);
+
 			if ( lErr == PacketLoginError::Success )
 			{
-				// pass detected client version to the game server to make valid cliver used
-				Str_GetBare( szAccount, pEvent->CharListReq.m_acctname, sizeof(szAccount)-1 );
-				CAccount * pAcc = g_Accounts.Account_Find( szAccount );
-				if (pAcc)
+				if ( pAcc )
 				{
-					dword tmSid = 0x7f000001;
-					dword tmVer = (dword)(pAcc->m_TagDefs.GetKeyNum("clientversion"));
-					dword tmVerReported = (dword)(pAcc->m_TagDefs.GetKeyNum("reportedcliver"));
-					pAcc->m_TagDefs.DeleteKey("clientversion");
-					pAcc->m_TagDefs.DeleteKey("reportedcliver");
-
-					if ( g_Cfg.m_fUseAuthID )
+					if ( !g_Cfg.m_fUseExternalLogin )
 					{
-						tmSid = (dword)(pAcc->m_TagDefs.GetKeyNum("customerid"));
-						pAcc->m_TagDefs.DeleteKey("customerid");
+						tmVer = (dword)(pAcc->m_TagDefs.GetKeyNum("clientversion"));
+						tmVerReported = (dword)(pAcc->m_TagDefs.GetKeyNum("reportedcliver"));
+						ClearAccountClientVersionTags(pAcc);
+
+						if ( g_Cfg.m_fUseAuthID )
+						{
+							tmSid = (dword)(pAcc->m_TagDefs.GetKeyNum("customerid"));
+							pAcc->m_TagDefs.DeleteKey("customerid");
+						}
 					}
 
 					DEBUG_MSG(("%x:xProcessClientSetup for %s, with AuthId %u and CliVersion %u / CliVersionReported %u\n", GetSocketID(), pAcc->GetName(), tmSid, tmVer, tmVerReported));
 
-					if ( tmSid != 0 && tmSid == pEvent->CharListReq.m_Account )
+					if ( g_Cfg.m_fUseExternalLogin || (tmSid != 0 && tmSid == pEvent->CharListReq.m_Account) )
 					{
-						// request client version if the client has not reported it to server yet
-						if ( (tmVerReported == 0) && (tmVer > 1'26'04'00) )
-                        {   // if we send this packet to clients < 1.26.04.00 we'll desynchronize the stream and break the login process
-							new PacketClientVersionReq(this);
-                        }
-
-						if ( tmVerReported != 0 )
+						if ( !g_Cfg.m_fUseExternalLogin )
 						{
-							GetNetState()->m_reportedVersionNumber = tmVerReported;
-						}
-						else if ( tmVer != 0 )
-						{
-							m_Crypt.SetClientVerFromNumber(tmVer, false);
-							GetNetState()->m_clientVersionNumber = tmVer;
-						}
+							// request client version if the client has not reported it to server yet
+							if ( (tmVerReported == 0) && (tmVer > 1'26'04'00) )
+							{   // if we send this packet to clients < 1.26.04.00 we'll desynchronize the stream and break the login process
+								new PacketClientVersionReq(this);
+							}
 
-						// client version change may toggle async mode, it's important to flush pending data to the client before this happens
-						GetNetState()->detectAsyncMode();
+							if ( tmVerReported != 0 )
+							{
+								GetNetState()->m_reportedVersionNumber = tmVerReported;
+							}
+							else if ( tmVer != 0 )
+							{
+								m_Crypt.SetClientVerFromNumber(tmVer, false);
+								GetNetState()->m_clientVersionNumber = tmVer;
+							}
+
+							GetNetState()->detectAsyncMode();
+						}
 
 						if ( !xCanEncLogin(true) )
 							lErr = PacketLoginError::BadVersion;

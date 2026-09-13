@@ -21,6 +21,7 @@
 #include "../common/CUOInstall.h"
 #include "../network/CNetworkManager.h"
 #include "../network/PingServer.h"
+#include "../network/CInternalApiServer.h"
 #include "../sphere/asyncdb.h"
 #include "../sphere/GlobalInitializer.h"
 #include "../sphere/StartupMonitorThread.h"
@@ -104,6 +105,7 @@ static MainThread g_Main;
 
 // NOLINTNEXTLINE(clazy-non-pod-global-static)
 static PingServer g_PingServer;
+static CInternalApiServer g_InternalApiServer;
 
 CDataBaseAsyncHelper g_asyncHdb;
 
@@ -248,6 +250,13 @@ int Sphere_InitServer( int argc, char *argv[] )
 	if (!g_Accounts.Account_GetCount())
 		g_Log.Event(LOGL_WARN, "The server has no accounts. To create admin account use:\n  ACCOUNT ADD [login] [password]\n  ACCOUNT [login] PLEVEL 7\n\n");
 
+	if (g_Cfg.m_fUseExternalLogin && !g_Cfg.m_fUseAuthID)
+	{
+		g_Log.Event(LOGL_WARN | LOGM_INIT,
+			"UseExternalLogin is enabled but UseAuthID=0. Set UseAuthID=1 in " SPHERE_FILE ".ini "
+			"so the shard accepts AuthID sessions from the login server.\n");
+	}
+
 
 	// Trigger server start
     g_Serv.r_Call("f_onserver_start", CScriptParserBufs::GetCScriptTriggerArgsPtr(), &g_Serv);
@@ -271,6 +280,7 @@ void Sphere_ExitServer()
 	g_NetworkManager.stop();
 	g_Main.waitForClose();
 	g_PingServer.waitForClose();
+	g_InternalApiServer.waitForClose();
 	g_asyncHdb.waitForClose();
 #ifdef _LIBEV
 	if ( g_Cfg.m_fUseAsyncNetwork != 0 )
@@ -419,6 +429,9 @@ int main( int argc, char * argv[] )
 		// Start the ping server, this can only be ran in a separate thread
 		if ( IsSetEF( EF_UsePingServer ) )
 			g_PingServer.start();
+
+		if ( g_Cfg.m_iInternalApiPort > 0 )
+			g_InternalApiServer.start();
 
 #ifdef _LIBEV
 		if ( g_Cfg.m_fUseAsyncNetwork != 0 )

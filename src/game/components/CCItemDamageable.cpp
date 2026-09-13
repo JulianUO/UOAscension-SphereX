@@ -16,6 +16,17 @@ CCItemDamageable::CCItemDamageable(CItem * pLink) : CComponent(COMP_ITEMDAMAGEAB
     _iMaxHits = 0;
     _iTimeLastUpdate = 0;
     _fNeedUpdate = true;
+
+    if (pLink != nullptr)
+    {
+        const word iMaxHits = dword_hi_word(pLink->m_itNormal.m_more1);
+        if (iMaxHits > 0)
+        {
+            _iMaxHits = iMaxHits;
+            const word iCurHits = dword_low_word(pLink->m_itNormal.m_more1);
+            _iCurHits = (iCurHits > 0 && iCurHits <= iMaxHits) ? iCurHits : iMaxHits;
+        }
+    }
 }
 
 CItem * CCItemDamageable::GetLink() const noexcept

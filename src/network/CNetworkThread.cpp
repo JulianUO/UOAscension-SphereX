@@ -56,14 +56,14 @@ void CNetworkThread::checkNewStates(void)
     ADDTOCALLSTACK("CNetworkThread::checkNewStates");
     ASSERT(!isActive() || isCurrentThread());
 
-    while (m_assignQueue.empty() == false)
+    CNetState* state = nullptr;
+    while (m_assignQueue.try_pop(state))
     {
-        CNetState* state = m_assignQueue.front();
-        m_assignQueue.pop();
-
-        ASSERT(state != nullptr);
-        state->setParentThread(this);
-        m_states.emplace_back(state);
+        if (state != nullptr)
+        {
+            state->setParentThread(this);
+            m_states.emplace_back(state);
+        }
     }
 }
 

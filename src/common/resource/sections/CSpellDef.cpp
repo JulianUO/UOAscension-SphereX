@@ -1,6 +1,6 @@
 #include "../../../game/CServerConfig.h"
 #include "../../../game/game_macros.h"
-#include "../../../game/uo_files/uofiles_enums.h"
+#include "../../uo_types/uofiles_enums.h"
 //#include "../../CException.h" // included in the precompiled header
 //#include "../../CExpression.h" // included in the precompiled header
 #include "CSpellDef.h"

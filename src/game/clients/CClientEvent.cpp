@@ -14,6 +14,7 @@
 #include "../uo_files/uofiles_enums_creid.h"
 #include "../CSector.h"
 #include "../CServer.h"
+#include "../ultimalive/CUltimaLive.h"
 #include "../CWorld.h"
 #include "../CWorldGameTime.h"
 #include "../CWorldMap.h"
@@ -57,7 +58,7 @@ void CClient::Event_ChatButton(const nachar* pszName) // Client's chat button wa
         if (m_pChar && m_pChar->OnTrigger(CTRIG_UserChatButton, CScriptParserBufs::GetCScriptTriggerArgsPtr(), m_pChar) == TRIGRET_RET_TRUE)
 			return;
 	}
-	GetChar()->SetTriggerActive("UserChatButton");	// dirty fix for SA Classic clients with injection moving a lot when using chat button, we set 'active trigger' to this, so we check it back on the packet to limit the amount of steps to do.
+	m_pChar->SetTriggerActive("UserChatButton");
 
 	ASSERT(GetAccount());
 
@@ -83,7 +84,7 @@ void CClient::Event_ChatButton(const nachar* pszName) // Client's chat button wa
 	// Ok, below here we have a chat system nickname
 	// Tell the chat system it has a new client using it
 	addChatWindow();
-	GetChar()->SetTriggerActive();
+	m_pChar->SetTriggerActive();
 }
 
 void CClient::Event_ChatText( const nachar* pszText, int len, CLanguageID lang ) // Text from a client
@@ -724,6 +725,15 @@ void CClient::Event_Skill_Use( SKILL_TYPE skill ) // Skill is clicked on the ski
 }
 
 
+void CClient::Event_ClearWalkState()
+{
+	ADDTOCALLSTACK("CClient::Event_ClearWalkState");
+	// RunUO calls ClearFastwalkStack() on MovementRej so the client can resync cleanly.
+	m_timeNextEventWalk = 0;
+	m_iWalkStepCount = 0;
+	m_timeWalkStep = CSTime::GetMonotonicSysTimeMilli();
+}
+
 bool CClient::Event_CheckWalkBuffer(byte rawdir)
 {
 	ADDTOCALLSTACK("CClient::Event_CheckWalkBuffer");
@@ -863,6 +873,7 @@ bool CClient::Event_Walk( byte rawdir, byte sequence ) // Player moves
 	if ( dir >= DIR_QTY )
 	{
 		new PacketMovementRej(this, sequence);
+		Event_ClearWalkState();
 		return false;
 	}
 
@@ -879,30 +890,16 @@ bool CClient::Event_Walk( byte rawdir, byte sequence ) // Player moves
 		if ( m_pChar->CanMoveWalkTo(pt, true, false, dir) == nullptr )
 		{
 			new PacketMovementRej(this, sequence);
+			Event_ClearWalkState();
 			return false;
 		}
 
 		// To get milliseconds precision we must get the system clock manually at each walk request (the server clock advances only at every tick).
 		const int64 iCurTime = CWorldGameTime::GetCurrentTime().GetTimeRaw();
 
-		if (!m_pChar->MoveToChar(pt, false, false))
-		{
-			new PacketMovementRej(this, sequence);
-			return false;
-		}
-
-		// Check if I stepped on any item/teleport
-		TRIGRET_TYPE iRet = m_pChar->CheckLocationEffects(false);
-		if (iRet == TRIGRET_RET_FALSE)
-		{
-			m_pChar->SetUnkPoint(ptOld);	// we already moved, so move back to previous location
-			new PacketMovementRej(this, sequence);
-			return false;
-		}
-
-		// Set running flag if I'm running
-		m_pChar->StatFlag_Mod(STATF_FLY, (rawdir & DIR_MASK_RUNNING) ? true : false);
-
+		// Fastwalk / walk-buffer must be evaluated before MoveToChar (RunUO/ServUO/ModernUO do this
+		// before applying position). Rejecting after the move causes rubber-banding, especially when
+		// several walk packets arrive while running from a distance.
 		if (IsSetEF(EF_FastWalkPrevention) && !m_pChar->IsPriv(PRIV_GM))
 		{
 			// FIXME:THIS SYSTEM DO NOT WORK SEE DETAIL DOWN
@@ -910,6 +907,7 @@ bool CClient::Event_Walk( byte rawdir, byte sequence ) // Player moves
 			{
 				g_Log.Event(LOGL_WARN | LOGM_CHEAT, "Fastwalk detection for '%s', this player will notice a lag\n", GetAccount()->GetName());
 				new PacketMovementRej(this, sequence);
+				Event_ClearWalkState();
 				return false;
 			}
 
@@ -927,20 +925,39 @@ bool CClient::Event_Walk( byte rawdir, byte sequence ) // Player moves
 			// The buffer system Event_CheckWalkBuffer seem more acurate because it permit some ajustment.
 			m_timeNextEventWalk = iCurTime + iDelay;
 		}
-		else if (m_pChar->IsStatFlag(STATF_FLY) && !m_pChar->IsPriv(PRIV_GM) && (g_Cfg.m_iWalkBuffer) && !m_pChar->GetRegion()->_pMultiLink && !Event_CheckWalkBuffer(rawdir) )
+		else if ((rawdir & DIR_MASK_RUNNING) && !m_pChar->IsPriv(PRIV_GM) && (g_Cfg.m_iWalkBuffer) && !m_pChar->GetRegion()->_pMultiLink && !Event_CheckWalkBuffer(rawdir) )
 				//Run, Not GM , walkbuffer active on ini, not on multi (boat)
 		{
 			new PacketMovementRej(this, sequence);
 			g_Log.Event(LOGL_WARN | LOGM_CHEAT, "PacketMovement Rejected for '%s', Speedhack or WalkRegen ini setting?\n", GetAccount()->GetName());
-			m_timeLastEventWalk = iCurTime;
-			++m_iWalkStepCount;					// Increase step count to use on next walk buffer checks
+			Event_ClearWalkState();
 			return false;
 		}
+
+		if (!m_pChar->MoveToChar(pt, false, false))
+		{
+			new PacketMovementRej(this, sequence);
+			Event_ClearWalkState();
+			return false;
+		}
+
+		// Check if I stepped on any item/teleport
+		TRIGRET_TYPE iRet = m_pChar->CheckLocationEffects(false);
+		if (iRet == TRIGRET_RET_FALSE)
+		{
+			m_pChar->SetUnkPoint(ptOld);	// we already moved, so move back to previous location
+			new PacketMovementRej(this, sequence);
+			Event_ClearWalkState();
+			return false;
+		}
+
+		// Set running flag if I'm running
+		m_pChar->StatFlag_Mod(STATF_FLY, (rawdir & DIR_MASK_RUNNING) ? true : false);
 
 		// Are we invis ?
 		m_pChar->CheckRevealOnMove();
 
-		if ( iRet == TRIGRET_RET_TRUE )
+		if ( iRet != TRIGRET_RET_FALSE )
 		{
 			new PacketMovementAck(this, sequence);
 			m_pChar->UpdateMove(ptOld, this);	// Who now sees me ?
@@ -1096,6 +1113,9 @@ bool CClient::Event_Command(lpctstr pszCommand, TALKMODE_TYPE mode)
 	{
 		fAllowSay = false;
 
+		if (g_UltimaLive.ParseStaffCommand(this, pszCommand))
+			return !fAllowSay;
+
 		// Assume you don't mean yourself !
 		if ( FindTableHeadSorted( pszCommand, sm_szCmd_Redirect, ARRAY_COUNT(sm_szCmd_Redirect)) >= 0 )
 		{
@@ -1120,19 +1140,35 @@ void CClient::Event_Attack( CUID uid )
 {
 	ADDTOCALLSTACK("CClient::Event_Attack");
 	// d-click in war mode
-	// I am attacking someone.
+	// I am attacking someone or a damageable object (UO HS+).
 	if ( m_pChar == nullptr )
 		return;
 
 	CChar * pChar = uid.CharFind();
-	if ( pChar == nullptr )
+	if ( pChar != nullptr )
+	{
+		bool fFail = pChar->Can(CAN_C_NONSELECTABLE);
+		if (!fFail)
+			fFail = !m_pChar->Fight_Attack(pChar);
+
+		new PacketAttack(this, (fFail ? CUID() : pChar->GetUID()));
 		return;
+	}
 
-    bool fFail = pChar->Can(CAN_C_NONSELECTABLE);
-    if (!fFail)
-        fFail = !m_pChar->Fight_Attack(pChar);
+	CItem * pItem = uid.ItemFind();
+	bool fFail = true;
+	CUID uidAck;
+	if ( CChar::Fight_IsValidDamageableItem(pItem) && !pItem->Can(CAN_C_NONSELECTABLE) && m_pChar->CanSee(pItem) )
+	{
+		fFail = !m_pChar->Fight_AttackItem(pItem);
+		uidAck = fFail ? CUID() : pItem->GetUID();
+	}
+	else
+	{
+		uidAck.InitUID();
+	}
 
-	new PacketAttack(this, (fFail ? CUID() : pChar->GetUID()));
+	new PacketAttack(this, uidAck);
 }
 
 // Client/Player buying items from the Vendor

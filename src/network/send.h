@@ -478,6 +478,57 @@ public:
 };
 
 /***************************************************************************
+ * UltimaLive (packet 0x3F / 0x40)
+ ***************************************************************************/
+class PacketUltimaLiveMapDefinitions : public PacketSend
+{
+public:
+	PacketUltimaLiveMapDefinitions(const CClient* target);
+};
+
+class PacketUltimaLiveLoginComplete : public PacketSend
+{
+public:
+	PacketUltimaLiveLoginComplete(const CClient* target);
+};
+
+class PacketUltimaLiveRefreshView : public PacketSend
+{
+public:
+	PacketUltimaLiveRefreshView(const CClient* target);
+};
+
+class PacketUltimaLiveQueryHash : public PacketSend
+{
+public:
+	PacketUltimaLiveQueryHash(const CClient* target, dword dwBlockId, byte bMap);
+};
+
+class PacketUltimaLiveStatics : public PacketSend
+{
+public:
+	PacketUltimaLiveStatics(const CClient* target, const byte* staticsData, uint staticsLength, dword dwBlockId, byte bMap);
+};
+
+class PacketUltimaLiveTerrain : public PacketSend
+{
+public:
+	PacketUltimaLiveTerrain(const CClient* target, const byte* landData, dword dwBlockId, byte bMap);
+};
+
+class PacketUltimaLiveDiscoverySnapshot : public PacketSend
+{
+public:
+	PacketUltimaLiveDiscoverySnapshot(const CClient* target, byte bMap, const dword* pBlocks, size_t iCount);
+};
+
+class PacketUltimaLiveDiscoveryBlock : public PacketSend
+{
+public:
+	PacketUltimaLiveDiscoveryBlock(const CClient* target, byte bMap, const dword* pBlocks, size_t iCount);
+};
+
+/***************************************************************************
  *
  *
  *	Packet 0x4F : PacketGlobalLight			sets global light level (NORMAL)
@@ -2054,6 +2105,37 @@ public:
 
     virtual bool canSendTo(const CNetState* state) const override { return CanSendTo(state); }
     static bool CanSendTo(const CNetState* state);
+};
+
+/***************************************************************************
+ *
+ *
+ *	Packet 0xFE : PacketUniversalCommand		Universal command packet (NORMAL)
+ *
+ *
+ ***************************************************************************/
+class PacketUniversalCommand : public PacketSend
+{
+public:
+	PacketUniversalCommand(word cmdId, uint len = 0, Priority priority = PRI_NORMAL);
+};
+
+class PacketUniversalCommandCustom : public PacketUniversalCommand
+{
+public:
+	PacketUniversalCommandCustom(const CClient* target, word cmdId, lpctstr args);
+};
+
+class PacketCurrentPlace : public PacketUniversalCommand
+{
+public:
+	PacketCurrentPlace(const CClient* target, lpctstr ptcRegionName);
+};
+
+class PacketDiscoveredPlace : public PacketUniversalCommand
+{
+public:
+	PacketDiscoveredPlace(const CClient* target, lpctstr ptcRegionName);
 };
 
 #ifdef __clang__

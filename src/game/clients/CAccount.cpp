@@ -793,6 +793,16 @@ void CAccount::OnLogin( CClient * pClient )
 	m_Last_IP.SetAddrIP(pClient->GetPeer().GetAddrIP());
 	//m_TagDefs.SetStr("LastLogged", false, _dateConnectedLast.Format(nullptr));
 	//_dateConnectedLast = datetime;
+
+	if ( pClient->GetNetState() && pClient->GetNetState()->getReportedVersion() == 0 && pClient->GetNetState()->m_clientVersionNumber == 0 )
+	{
+		dword tmVerReported = (dword)(m_TagDefs.GetKeyNum("reportedcliver"));
+		if ( !tmVerReported )
+			tmVerReported = (dword)(m_TagDefs.GetKeyNum("ReportedCliVer"));
+		dword tmVer = (dword)(m_TagDefs.GetKeyNum("clientversion"));
+
+		pClient->ApplyRegisteredLoginSession(tmVer, tmVerReported);
+	}
 }
 
 void CAccount::OnLogout(CClient *pClient, bool fWasChar)
@@ -940,7 +950,8 @@ bool CAccount::CheckPassword( lpctstr pszPassword )
 
 	if ( m_sCurPassword.IsEmpty() )
 	{
-		// If account password is empty, set the password given by the client trying to connect
+		if ( !g_Cfg.m_fAllowEmptyPasswordAutoSet )
+			return false;
 		if ( !SetPassword(pszPassword) )
 			return false;
 	}

@@ -5805,6 +5805,53 @@ int CItem::OnTakeDamage( int iDmg, CChar * pSrc, DAMAGE_TYPE uType )
 	if ( iDmg <= 0 )
 		return 0;
 
+	CCItemDamageable * pDmgComp = static_cast<CCItemDamageable *>(GetComponent(COMP_ITEMDAMAGEABLE));
+	if ( (pDmgComp != nullptr) && Can(CAN_I_DAMAGEABLE) )
+	{
+		if ( pDmgComp->GetMaxHits() == 0 )
+		{
+			const word iMaxHits = dword_hi_word(m_itNormal.m_more1);
+			if ( iMaxHits == 0 )
+				return 0;
+			word iCurHits = dword_low_word(m_itNormal.m_more1);
+			if ( (iCurHits == 0) || (iCurHits > iMaxHits) )
+				iCurHits = iMaxHits;
+			pDmgComp->SetMaxHits(iMaxHits);
+			pDmgComp->SetCurHits(iCurHits);
+		}
+
+		if ( IsTrigUsed(TRIGGER_DAMAGE) || IsTrigUsed(TRIGGER_ITEMDAMAGE) )
+		{
+			CScriptTriggerArgsPtr pScriptArgs = CScriptParserBufs::GetCScriptTriggerArgsPtr();
+			pScriptArgs->Init(iDmg, (int)uType, 0, nullptr);
+			if ( OnTrigger( ITRIG_DAMAGE, pScriptArgs, pSrc ) == TRIGRET_RET_TRUE )
+				return 0;
+		}
+
+		int iCur = pDmgComp->GetCurHits();
+		if ( iCur <= 0 )
+			iCur = pDmgComp->GetMaxHits();
+
+		if ( iCur <= iDmg )
+		{
+			pDmgComp->SetCurHits(0);
+			m_itNormal.m_more1 = make_dword(0, pDmgComp->GetMaxHits());
+			UpdatePropertyFlag();
+			if ( g_Cfg.m_iEmoteFlags & EMOTEF_DESTROY )
+				EmoteObj( g_Cfg.GetDefaultMsg( DEFMSG_ITEM_DMG_DESTROYED ) );
+			else
+				Emote( g_Cfg.GetDefaultMsg( DEFMSG_ITEM_DMG_DESTROYED ) );
+			Delete();
+			return( INT32_MAX );
+		}
+
+		iCur -= iDmg;
+		pDmgComp->SetCurHits((word)iCur);
+		m_itNormal.m_more1 = make_dword((word)iCur, pDmgComp->GetMaxHits());
+		UpdatePropertyFlag();
+		return iDmg;
+	}
+
     const bool fHasMaxHits = IsTypeArmorWeapon();
     if (fHasMaxHits && (m_itArmor.m_wHitsMax > 0))
     {

@@ -478,6 +478,13 @@ bool CDataBase::r_Verb(CScript & s, CTextConsole * pSrc)
 	if (!g_Cfg.m_fMySql)
 		return true;
 
+	// Privilege gate: raw SQL is admin-only (foundation audit B1).
+	if ( pSrc == nullptr || pSrc->GetPrivLevel() < PLEVEL_Admin )
+	{
+		g_Log.EventError("DATABASE.%s denied: insufficient privilege.\n", s.GetKey());
+		return false;
+	}
+
 	int index = FindTableSorted(s.GetKey(), sm_szVerbKeys, ARRAY_COUNT(sm_szVerbKeys)-1);
 	switch ( index )
 	{
@@ -494,6 +501,7 @@ bool CDataBase::r_Verb(CScript & s, CTextConsole * pSrc)
 			break;
 
 		case DBOV_EXECUTE:
+			// Use DATABASE.ESCAPEDATA for user-provided strings; never concatenate raw ARGS into SQL.
 			exec(s.GetArgRaw());
 			break;
 

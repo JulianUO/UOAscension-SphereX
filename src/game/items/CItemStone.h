@@ -50,6 +50,7 @@ class CItemStone : public CItem, public CSObjList
     CMultiStorage *_pMultiStorage;
     int16 _iMaxShips;
     int16 _iMaxHouses;
+	CUID _uidAlliance;	// Linked alliance stone UID (guild.alliance / ALLIANCE.MASTER)
 
 private:
 	void SetTownName();

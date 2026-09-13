@@ -32,6 +32,7 @@
 #include "CWorld.h"
 #include "CWorldComm.h"
 #include "CWorldGameTime.h"
+#include "ultimalive/CUltimaLive.h"
 #include "spheresvr.h"
 #include "triggers.h"
 #include <cstdio>
@@ -2810,6 +2811,8 @@ nowinsock:		g_Log.Event(LOGL_FATAL|LOGM_INIT, "Winsock 1.1 not found!\n");
 	TriglistInit();
 	if ( !g_Cfg.Load(false) )
 		return false;
+
+	g_UltimaLive.OnStartupCheck();
 
 	EXC_SET_BLOCK("init encryption");
 	if ( m_ClientVersion.GetClientVerNumber() )

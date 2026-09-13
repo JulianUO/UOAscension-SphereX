@@ -11,27 +11,35 @@
 CResourceRef::CResourceRef()
 {
     m_pLink = nullptr;
+    m_ridRef.Clear();
 }
 
 CResourceRef::CResourceRef(CResourceLink* pLink) : m_pLink(pLink)
 {
     ASSERT(pLink);
+    m_ridRef = pLink->GetResourceID();
     pLink->AddRefInstance();
 }
 
 CResourceRef::CResourceRef(const CResourceRef& copy)
 {
     m_pLink = copy.m_pLink;
+    m_ridRef = copy.m_ridRef;
     if (m_pLink != nullptr)
         m_pLink->AddRefInstance();
 }
 
 CResourceRef::~CResourceRef()
 {
-    // TODO: Consider using not a bare pointer for m_pLink but a CResourceID, in order to safely check if the father
-    //  resource was deleted or not.
     if (m_pLink != nullptr)
         m_pLink->DelRefInstance();
+}
+
+CResourceLink* CResourceRef::GetRef() const noexcept
+{
+    if (!m_ridRef.IsEmpty())
+        return dynamic_cast<CResourceLink*>(g_Cfg.RegisteredResourceGetDef(m_ridRef));
+    return m_pLink;
 }
 
 
@@ -52,7 +60,14 @@ void CResourceRef::SetRef(CResourceLink* pLink)
     m_pLink = pLink;
 
     if (m_pLink != nullptr)
+    {
+        m_ridRef = m_pLink->GetResourceID();
         m_pLink->AddRefInstance();
+    }
+    else
+    {
+        m_ridRef.Clear();
+    }
 }
 
 

@@ -13,6 +13,7 @@
 #include "../items/CItemVendable.h"
 #include "../triggers.h"
 #include "../CServer.h"
+#include "../ultimalive/CUltimaLive.h"
 #include "../CWorldMap.h"
 #include "../CWorldSearch.h"
 #include "CChar.h"
@@ -1447,12 +1448,14 @@ int CChar::Skill_Mining( SKTRIG_TYPE stage )
 
 	// Resource check
 	CItem *pResBit = CWorldMap::CheckNaturalResource(m_Act_p, (IT_TYPE)(m_atResource.m_ridType.GetResIndex()), stage == SKTRIG_START, this);
-	if ( !pResBit )
+	const bool fTunnelExcavate = (g_UltimaLive.IsEnabled() && g_UltimaLive.IsMiningEnabled() && g_UltimaLive.CanMiningExcavateAt(m_Act_p));
+
+	if ( !pResBit && !fTunnelExcavate )
 	{
 		SysMessageDefault(DEFMSG_MINING_1);
 		return -SKTRIG_QTY;
 	}
-	if ( pResBit->GetAmount() == 0 )
+	if ( pResBit && pResBit->GetAmount() == 0 && !fTunnelExcavate )
 	{
 		SysMessageDefault(DEFMSG_MINING_2);
 		return -SKTRIG_QTY;
@@ -1460,22 +1463,34 @@ int CChar::Skill_Mining( SKTRIG_TYPE stage )
 
 	if ( stage == SKTRIG_START )
 	{
-		m_atResource.m_dwStrokeCount = (word)(g_Rand.GetVal(5) + 2);
-		m_Act_UID = pResBit->GetUID();
-		return Skill_NaturalResource_Setup(pResBit);	// How difficult? 1-1000
+		m_atResource.m_dwStrokeCount = (word)(g_Rand.GetVal(3) + 2);
+		if ( pResBit && pResBit->GetAmount() > 0 )
+		{
+			m_Act_UID = pResBit->GetUID();
+			return Skill_NaturalResource_Setup(pResBit);	// How difficult? 1-1000
+		}
+		return 50;
 	}
 
-	CItem *pItem = Skill_NaturalResource_Create(pResBit, SKILL_MINING);
-	if ( !pItem )
+	if ( pResBit && pResBit->GetAmount() > 0 )
 	{
-		SysMessageDefault(DEFMSG_MINING_3);
-		return -SKTRIG_FAIL;
+		CItem *pItem = Skill_NaturalResource_Create(pResBit, SKILL_MINING);
+		if ( !pItem )
+		{
+			SysMessageDefault(DEFMSG_MINING_3);
+			return -SKTRIG_FAIL;
+		}
+
+		if ( m_atResource.m_dwBounceItem )
+			ItemBounce(pItem);
+		else
+			pItem->MoveToCheck(GetTopPoint(), this);	// put at my feet.
 	}
 
-	if ( m_atResource.m_dwBounceItem )
-		ItemBounce(pItem);
-	else
-		pItem->MoveToCheck(GetTopPoint(), this);	// put at my feet.
+	if ( fTunnelExcavate )
+	{
+		g_UltimaLive.TryMiningHarvest(this, m_Act_p.m_x, m_Act_p.m_y, m_Act_p.m_z);
+	}
 
 	return 0;
 }
@@ -1644,7 +1659,14 @@ int CChar::Skill_Lumberjack( SKTRIG_TYPE stage )
 	}
 
 	// Resource check
-	CItem *pResBit = CWorldMap::CheckNaturalResource(m_Act_p, (IT_TYPE)(m_atResource.m_ridType.GetResIndex()), stage == SKTRIG_START, this);
+	CPointMap ptResCheck = m_Act_p;
+	CItem *pResBit = CWorldMap::CheckNaturalResource(ptResCheck, (IT_TYPE)(m_atResource.m_ridType.GetResIndex()), stage == SKTRIG_START, this);
+	if ( !pResBit && g_UltimaLive.IsHarvestEnabled() )
+	{
+		CPointMap ptResolved;
+		if ( g_UltimaLive.ResolveLumberjackResourcePoint(m_Act_p, ptResolved) )
+			pResBit = CWorldMap::CheckNaturalResource(ptResolved, (IT_TYPE)(m_atResource.m_ridType.GetResIndex()), false, this);
+	}
 	if ( !pResBit )
 	{
 		if ( pTool->IsType(IT_WEAPON_FENCE) )	//dagger
@@ -1653,7 +1675,11 @@ int CChar::Skill_Lumberjack( SKTRIG_TYPE stage )
 			SysMessageDefault(DEFMSG_LUMBERJACKING_1);
 		return -SKTRIG_QTY;
 	}
-	if ( pResBit->GetAmount() == 0 )
+
+	const bool fGraphicOnly = g_UltimaLive.IsHarvestEnabled() && pResBit->GetAmount() == 0
+		&& g_UltimaLive.CanGraphicHarvestAt(m_Act_p);
+
+	if ( pResBit->GetAmount() == 0 && !fGraphicOnly )
 	{
 		if ( pTool->IsType(IT_WEAPON_FENCE) )	//dagger
 			SysMessageDefault(DEFMSG_LUMBERJACKING_4);	// no wood to harvest
@@ -1665,7 +1691,7 @@ int CChar::Skill_Lumberjack( SKTRIG_TYPE stage )
 	if ( stage == SKTRIG_START )
 	{
 		m_atResource.m_dwStrokeCount = (word)(g_Rand.GetVal(5) + 2);
-		return Skill_NaturalResource_Setup(pResBit);	// How difficult? 1-1000
+		return fGraphicOnly ? 10 : Skill_NaturalResource_Setup(pResBit);	// How difficult? 1-1000
 	}
 
 	if ( pTool->IsType(IT_WEAPON_FENCE) )	//dagger end
@@ -1673,6 +1699,12 @@ int CChar::Skill_Lumberjack( SKTRIG_TYPE stage )
 		SysMessageDefault(DEFMSG_LUMBERJACKING_5);
 		ItemBounce(CItem::CreateScript(ITEMID_KINDLING1, this));
 		pResBit->ConsumeAmount(1);
+		return 0;
+	}
+
+	if ( fGraphicOnly )
+	{
+		g_UltimaLive.DeferTreeHarvest(this, m_Act_p.m_x, m_Act_p.m_y, m_Act_p.m_z, true);
 		return 0;
 	}
 
@@ -1687,6 +1719,15 @@ int CChar::Skill_Lumberjack( SKTRIG_TYPE stage )
 		ItemBounce(pItem);
 	else
 		pItem->MoveToCheck(GetTopPoint(), this);	// put at my feet.
+
+	if (g_UltimaLive.IsEnabled())
+	{
+		if (g_UltimaLive.IsHarvestEnabled())
+			g_UltimaLive.DeferTreeHarvest(this, m_Act_p.m_x, m_Act_p.m_y, m_Act_p.m_z, false);
+		else if (pResBit->GetAmount() == 0)
+			g_UltimaLive.OnLumberjackSuccess(this, m_Act_p.m_x, m_Act_p.m_y, m_Act_p.m_z);
+	}
+
 	return 0;
 }
 
@@ -3031,6 +3072,10 @@ int CChar::Skill_Fighting( SKTRIG_TYPE stage )
 		//Fight_HitTry();	// this cleans up itself, executes the code related to the current m_iWarSwingState and sets the needed timers.
 
 		//When combat starts we need to set hit chance, otherwise ACTDIFF will be 0 and thus an automatic success.
+		CItem * pItemTarg = m_Fight_Targ_UID.ItemFind();
+		if ( pItemTarg && pItemTarg->Can(CAN_I_DAMAGEABLE) )
+			return 100;	// damageable objects do not defend (always hit in Skill_CheckSuccess)
+
 		return g_Cfg.Calc_CombatChanceToHit(this,m_Fight_Targ_UID.CharFind());	// How difficult? 1-10000
 	}
 
@@ -3045,7 +3090,11 @@ int CChar::Skill_Fighting( SKTRIG_TYPE stage )
         if (m_atFight.m_iWarSwingState == WAR_SWING_EQUIPPING)
         {
 			// calculate the chance at every hit
-			m_Act_Difficulty = g_Cfg.Calc_CombatChanceToHit(this, m_Fight_Targ_UID.CharFind());
+			CItem * pItemTarg = m_Fight_Targ_UID.ItemFind();
+			if ( pItemTarg && pItemTarg->Can(CAN_I_DAMAGEABLE) )
+				m_Act_Difficulty = 100;
+			else
+				m_Act_Difficulty = g_Cfg.Calc_CombatChanceToHit(this, m_Fight_Targ_UID.CharFind());
             if ( !Skill_CheckSuccess(Skill_GetActive(), m_Act_Difficulty, false) )
                 m_Act_Difficulty = -m_Act_Difficulty;	// will result in failure
         }
@@ -3971,6 +4020,8 @@ int CChar::Skill_Done()
 	Skill_Experience(skill, m_Act_Difficulty);
 
 	Skill_Cleanup();
+	if ( skill == SKILL_LUMBERJACKING )
+		g_UltimaLive.FlushDeferredTreeHarvest(this);
 	return -SKTRIG_SUCCESS;
 }
 

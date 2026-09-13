@@ -23,8 +23,7 @@ void CChar::ClearNPC()
 	if ( m_pNPC == nullptr )
 		return;
 
-	delete m_pNPC;
-	m_pNPC = nullptr;
+	m_pNPC.reset();
 }
 
 CChar * CChar::CreateNPC( CREID_TYPE baseID )	// static

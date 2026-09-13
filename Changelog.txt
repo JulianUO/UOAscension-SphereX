@@ -4077,3 +4077,32 @@ When setting a property like MORE to the a spell or skill defname, trying to rea
 - Changed: Object timers are now saved in worldsave files as TIMERMS, to avoid ambiguity and reliance on git build number to determine if TIMER expressed a number in seconds or milliseconds.
 - Changed: Added 5 seconds timeout to DNS hostname resolution at startup (avoid getting stuck when connectivity is enabled but not working).
 - Changed: CANMASK formatted in worldsave files as hexadecimal number, instead of decimal.
+
+01-07-2026, Julian (UOAscension port)
+- Added: UltimaLive full protocol integration (CUltimaLive, CUltimaLiveOverlay). Enables live on-the-fly map and static updates without client restart.
+- Added: UltimaLive Lumberjacking system (CUltimaLiveLumber) with dynamic tree falling and stump replacement driven by ultimalive/LumberHarvest/trees.ini.
+- Added: UltimaLive Dynamic Mining & Resource Harvesting (CUltimaLiveMining, CUltimaLiveHarvest).
+- Added: UltimaLive Discovery mechanism (CUltimaLiveDiscovery) to detect surrounding live tile modifications and broadcast updates to clients within range.
+- Added: VendorBuyHelper module to ensure safe and transaction-safe multi-item vendor purchases without client packet desync.
+
+15-08-2026, Julian (UOAscension port)
+- Added: Decoupled Python-based Login Server architecture (services/login-server/) supporting SQLite and MySQL backends for cross-shard account management.
+- Added: sphere_login_crypto native C++ shared library (services/login-crypto/) providing Blowfish/Twofish/MD5 handshake encryption routines for Python services.
+- Added: Internal HTTP/REST API Server (CInternalApiServer) in Sphere core for inter-process authentication, server status querying, and secure token verification.
+- Added: Session Registry (CSessionRegistry) to manage ephemeral one-time authentication tickets handed off from the Login Server to the game server.
+- Added: Comprehensive unit test suite (tests/) covering CUID, CSReferenceCount, UltimaLive streaming, discovery packets, and vendor transactions.
+- Added: Automated ASan and smoke test scripts for Linux and Windows pipelines (utilities/).
+
+13-09-2026, Julian (UOAscension port)
+- Added: OptionFlags OF_UOAStatusBar. When enabled, PacketObjectStatus remaps Ascension status-bar fields:
+	AOS (no elemental resist): TAG.PENALTY.MAGERY, TAG.PENALTY.STEALTH, TAG.POISON.CHANCE, TAG.EVADE.CHANCE
+	SA slots: fixed caps 150/100/100/100/100 + 25; INCREASEBARDCHANCE (ISP), CASTINGFOCUS (LRC), TAG.TREASUREHUNTING (FCR), INCREASEGOLD (FC), INCREASEPARRYCHANCE (LMC)
+- Added: Char props INCREASEBARDCHANCE, INCREASEPARRYCHANCE, CASTINGFOCUS (for the remapped status bar).
+- Added: TAG.MurdererNPC — NPC with TAG.MurdererNPC=1 is treated as evil (red name) but human AI does not auto-attack everyone because of it.
+- Added: Guild stone ALLIANCE / guild.alliance / guild.alliance.master (ALLIANCE.MASTER returns the alliance stone LINK / leader guild UID).
+- Fixed: Equipping a weapon resets WarSwingState to WAR_SWING_EQUIPPING; DELHOUSE/DELSHIP player props route through DelMulti; DelHouse/DelShip null-guard stale multi UIDs.
+- Changed: Refactored ThreadSafeQueue to standard RAII mutex-guarded std::deque with atomic try_pop to eliminate data races under multithreading.
+- Changed: Modernized CNetState atomic flags from deprecated volatile std::atomic_bool to std::atomic<bool> with explicit memory ordering.
+- Changed: Migrated network compression, encryption, and receive buffers (m_encryptBuffer, m_receiveBuffer, m_decryptBuffer) to std::unique_ptr<byte[]> to ensure zero memory leaks.
+- Fixed: Corrected MSVC /Ob1 inlining compiler flag casing in Windows-MSVC.cmake to silence deprecated command line warnings.
+

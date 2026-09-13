@@ -397,7 +397,7 @@ bool CCharPlayer::r_LoadVal( CChar * pChar, CScript &s )
 			}
 			else
 			{
-				GetMultiStorage()->DelHouse(CUID(dwUID));
+				GetMultiStorage()->DelMulti(CUID(dwUID));
 			}
 			return true;
 		}
@@ -426,7 +426,7 @@ bool CCharPlayer::r_LoadVal( CChar * pChar, CScript &s )
 			}
 			else
 			{
-				GetMultiStorage()->DelShip(CUID(dwUID));
+				GetMultiStorage()->DelMulti(CUID(dwUID));
 			}
 			return true;
 		}

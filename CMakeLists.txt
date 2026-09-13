@@ -284,6 +284,16 @@ foreach(tgt ${TARGETS})
     #set_target_properties(${tgt} PROPERTIES CXX_EXTENSIONS OFF)
     #target_compile_features(${tgt} PUBLIC cxx_std_20)
     target_precompile_headers(${tgt} ${pch_list})
+
+    add_custom_command(TARGET ${tgt} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/src/sphere.ini"
+            "$<TARGET_FILE_DIR:${tgt}>/sphere.ini"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/src/sphereCrypt.ini"
+            "$<TARGET_FILE_DIR:${tgt}>/sphereCrypt.ini"
+        COMMENT "Copying sphere.ini to ${tgt} output directory"
+    )
 endforeach()
 
 
@@ -305,6 +315,11 @@ toolchain_exe_stuff() # stuff to be executed after ADD_EXECUTABLE
 if(UNIT_TESTING)
     include("tests/CMakeLists.txt") # quick and dirty
     setup_tests()
+endif()
+
+option(BUILD_LOGIN_CRYPTO "Build sphere_login_crypto shared library for Python login server" ON)
+if(BUILD_LOGIN_CRYPTO)
+    add_subdirectory(services/login-crypto)
 endif()
 
 # Get the Git revision number

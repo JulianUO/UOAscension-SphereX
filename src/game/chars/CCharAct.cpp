@@ -8,6 +8,7 @@
 #include "../../network/send.h"
 #include "../../sphere/ProfileTask.h"
 #include "../clients/CClient.h"
+#include "../ultimalive/CUltimaLive.h"
 #include "../items/CItemCorpse.h"
 #include "../items/CItemMemory.h"
 #include "../items/CItemMultiCustom.h"
@@ -3425,6 +3426,9 @@ bool CChar::ItemEquip( CItem * pItem, CChar * pCharMsg, bool fFromDClick )
     }
     // End of CCPropsItemEquippable props
 
+	if ( pItem->IsTypeWeapon() && (m_atFight.m_iWarSwingState != WAR_SWING_EQUIPPING) )
+		m_atFight.m_iWarSwingState = WAR_SWING_EQUIPPING;
+
     Spell_Effect_Add(pItem);	// if it has a magic effect.
 
 	return true;
@@ -5346,6 +5350,15 @@ bool CChar::MoveToChar(const CPointMap& pt, bool fStanding, bool fCheckLocationE
         SetTopPoint(ptOld);
         return false;
     }
+
+	if (m_pPlayer && g_UltimaLive.IsEnabled())
+	{
+		if (ptOld.IsValidPoint() && ptOld.m_map != ptCur.m_map)
+			g_UltimaLive.OnCharMapChange(this);
+		else if (g_UltimaLive.IsStreaming())
+			g_UltimaLive.OnCharMove(this);
+	}
+
 	return true;
 }
 

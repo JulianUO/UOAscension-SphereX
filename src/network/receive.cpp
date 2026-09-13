@@ -14,8 +14,11 @@
 #include "../game/items/CItemShip.h"
 #include "../game/items/CItemVendable.h"
 #include "../game/CServer.h"
+#include "../game/CServerConfig.h"
+#include "../game/clients/CSessionRegistry.h"
 #include "../game/CWorldGameTime.h"
 #include "../game/CWorldMap.h"
+#include "../game/ultimalive/CUltimaLive.h"
 #include "../game/triggers.h"
 #include "CClientIterator.h"
 #include "CNetState.h"
@@ -789,17 +792,14 @@ bool PacketVendorBuyReq::onReceive(CNetState* net)
 
 		// search for it in the list
 		uint index;
-		for (index = 0; index < itemCount; ++index)
+		if (!VendorBuyHelper::FindOrAllocSlot(items, itemCount, serial, index))
 		{
-			if (serial == items[index].m_serial) //If the serials are the same, that means the items come from the same stack.
-				break;
-			else if (!items[index].m_serial.IsValidUID())
-			{
-				items[index].m_serial = serial;
-				items[index].m_price = item->GetVendorPrice(iConvertFactor,0);
-				break;
-			}
+			client->Event_VendorBuy_Cheater(0x2);
+			return true;
 		}
+
+		if (items[index].m_price <= 0)
+			items[index].m_price = item->GetVendorPrice(iConvertFactor, 0);
 
 		items[index].m_vcAmount += amount;
 		if (items[index].m_price <= 0)
@@ -828,11 +828,54 @@ PacketStaticUpdate::PacketStaticUpdate() : Packet(0)
 bool PacketStaticUpdate::onReceive(CNetState* net)
 {
 	ADDTOCALLSTACK("PacketStaticUpdate::onReceive");
-	/*skip(12);
-    byte UlCmd = readByte();*/
-	TemporaryString tsDump;
-	this->dump(tsDump);
-	g_Log.EventDebug("%x:Parsing %s", net->id(), tsDump.buffer());
+
+	if (!g_UltimaLive.IsEnabled())
+		return true;
+
+	if (getLength() < 14)
+		return true;
+
+	CClient * pClient = net->getClient();
+	if (pClient == nullptr)
+		return false;
+
+	seek(13);
+	const byte ultimaLiveCmd = readByte();
+
+	switch (ultimaLiveCmd)
+	{
+		case 0xFF: // block query response
+		{
+			if (getLength() < 15 + (25 * 2))
+				return true;
+
+			seek(3);
+			const dword dwBlockNum = readInt32();
+			(void)readInt32(); // static count field
+			seek(14);
+			const byte bMap = readByte();
+
+			word receivedCRCs[25];
+			for (int i = 0; i < 25; ++i)
+				receivedCRCs[i] = readInt16();
+
+			g_UltimaLive.OnBlockQueryReply(pClient, dwBlockNum, bMap, receivedCRCs, 25);
+			return true;
+		}
+		case 0xFE: // UltimaLive client version
+		{
+			if (getLength() < 19)
+				return true;
+			seek(15);
+			const word wMajor = readInt16();
+			const word wMinor = readInt16();
+			g_UltimaLive.OnUltimaLiveVersion(pClient, wMajor, wMinor);
+			return true;
+		}
+		default:
+			break;
+	}
+
 	return true;
 }
 
@@ -1689,13 +1732,51 @@ bool PacketCharListReq::onReceive(CNetState* net)
 {
 	ADDTOCALLSTACK("PacketCharListReq::onReceive");
 
-	skip(4); // Session key sent to the client in packet 0x8c (customerId).
+	const dword authId = readInt32();
 	tchar acctname[MAX_ACCOUNT_NAME_SIZE];
 	readStringASCII(acctname, ARRAY_COUNT(acctname));
 	tchar acctpass[MAX_NAME_SIZE];
 	readStringASCII(acctpass, ARRAY_COUNT(acctpass));
 
-	net->getClient()->Setup_ListReq(acctname, acctpass, false);
+	CClient* client = net->getClient();
+	if ( g_Cfg.m_fUseExternalLogin )
+	{
+		dword tmVer = 0;
+		dword tmVerReported = 0;
+		if ( !CSessionRegistry::get().ConsumeSession(authId, acctname, tmVer, tmVerReported) )
+		{
+			client->addLoginErr(PacketLoginError::BadAuthID);
+			return true;
+		}
+
+		client->PrepareExternalLoginAccountTags(acctname, tmVer, tmVerReported);
+	}
+
+	const byte lErr = client->Setup_ListReq(acctname, acctpass, false);
+
+	if ( g_Cfg.m_fUseExternalLogin )
+		client->ClearExternalLoginAccountTags(acctname);
+	else if ( lErr == PacketLoginError::Success )
+	{
+		CAccount* pAcc = client->GetAccount();
+		if ( pAcc != nullptr )
+		{
+			dword tmVerReported = (dword)(pAcc->m_TagDefs.GetKeyNum("reportedcliver"));
+			if ( !tmVerReported )
+				tmVerReported = (dword)(pAcc->m_TagDefs.GetKeyNum("ReportedCliVer"));
+			dword tmVer = (dword)(pAcc->m_TagDefs.GetKeyNum("clientversion"));
+
+			client->ApplyRegisteredLoginSession(tmVer, tmVerReported);
+		}
+
+		if ( net->getReportedVersion() == 0 && net->m_clientVersionNumber == 0 )
+		{
+			new PacketClientVersionReq(client);
+		}
+	}
+
+	if ( lErr != PacketLoginError::Success )
+		client->addLoginErr(lErr);
 	return true;
 }
 
@@ -2045,15 +2126,21 @@ bool PacketGumpValueInputResponse::onReceive(CNetState* net)
 	if (object == nullptr)
 		return true;
 
+	CChar* pChar = client->GetChar();
+	if (pChar == nullptr)
+		return true;
+
 	// take action based on the parent context
 	if (action == 1) // ok
 	{
-		// Properties Dialog, page x
-		// m_Targ_Text = the verb we are dealing with
-		// m_Prop_UID = object we are after
+		if (!g_Cfg.CanUsePrivVerb(object, client->m_Targ_Text, pChar))
+		{
+			client->SysMessage("You are not privileged to do that.");
+			return true;
+		}
 
 		CScript script(client->m_Targ_Text, text);
-		bool ret = object->r_Verb(script, client->GetChar());
+		bool ret = object->r_Verb(script, pChar);
 		if (ret == false)
 		{
 			client->SysMessagef("Invalid set: %s = %s", static_cast<lpctstr>(client->m_Targ_Text), static_cast<lpctstr>(text));
@@ -2512,9 +2599,11 @@ bool PacketClientVersion::onReceive(CNetState* net)
 		DEBUG_MSG(("Getting CliVersionReported %u\n", version));
 		if ((g_Serv.m_ClientVersion.GetClientVerNumber() != 0) && (g_Serv.m_ClientVersion.GetClientVerNumber() != version))
 			client->addLoginErr(PacketLoginError::BadVersion);
-        //we have asked client version in serverlist to configure character list and game feature.
         if ( client->m_pAccount )
-                    client->m_pAccount->m_TagDefs.SetNum("ReportedCliVer", version);
+        {
+            client->m_pAccount->m_TagDefs.SetNum("ReportedCliVer", version);
+            client->m_pAccount->m_TagDefs.SetNum("reportedcliver", version);
+        }
 	}
 
 	return true;
@@ -2599,31 +2688,10 @@ bool PacketScreenSize::onReceive(CNetState* net)
     ushort y = readInt16();
     skip(2);
 
-	//DEBUG_MSG(("PacketScreenSize::onReceive 0x%hx - 0x%hx (%hu-%hu)\n", x, y, x, y));
-	if (net->isClientVersionNumber(MINCLIVER_NEWBOOK))
-	{
-		switch (x)
-		{
-		case 800:
-			y = 600;
-			break;
-		case 1024:
-			y = 768;
-			break;
-		case 1152:
-			y = 864;
-			break;
-		case 1280:
-			y = 720;
-			break;
-		default:
-			y = 480;
-			break;
-		}
-	}
 	client->SetScreenSize(x, y);
 	return true;
 }
+
 
 
 /***************************************************************************
@@ -4126,7 +4194,7 @@ bool PacketEquipLastWeapon::onReceive(CNetState* net)
     CChar *pChar = pClient->GetChar();
     if ( !pChar )
         return false;
-    CCharPlayer* pCharPlayer = pChar->m_pPlayer;
+    CCharPlayer* pCharPlayer = pChar->m_pPlayer.get();
     if ( !pCharPlayer )
         return false;
 
@@ -4526,6 +4594,10 @@ bool PacketMovementReqNew::onReceive(CNetState* net)
 			net->m_sequence = 0;
 			break;
 		}
+
+		if ( sequence == UINT8_MAX )
+			sequence = 0;
+		net->m_sequence = ++sequence;
 
 		--steps;
 	}

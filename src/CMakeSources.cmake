@@ -81,6 +81,8 @@ set(network_S
     src/network/packet.cpp
     src/network/receive.cpp
     src/network/send.cpp
+    src/network/CInternalApiServer.cpp
+    src/network/VendorBuyHelper.cpp
     src/network/PingServer.cpp
 )
 set(network_H
@@ -98,6 +100,8 @@ set(network_H
     src/network/packet.h
     src/network/receive.h
     src/network/send.h
+    src/network/CInternalApiServer.h
+    src/network/VendorBuyHelper.h
     src/network/PingServer.h
 )
 source_group(network FILES ${network_H} ${network_S})
@@ -187,6 +191,7 @@ set(common_H
     src/common/CLog.h
     src/common/CServerMap.h
     src/common/CUID.h
+    src/common/uo_types/uofiles_enums.h
     src/common/CPointBase.h
     src/common/CRect.h
     src/common/CScript.h
@@ -395,6 +400,7 @@ set(game_S
     src/game/CTimedFunctionHandler.cpp
     src/game/CTimedObject.cpp
     src/game/CWorld.cpp
+    src/game/CUIDGame.cpp
     src/game/CWorldCache.cpp
     src/game/CWorldClock.cpp
     src/game/CWorldComm.cpp
@@ -405,6 +411,12 @@ set(game_S
     src/game/CWorldTicker.cpp
     src/game/CWorldTickingList.cpp
     src/game/CWorldTimedFunctions.cpp
+    src/game/ultimalive/CUltimaLive.cpp
+    src/game/ultimalive/CUltimaLiveOverlay.cpp
+    src/game/ultimalive/CUltimaLiveLumber.cpp
+    src/game/ultimalive/CUltimaLiveDiscovery.cpp
+    src/game/ultimalive/CUltimaLiveHarvest.cpp
+    src/game/ultimalive/CUltimaLiveMining.cpp
     src/game/spheresvr.cpp
     src/game/triggers.cpp
     src/game/CSectorEnviron.cpp
@@ -445,6 +457,12 @@ set(game_H
     src/game/CWorldTicker.h
     src/game/CWorldTickingList.h
     src/game/CWorldTimedFunctions.h
+    src/game/ultimalive/CUltimaLive.h
+    src/game/ultimalive/CUltimaLiveOverlay.h
+    src/game/ultimalive/CUltimaLiveLumber.h
+    src/game/ultimalive/CUltimaLiveDiscovery.h
+    src/game/ultimalive/CUltimaLiveHarvest.h
+    src/game/ultimalive/CUltimaLiveMining.h
     src/game/game_enums.h
     src/game/game_macros.h
     src/game/spheresvr.h
@@ -542,6 +560,7 @@ set(clients_S
     src/game/clients/CClientDialog.cpp
     src/game/clients/CClientEvent.cpp
     src/game/clients/CClientLog.cpp
+    src/game/clients/CSessionRegistry.cpp
     src/game/clients/CClientMsg.cpp
     src/game/clients/CClientMsg_AOSTooltip.cpp
     src/game/clients/CClientTarg.cpp
@@ -557,6 +576,7 @@ set(clients_H
     src/game/clients/CChatChannel.h
     src/game/clients/CChatChanMember.h
     src/game/clients/CClient.h
+    src/game/clients/CSessionRegistry.h
     src/game/clients/CClientTooltip.h
     src/game/clients/CGlobalChatChanMember.h
     src/game/clients/CGMPage.h

@@ -598,8 +598,7 @@ void CChar::ClearPlayer()
 	}
 	Guild_Resign(MEMORY_GUILD);
 	Guild_Resign(MEMORY_TOWN);
-    delete m_pPlayer;
-    m_pPlayer = nullptr;
+    m_pPlayer.reset();
 }
 
 // Set up the char as a Player.
@@ -625,7 +624,7 @@ bool CChar::SetPlayerAccount(CAccount *pAccount)
         ClearNPC();
     }
 
-    m_pPlayer = new CCharPlayer(this, pAccount);
+    m_pPlayer = std::make_unique<CCharPlayer>(this, pAccount);
     pAccount->AttachChar(this);
     return true;
 }
@@ -659,7 +658,7 @@ bool CChar::SetNPCBrain( NPCBRAIN_TYPE NPCBrain )
     }
 
     if ( m_pNPC == nullptr )
-        m_pNPC = new CCharNPC( this, NPCBrain );
+        m_pNPC = std::make_unique<CCharNPC>( this, NPCBrain );
     else
         m_pNPC->m_Brain = NPCBrain;		// just replace existing brain
     return true;
@@ -4530,11 +4529,19 @@ bool CChar::r_Verb( CScript &s, CTextConsole * pSrc ) // Execute command from sc
                 SetPoisonCure(fCureHallucination);
 			}
 			break;
+		case CHV_CURRENTPLACE:
+			if ( IsClientActive() )
+				GetClientActive()->addCurrentPlace(s.GetArgStr());
+			break;
 		case CHV_DISCONNECT:
 			// Push a player char off line. CLIENTLINGER thing
 			if ( IsClientActive())
 				return GetClientActive()->addKick( pSrc, false );
 			SetDisconnected();
+			break;
+		case CHV_DISCOVEREDPLACE:
+			if ( IsClientActive() )
+				GetClientActive()->addDiscoveredPlace(s.GetArgStr());
 			break;
 		case CHV_DROP:	// uid
 			return ItemDrop( CUID::ItemFindFromUID(s.GetArgVal()), GetTopPoint() );
@@ -4947,6 +4954,17 @@ bool CChar::r_Verb( CScript &s, CTextConsole * pSrc ) // Execute command from sc
 			break;
 		case CHV_UNEQUIP:	// uid
 			return ItemBounce( CUID::ItemFindFromUID(s.GetArgVal()) );
+		case CHV_UNIVERSALCOMMAND:
+			if ( IsClientActive() )
+			{
+				tchar * ppCmd[2];
+				if ( Str_ParseCmds( s.GetArgRaw(), ppCmd, ARRAY_COUNT(ppCmd) ) > 0 )
+				{
+					word cmdId = (word)Exp_GetVal(ppCmd[0]);
+					GetClientActive()->addUniversalCommand(cmdId, ppCmd[1] ? ppCmd[1] : "");
+				}
+			}
+			break;
 		case CHV_WAKE:
 			Wake();
 			break;

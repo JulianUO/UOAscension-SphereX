@@ -728,6 +728,8 @@ void CItemMulti::SetGuild(const CUID& uidGuild)
     }
     _uidGuild = uidGuild;   // Set the Guild* to a new guildstone.
     pGuildStone = static_cast<CItemStone*>(uidGuild.ItemFind());
+    if ( pGuildStone == nullptr )
+        return;
     CMultiStorage* pMultiStorage = pGuildStone->GetMultiStorage();
     ASSERT(pMultiStorage);
     pMultiStorage->AddMulti(GetUID(), HP_GUILD);
@@ -3590,6 +3592,8 @@ void CMultiStorage::AddMulti(const CUID& uidMulti, HOUSE_PRIV ePriv)
 void CMultiStorage::DelMulti(const CUID& uidMulti)
 {
     CItemMulti *pMulti = static_cast<CItemMulti*>(uidMulti.ItemFind());
+    if ( pMulti == nullptr )
+        return;
     CObjBase *pSrc = _uidSrc.ObjFind();
     if (pMulti->IsType(IT_SHIP))
     {
@@ -3661,6 +3665,13 @@ void CMultiStorage::DelHouse(const CUID& uidHouse)
     if (_lHouses.find(uidHouse) != _lHouses.end())
     {
         CItemMulti *pMulti = static_cast<CItemMulti*>(uidHouse.ItemFind());
+        if ( !pMulti )
+        {
+            // Stale UID left in storage after the multi was deleted.
+            _lHouses.erase(uidHouse);
+            return;
+        }
+
         HOUSE_PRIV ePriv = GetPriv( uidHouse );
 
         CScriptTriggerArgsPtr pScriptArgs = CScriptParserBufs::GetCScriptTriggerArgsPtr();
@@ -3835,6 +3846,13 @@ void CMultiStorage::DelShip(const CUID& uidShip)
     if (_lShips.find(uidShip) != _lShips.end())
     {
         CItemMulti* pMulti = static_cast<CItemMulti*>(uidShip.ItemFind());
+        if ( !pMulti )
+        {
+            // Stale UID left in storage after the multi was deleted.
+            _lShips.erase(uidShip);
+            return;
+        }
+
         HOUSE_PRIV ePriv = GetPriv(uidShip);
 
         CScriptTriggerArgsPtr pScriptArgs = CScriptParserBufs::GetCScriptTriggerArgsPtr();

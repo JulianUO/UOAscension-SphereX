@@ -90,7 +90,8 @@ enum OF_TYPE
     OF_EnableGuildAlignNotoriety   = 0x02000000,   // If enabled, guilds with the same alignment will see each other as enemy or ally.
     OF_NoDclickEquip               = 0x04000000,   // If enabled, double-click does not equip items.
     OF_PetBehaviorOwnerNeutral     = 0x08000000,   // Should my pets always appear natural to me?
-    OF_NPCMovementOldStyle         = 0x10000000    // Required setting to make NPCs run like in the old version.
+    OF_NPCMovementOldStyle         = 0x10000000,   // Required setting to make NPCs run like in the old version.
+    OF_UOAStatusBar                = 0x20000000    // Remap PacketObjectStatus AOS/SA slots for Ascension-style status bar.
 };
 
 /**
@@ -242,6 +243,10 @@ public:
 	bool m_fUseNTService;       // Start this as a system service on Win2000, XP, NT
 	int	 m_fUseHTTP;            // Use the built in http server
 	bool m_fUseAuthID;          // Use the OSI AuthID to avoid possible hijack to game server.
+	bool m_fUseExternalLogin;   // Account login handled by external login server; game shard validates session tokens only.
+	int  m_iInternalApiPort;    // Localhost HTTP API port for login server session registration (0 = disabled).
+	CSString m_sLoginSharedSecret; // Shared secret for internal login API (Authorization: Bearer).
+	CSString m_sShardDisplayName;  // Display name reported to login server for shard registry / status.
 	int64  _iMapCacheTime;     // Time in sec to keep unused map data..
 	int64  _iSectorSleepDelay;    // The mask for how long sectors will sleep.
 	bool m_fUseMapDiffs;        // Whether or not to use map diff files.
@@ -295,6 +300,7 @@ public:
 	byte m_iMaxCharsPerAccount; // Maximum characters allowed on an account.
 	bool m_fLocalIPAdmin;       // The local ip is the admin ?
 	bool m_fMd5Passwords;       // Should MD5 hashed passwords be used?
+	bool m_fAllowEmptyPasswordAutoSet; // If true, first login can set password on empty accounts (legacy; insecure)
     uint8 _iMaxHousesAccount;   // Max houses per account.
     uint8 _iMaxHousesPlayer;    // Max houses per player.
     uint8 _iMaxShipsAccount;    // Max ships per account.

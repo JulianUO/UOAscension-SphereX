@@ -143,7 +143,7 @@ function(toolchain_exe_stuff)
         $<$<CONFIG:Debug>:
             ${local_msvc_cmdline_runtime_lib_debug}
             /EHsc
-            /Oy- /ob1 /Od
+            /Oy- /Ob1 /Od
             /Gs
             $<IF:$<BOOL:${ENABLED_SANITIZER}>,/Zi,/ZI>
         >

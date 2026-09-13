@@ -11,6 +11,7 @@
 #include "../common/CUOInstall.h"
 #include "../common/sphereversion.h"
 #include "../network/CClientIterator.h"
+#include "ultimalive/CUltimaLive.h"
 #include "../network/CNetworkManager.h"
 #include "../network/CSocket.h"
 #include "../sphere/ProfileTask.h"
@@ -53,8 +54,10 @@ CServerConfig::CServerConfig()
 	m_timePeriodic = 0;
 
 	m_fUseNTService		= false;
-	m_fUseHTTP			= 2;
+	m_fUseHTTP			= 0;
 	m_fUseAuthID		= true;
+	m_fUseExternalLogin	= false;
+	m_iInternalApiPort	= 0;
 	_iMapCacheTime		= 2ll  * 60 * MSECS_PER_SEC;
 	_iSectorSleepDelay  = 10ll * 60 * MSECS_PER_SEC;
 	m_fUseMapDiffs		= false;
@@ -65,6 +68,7 @@ CServerConfig::CServerConfig()
 	m_iFreezeRestartTime	= 60;
 	m_fAgree				= false;
 	m_fMd5Passwords			= false;
+	m_fAllowEmptyPasswordAutoSet = false;
     m_fDecimalVariables     = false; // In default, variables should return hexadecimal.
 
 	//Magic
@@ -467,6 +471,7 @@ enum RC_TYPE
 	RC_ADVANCEDLOS,				// m_iAdvancedLos
 	RC_AGREE,
 	RC_ALLOWBUYSELLAGENT,		// m_fAllowBuySellAgent
+	RC_ALLOWEMPTYPASSWORDAUTOSET, // m_fAllowEmptyPasswordAutoSet
 	RC_ALLOWLIGHTOVERRIDE,		// m_fAllowLightOverride
 	RC_ALLOWNEWBTRANSFER,		// m_fAllowNewbTransfer
 	RC_ARCHERYMAXDIST,			// m_iArcheryMaxDist
@@ -536,6 +541,7 @@ enum RC_TYPE
 	RC_DEADSOCKETTIME,
 	RC_DEBUGFLAGS,
 	RC_DECAYTIMER,
+	RC_DECIMALVARIABLES,
 	RC_DEFAULTCOMMANDLEVEL,		//m_iDefaultCommandLevel
 	RC_DISPLAYPERCENTAR,	    //m_fDisplayPercentAr
 	RC_DISPLAYELEMENTALRESISTANCE, //m_fDisplayElementalResistance
@@ -543,7 +549,6 @@ enum RC_TYPE
     RC_DISTANCETALK,
 	RC_DISTANCEWHISPER,
 	RC_DISTANCEYELL,
-    RC_DECIMALVARIABLES,
 	RC_DRAGWEIGHTMAX,
 #ifdef _DUMPSUPPORT
 	RC_DUMPPACKETSFORACC,
@@ -587,6 +592,7 @@ enum RC_TYPE
 	RC_HITPOINTPERCENTONREZ,	// m_iHitpointPercentOnRez
 	RC_HITSHUNGERLOSS,			// m_iHitsHungerLoss
 	RC_HITSUPDATERATE,
+	RC_INTERNALAPIPORT,			// m_iInternalApiPort
     RC_ITEMHITPOINTSUPDATE,     // _iItemHitpointsUpdate
 	RC_ITEMSMAXAMOUNT,			// m_iItemsMaxAmount
     RC_ITEMTIMERS,              // m_uiItemTimers
@@ -597,6 +603,7 @@ enum RC_TYPE
 	RC_LIGHTNIGHT,				// m_iLightNight
 	RC_LOCALIPADMIN,			// m_fLocalIPAdmin
 	RC_LOG,
+	RC_LOGINSHAREDSECRET,		// m_sLoginSharedSecret
 	RC_LOGMASK,					// GetLogMask
 	RC_LOOTINGISACRIME,			// m_fLootingIsACrime
 	RC_LOSTNPCTELEPORT,			// m_fLostNPCTeleport
@@ -692,6 +699,7 @@ enum RC_TYPE
 	RC_SCPFILES,
 	RC_SECTORSLEEP,				// _iSectorSleepDelay
 	RC_SECURE,
+	RC_SHARDDISPLAYNAME,		// m_sShardDisplayName
 	RC_SKILLPRACTICEMAX,		// m_iSkillPracticeMax
 	RC_SNOOPCRIMINAL,
 	RC_SPEECHOTHER,
@@ -723,6 +731,7 @@ enum RC_TYPE
 	RC_USEASYNCNETWORK,			// m_fUseAsyncNetwork
 	RC_USEAUTHID,				// m_fUseAuthID
 	RC_USECRYPT,				// m_Usecrypt
+	RC_USEEXTERNALLOGIN,		// m_fUseExternalLogin
 	RC_USEEXTRABUFFER,			// m_fUseExtraBuffer
 	RC_USEHTTP,					// m_fUseHTTP
 	RC_USEMAPDIFFS,				// m_fUseMapDiffs
@@ -762,6 +771,7 @@ const CAssocReg CServerConfig::sm_szLoadKeys[RC_QTY + 1]
     { "ADVANCEDLOS",			{ ELEM_INT,		static_cast<uint>OFFSETOF(CServerConfig,m_iAdvancedLos)			}},
     { "AGREE",					{ ELEM_BOOL,	static_cast<uint>OFFSETOF(CServerConfig,m_fAgree)				}},
     { "ALLOWBUYSELLAGENT",		{ ELEM_BOOL,	static_cast<uint>OFFSETOF(CServerConfig,m_fAllowBuySellAgent)	}},
+    { "ALLOWEMPTYPASSWORDAUTOSET", { ELEM_BOOL, static_cast<uint>OFFSETOF(CServerConfig,m_fAllowEmptyPasswordAutoSet) }},
     { "ALLOWLIGHTOVERRIDE",		{ ELEM_BOOL,	static_cast<uint>OFFSETOF(CServerConfig,m_fAllowLightOverride)	}},
     { "ALLOWNEWBTRANSFER",		{ ELEM_BOOL,	static_cast<uint>OFFSETOF(CServerConfig,m_fAllowNewbTransfer)	}},
     { "ARCHERYMAXDIST",			{ ELEM_INT,		static_cast<uint>OFFSETOF(CServerConfig,m_iArcheryMaxDist)		}},
@@ -882,6 +892,7 @@ const CAssocReg CServerConfig::sm_szLoadKeys[RC_QTY + 1]
     { "HITPOINTPERCENTONREZ",	{ ELEM_INT,		static_cast<uint>OFFSETOF(CServerConfig,m_iHitpointPercentOnRez) }},
     { "HITSHUNGERLOSS",			{ ELEM_INT,		static_cast<uint>OFFSETOF(CServerConfig,m_iHitsHungerLoss)		}},
     { "HITSUPDATERATE",			{ ELEM_VOID,	0												}},
+    { "INTERNALAPIPORT",		{ ELEM_INT,		static_cast<uint>OFFSETOF(CServerConfig,m_iInternalApiPort)		}},
     { "ITEMHITPOINTSUPDATE",    { ELEM_MASK_INT,static_cast<uint>OFFSETOF(CServerConfig,_iItemHitpointsUpdate),  }},
     { "ITEMSMAXAMOUNT",			{ ELEM_INT,		static_cast<uint>OFFSETOF(CServerConfig,m_iItemsMaxAmount),		}},
     { "ITEMTIMERS",             { ELEM_MASK_INT,static_cast<uint>OFFSETOF(CServerConfig,m_uiItemTimers),  } },
@@ -892,6 +903,7 @@ const CAssocReg CServerConfig::sm_szLoadKeys[RC_QTY + 1]
     { "LIGHTNIGHT",				{ ELEM_INT,		static_cast<uint>OFFSETOF(CServerConfig,m_iLightNight),			}},
     { "LOCALIPADMIN",			{ ELEM_BOOL,	static_cast<uint>OFFSETOF(CServerConfig,m_fLocalIPAdmin),		}}, // The local ip is assumed to be the admin.
     { "LOG",					{ ELEM_VOID,	0												}},
+    { "LOGINSHAREDSECRET",		{ ELEM_CSTRING,	static_cast<uint>OFFSETOF(CServerConfig,m_sLoginSharedSecret)	}},
     { "LOGMASK",				{ ELEM_VOID,	0												}}, // GetLogMask
     { "LOOTINGISACRIME",		{ ELEM_BOOL,	static_cast<uint>OFFSETOF(CServerConfig,m_fLootingIsACrime)		}},
     { "LOSTNPCTELEPORT",		{ ELEM_INT,		static_cast<uint>OFFSETOF(CServerConfig,m_iLostNPCTeleport)		}},
@@ -987,6 +999,7 @@ const CAssocReg CServerConfig::sm_szLoadKeys[RC_QTY + 1]
 	{ "SCPFILES",				{ ELEM_CSTRING,	static_cast<uint>OFFSETOF(CServerConfig,m_sSCPBaseDir)			}},
 	{ "SECTORSLEEP",			{ ELEM_INT,		static_cast<uint>OFFSETOF(CServerConfig,_iSectorSleepDelay)		}},
 	{ "SECURE",					{ ELEM_BOOL,	static_cast<uint>OFFSETOF(CServerConfig,m_fSecure)				}},
+	{ "SHARDDISPLAYNAME",		{ ELEM_CSTRING,	static_cast<uint>OFFSETOF(CServerConfig,m_sShardDisplayName)	}},
 	{ "SKILLPRACTICEMAX",		{ ELEM_INT,		static_cast<uint>OFFSETOF(CServerConfig,m_iSkillPracticeMax)		}},
 	{ "SNOOPCRIMINAL",			{ ELEM_INT,		static_cast<uint>OFFSETOF(CServerConfig,m_iSnoopCriminal)		}},
 	{ "SPEECHOTHER",			{ ELEM_CSTRING,	static_cast<uint>OFFSETOF(CServerConfig,m_sSpeechOther)			}},
@@ -1016,8 +1029,9 @@ const CAssocReg CServerConfig::sm_szLoadKeys[RC_QTY + 1]
 	{ "TRADEWINDOWSNOOPING",	{ ELEM_BOOL,	static_cast<uint>OFFSETOF(CServerConfig,m_iTradeWindowSnooping)	}},
 	{ "UOGSTATUS",				{ ELEM_BOOL,	static_cast<uint>OFFSETOF(CServerConfig,m_fUOGStatus)			}},
 	{ "USEASYNCNETWORK",		{ ELEM_INT,		static_cast<uint>OFFSETOF(CServerConfig,m_fUseAsyncNetwork)		}},
-	{ "USEAUTHID",				{ ELEM_BOOL,	static_cast<uint>OFFSETOF(CServerConfig,m_fUseAuthID)			}},	// we use authid like osi
-	{ "USECRYPT",				{ ELEM_BOOL,	static_cast<uint>OFFSETOF(CServerConfig,m_fUsecrypt)				}},	// we don't want crypt clients
+    { "USEAUTHID",				{ ELEM_BOOL,	static_cast<uint>OFFSETOF(CServerConfig,m_fUseAuthID)			}},	// we use authid like osi
+    { "USECRYPT",				{ ELEM_BOOL,	static_cast<uint>OFFSETOF(CServerConfig,m_fUsecrypt)				}},	// we don't want crypt clients
+    { "USEEXTERNALLOGIN",		{ ELEM_BOOL,	static_cast<uint>OFFSETOF(CServerConfig,m_fUseExternalLogin)	}},
 	{ "USEEXTRABUFFER",			{ ELEM_BOOL,	static_cast<uint>OFFSETOF(CServerConfig,m_fUseExtraBuffer)		}},
 	{ "USEHTTP",				{ ELEM_INT,		static_cast<uint>OFFSETOF(CServerConfig,m_fUseHTTP)				}},
 	{ "USEMAPDIFFS",			{ ELEM_BOOL,	static_cast<uint>OFFSETOF(CServerConfig,m_fUseMapDiffs)			}},
@@ -1074,6 +1088,10 @@ bool CServerConfig::r_LoadVal( CScript &s )
 				return false;
 			m_iRegenRate[index] = (s.GetArgLLVal() * MSECS_PER_SEC);
 			return true;
+		}
+		else if ( s.IsKeyHead("ULTIMALIVE", 10) )
+		{
+			return g_UltimaLive.LoadKey(s);
 		}
 		else if ( s.IsKeyHead("MAP", 3) )		//	MAPx=settings
 		{
@@ -4830,6 +4848,7 @@ void CServerConfig::PrintEFOFFlags(bool bEF, bool bOF, CTextConsole *pSrc)
 		if ( IsSetOF(OF_AllowContainerInsideContainer)) catresname(zOptionFlags, "AllowContainerInsideContainer");
         if ( IsSetOF(OF_VendorStockLimit) )		    catresname(zOptionFlags, "VendorStockLimit");
 		if ( IsSetOF(OF_NoDclickEquip) )				catresname(zOptionFlags, "NoDclickEquip");
+		if ( IsSetOF(OF_UOAStatusBar) )					catresname(zOptionFlags, "UOAStatusBar");
 
 		if ( zOptionFlags[0] != '\0' )
 		{

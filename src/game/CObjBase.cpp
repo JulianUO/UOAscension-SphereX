@@ -3152,28 +3152,24 @@ void CObjBase::ResendOnEquip( bool fAllClients )
 	}
 }
 
-void CObjBase::SetPropertyList(PacketPropertyList* propertyList)
+void CObjBase::SetPropertyList(std::unique_ptr<PacketPropertyList> propertyList)
 {
 	ADDTOCALLSTACK("CObjBase::SetPropertyList");
-	// set the property list for this object
-
-	if (propertyList == GetPropertyList())
+	if (propertyList.get() == m_PropertyList.get())
 		return;
 
-	FreePropertyList();
-	m_PropertyList = propertyList;
+	m_PropertyList = std::move(propertyList);
+}
+
+void CObjBase::SetPropertyList(PacketPropertyList* propertyList)
+{
+	SetPropertyList(std::unique_ptr<PacketPropertyList>(propertyList));
 }
 
 void CObjBase::FreePropertyList()
 {
 	ADDTOCALLSTACK("CObjBase::FreePropertyList");
-	// free m_PropertyList
-
-	if (m_PropertyList == nullptr)
-		return;
-
-	delete m_PropertyList;
-	m_PropertyList = nullptr;
+	m_PropertyList.reset();
 }
 
 dword CObjBase::UpdatePropertyRevision(dword hash)

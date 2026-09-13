@@ -1,38 +1,87 @@
-# Ignore folders
-/.cache
-/.git
-/.vscode
-/.idea
-*.vshistory*
+# Build and Output directories
+/build/
+/build*/
+/out/
+/bin/
+/bin64/
+/Debug/
+/Release/
+/Nightly/
+/x64/
+/x86/
+/obj/
+/_deps/
+/CMakeFiles/
+/spheresvr.dir/
+/backup/
+
+# IDE and Editor directories
+/.vs/
+/.vscode/
+/.idea/
+/.cursor/
+/.cache/
 /.kdev*
 /.ctagsd
-/.codelite
+/.codelite/
+*.vshistory*
 
-/_deps
-/CMakeFiles
-/external
-/spheresvr.dir
+# Temporary and local test directories
+/.tmp-classicuo/
+/tmp/
 
-/bin
-/bin64
-/Debug
-/Release
-/Nightly
-/backup
-/x64
-/x86
-/obj
-/build
+# Sphere server runtime data (if placed locally)
+/mul/
+/accounts/
+/logs/
+/save/
+/web/
+/scripts/
 
-/mul
-/accounts
-/logs
-/save
-/web
-/scripts
+# Visual Studio & C++ artifacts
+*.o
+*.obj
+*.exe
+*.dll
+*.lib
+*.exp
+*.ilk
+*.pdb
+*.idb
+*.iobj
+*.ipdb
+*.pch
+*.res
+*.tlog
+*.recipe
+*.lastbuildstate
+*.FileListAbsolute.txt
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.sln
+*.slnx
+*.user
+*.suo
 
+# CMake artifacts
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
 
-# Ignore files
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# General temporary files
 *.bak
 *.log
 *.old
@@ -41,32 +90,17 @@
 *.*swp*
 *.fuse*
 
-*.o
-*.obj
-*.exe
-
-*.vs
-*.vcxproj
-*.sln
-*.user
-*.*project
-*.*workspace
-*.kdev*
-
-# Ignore some files in the parent folder
-CMakeCache.txt
-
 # Ignore git versioning file
 /src/common/version/GitRevision.h
 
-# Ignore other specific files
+# Ignore auto-generated third-party headers
 /lib/libev/libev/config.h
 /lib/mariadb_connector_c/mysql/config.h
 /lib/mariadb_connector_c/mysql/ma_config.h
 /lib/mariadb_connector_c/mysql/mariadb_version.h
 /lib/zlib/zlib/zconf.h
 
-# Ignore debian package files.
+# Ignore debian package files
 /sphereserver*.buildinfo
 /sphereserver*.changes
 /sphereserver*.deb

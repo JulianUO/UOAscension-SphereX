@@ -12,8 +12,8 @@ static constexpr size_t kuiContainerScaleFactor = 2;
 // This was done before we added ObjectPool class.
 class CWorldSearchHolderImpl
 {
-    static constexpr size_t kuiPreallocateSize = 20;
-    static constexpr size_t kuiCachedInstances = 20;
+    static constexpr size_t kuiPreallocateSize = 64;
+    static constexpr size_t kuiCachedInstances = 64;
     std::array<CSReferenceCountedOwned<CWorldSearch>, kuiCachedInstances> _instances;
 
 public:

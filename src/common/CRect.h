@@ -6,7 +6,7 @@
 #ifndef _INC_CRECT_H
 #define _INC_CRECT_H
 
-#include "../game/uo_files/uofiles_enums.h"
+#include "uo_types/uofiles_enums.h"
 #include "CPointBase.h"
 
 class CRegion;

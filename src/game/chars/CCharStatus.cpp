@@ -13,6 +13,7 @@
 #include "../CServer.h"
 #include "../CWorldMap.h"
 #include "../triggers.h"
+#include "../ultimalive/CUltimaLive.h"
 #include "CChar.h"
 #include "CCharNPC.h"
 
@@ -1448,9 +1449,15 @@ IT_TYPE CChar::CanTouchStatic( CPointMap *pPt, ITEMID_TYPE id, const CItem *pIte
 	}
 
 	// It's a static !
-    const CItemBase *pItemDef = CItemBase::FindItemBase(id);
+	const CItemBase *pItemDef = CItemBase::FindItemBase(id);
 	if ( !pItemDef )
+	{
+		if ( g_UltimaLive.IsHarvestEnabled() && g_UltimaLive.IsHarvestGraphicAt(*pPt, id) )
+			return IT_TREE;
+		if ( g_UltimaLive.IsMiningEnabled() && g_UltimaLive.IsMiningGraphicAt(*pPt, id) )
+			return IT_ROCK;
 		return IT_NORMAL;
+	}
 	if ( !CanTouch(*pPt) )
 		return IT_JUNK;
 
@@ -1469,8 +1476,23 @@ IT_TYPE CChar::CanTouchStatic( CPointMap *pPt, ITEMID_TYPE id, const CItem *pIte
 			continue;
 		const CUOStaticItemRec *pStatic = pMapBlock->m_Statics.GetStatic(i);
 		if ( id == pStatic->GetDispID() )
-			return pItemDef->GetType();
+		{
+			IT_TYPE type = pItemDef->GetType();
+			if ( type == IT_NORMAL || type == IT_WALL )
+			{
+				if ( g_UltimaLive.IsHarvestEnabled() && g_UltimaLive.IsHarvestGraphicAt(*pPt, id) )
+					return IT_TREE;
+				if ( g_UltimaLive.IsMiningEnabled() && g_UltimaLive.IsMiningGraphicAt(*pPt, id) )
+					return IT_ROCK;
+			}
+			return type;
+		}
 	}
+
+	if ( g_UltimaLive.IsHarvestEnabled() && g_UltimaLive.IsHarvestGraphicAt(*pPt, id) )
+		return IT_TREE;
+	if ( g_UltimaLive.IsMiningEnabled() && g_UltimaLive.IsMiningGraphicAt(*pPt, id) )
+		return IT_ROCK;
 
 	return IT_NORMAL;
 }

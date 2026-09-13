@@ -7,6 +7,7 @@
 //#include "../../common/CScriptParserBufs.h" // included in the precompiled header via CExpression.h
 #include "../../common/CLog.h"
 #include "../chars/CChar.h"
+#include "../chars/CCharNPC.h"
 #include "../items/CItemCorpse.h"
 #include "../items/CItemMulti.h"
 #include "../items/CItemStone.h"
@@ -222,12 +223,12 @@ bool CClient::Cmd_Control( CChar * pChar2 )
 		pClient2->m_pChar = nullptr;
 	}
 
-	CCharPlayer * pPlayer1 = pChar1->m_pPlayer;
+	CCharPlayer * pPlayer1 = pChar1->m_pPlayer.get();
 	if ( pPlayer1 )
 	{
 		pPlayer1->GetAccount()->DetachChar(pChar1);
 	}
-	CCharPlayer * pPlayer2 = pChar2->m_pPlayer;
+	CCharPlayer * pPlayer2 = pChar2->m_pPlayer.get();
 	if ( pPlayer2 )
 	{
 		pPlayer2->GetAccount()->DetachChar(pChar2);
@@ -235,12 +236,10 @@ bool CClient::Cmd_Control( CChar * pChar2 )
 
 	// swap m_pPlayer (if they even are both players.)
 
-	pChar1->m_pPlayer = pPlayer2;
-	pChar2->m_pPlayer = pPlayer1;
+	std::swap(pChar1->m_pPlayer, pChar2->m_pPlayer);
 
 	ASSERT( pChar1->m_pNPC == nullptr );
-	pChar1->m_pNPC = pChar2->m_pNPC;	// Turn my old body into a NPC. (if it was)
-	pChar2->m_pNPC = nullptr;
+	pChar1->m_pNPC = std::move(pChar2->m_pNPC);
 
 	if ( pPlayer1 )
 	{

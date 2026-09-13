@@ -167,7 +167,7 @@ bool CScriptTriggerArgs::r_GetRef( lpctstr & ptcKey, CScriptObj * & pRef )
         ptcKey += 5;
         if ( *ptcKey == '1' )
             ++ptcKey;
-        pRef = m_pO1;
+        pRef = m_pO1.get();
         return true;
     }
     else if ( !strnicmp(ptcKey, "REF", 3) )		// REF[1-65535].NAME
@@ -541,7 +541,7 @@ bool CScriptTriggerArgs::r_WriteVal( lpctstr ptcKey, CSString &sVal, CTextConsol
             break;
         case AGC_O:
         {
-            CObjBase *pObj = dynamic_cast <CObjBase*> (m_pO1);
+            CObjBase *pObj = dynamic_cast <CObjBase*> (m_pO1.get());
             if ( pObj )
                 sVal.FormatHex(pObj->GetUID());
             else

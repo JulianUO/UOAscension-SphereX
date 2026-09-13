@@ -8,6 +8,7 @@
 #include "CScriptObj.h"
 #include "CVarDefMap.h"
 #include "CLocalVarsExtra.h"
+#include "sphere_library/sptr.h"
 #include <vector>
 
 
@@ -22,8 +23,8 @@ public:
     int64					m_iN2;      // "ARGN2" = a modifying numeric arg to the current trigger.
     int64					m_iN3;      // "ARGN3" = a modifying numeric arg to the current trigger.
 
-    CScriptObj *			m_pO1;      // "ARGO" or "ARGO1" = object 1
-                                        // these can go out of date ! get deleted etc.
+    // Non-owning; object lifetime is managed by g_World UID registry during trigger execution.
+    sl::raw_ptr_view<CScriptObj> m_pO1;      // "ARGO" or "ARGO1" = object 1
 
     CSString				m_s1;           // ""ARGS" or "ARGS1" = string 1
     CSString				m_s1_buf_vec;   // RAW, used to build argv in runtime

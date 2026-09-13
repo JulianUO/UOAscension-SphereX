@@ -7,6 +7,7 @@
 #define _INC_CRESOURCEREF_H
 
 #include "CResourceLink.h"
+#include "CResourceID.h"
 #include <vector>
 
 class CSString;
@@ -19,6 +20,7 @@ class CResourceRef
 {
 private:
     CResourceLink* m_pLink;
+    CResourceID m_ridRef;   // re-resolve via g_Cfg after resource reload
 
 public:
     static const char *m_sClassName;
@@ -33,10 +35,7 @@ public:
 
 public:
     void SetRef(CResourceLink* pLink);
-    inline CResourceLink* GetRef() const noexcept
-    {
-        return m_pLink;
-    }
+    CResourceLink* GetRef() const noexcept;
     inline bool operator==(const CResourceRef& comp) const noexcept
     {
         return (GetRef() == comp.GetRef());

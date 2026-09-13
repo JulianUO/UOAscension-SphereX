@@ -19,6 +19,8 @@
 #include "../game/CServer.h"
 #include "../game/CServerConfig.h"
 #include "../game/CWorldGameTime.h"
+#include "../game/ultimalive/CUltimaLive.h"
+#include "../game/uo_files/CUOMapList.h"
 #include "CNetState.h"
 #include "CNetworkManager.h"
 #include "send.h"
@@ -310,6 +312,14 @@ void PacketObjectStatus::WriteVersionSpecific(const CClient* target, CChar* othe
             writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_RESPOISON, pBaseCCPChar));
             writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_RESENERGY, pBaseCCPChar));
         }
+        else if (IsSetOF(OF_UOAStatusBar))
+        {
+            // #UOA#: Ascension remaps the four AOS resist slots when elemental resist is off.
+            writeInt16((word)other->GetKeyNum("PENALTY.MAGERY"));
+            writeInt16((word)other->GetKeyNum("PENALTY.STEALTH"));
+            writeInt16((word)other->GetKeyNum("POISON.CHANCE"));
+            writeInt16((word)other->GetKeyNum("EVADE.CHANCE"));
+        }
         else
         {
             writeInt64(0);
@@ -325,29 +335,51 @@ void PacketObjectStatus::WriteVersionSpecific(const CClient* target, CChar* othe
 
 	if (version >= 6)	// SA attributes
 	{
-        if (fElemental || g_Cfg.m_fDisplayElementalResistance)
+        if (IsSetOF(OF_UOAStatusBar))
         {
-            writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_RESPHYSICALMAX, pBaseCCPChar));
-            writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_RESFIREMAX, pBaseCCPChar));
-            writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_RESCOLDMAX, pBaseCCPChar));
-            writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_RESPOISONMAX, pBaseCCPChar));
-            writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_RESENERGYMAX, pBaseCCPChar));
+            // #UOA#: fixed caps + Ascension meaning for OSI ISP/LRC/FCR/FC/LMC slots.
+            writeInt16((word)150);
+            writeInt16((word)100);
+            writeInt16((word)100);
+            writeInt16((word)100);
+            writeInt16((word)100);
+            writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_INCREASEDEFCHANCE, pBaseCCPChar));
+            writeInt16((word)25);
+            writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_INCREASEHITCHANCE, pBaseCCPChar));
+            writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_INCREASEBARDCHANCE, pBaseCCPChar));		// OSI ISP
+            writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_INCREASEDAM, pBaseCCPChar));
+            writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_CASTINGFOCUS, pBaseCCPChar));			// OSI LRC
+            writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_INCREASESPELLDAM, pBaseCCPChar));
+            writeInt16((word)other->GetKeyNum("TREASUREHUNTING"));										// OSI FCR
+            writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_INCREASEGOLD, pBaseCCPChar));			// OSI FC
+            writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_INCREASEPARRYCHANCE, pBaseCCPChar));	// OSI LMC
         }
         else
         {
-            writeInt16(0);
-            writeInt64(0);
+            if (fElemental || g_Cfg.m_fDisplayElementalResistance)
+            {
+                writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_RESPHYSICALMAX, pBaseCCPChar));
+                writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_RESFIREMAX, pBaseCCPChar));
+                writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_RESCOLDMAX, pBaseCCPChar));
+                writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_RESPOISONMAX, pBaseCCPChar));
+                writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_RESENERGYMAX, pBaseCCPChar));
+            }
+            else
+            {
+                writeInt16(0);
+                writeInt64(0);
+            }
+            writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_INCREASEDEFCHANCE, pBaseCCPChar));
+            writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_INCREASEDEFCHANCEMAX, pBaseCCPChar));
+            writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_INCREASEHITCHANCE, pBaseCCPChar));
+            writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_INCREASESWINGSPEED, pBaseCCPChar));
+            writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_INCREASEDAM, pBaseCCPChar));
+            writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_LOWERREAGENTCOST, pBaseCCPChar));
+            writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_INCREASESPELLDAM, pBaseCCPChar));
+            writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_FASTERCASTRECOVERY, pBaseCCPChar));
+            writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_FASTERCASTING, pBaseCCPChar));
+            writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_LOWERMANACOST, pBaseCCPChar));
         }
-        writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_INCREASEDEFCHANCE, pBaseCCPChar));
-        writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_INCREASEDEFCHANCEMAX, pBaseCCPChar));
-        writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_INCREASEHITCHANCE, pBaseCCPChar));
-        writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_INCREASESWINGSPEED, pBaseCCPChar));
-        writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_INCREASEDAM, pBaseCCPChar));
-        writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_LOWERREAGENTCOST, pBaseCCPChar));
-        writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_INCREASESPELLDAM, pBaseCCPChar));
-        writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_FASTERCASTRECOVERY, pBaseCCPChar));
-        writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_FASTERCASTING, pBaseCCPChar));
-        writeInt16((word)other->GetPropNum(pCCPChar,     PROPCH_LOWERMANACOST, pBaseCCPChar));
 	}
 	if (target->GetNetState()->isClientKR())
 	{
@@ -674,8 +706,10 @@ PacketMessageASCII::PacketMessageASCII(const CClient* target, lpctstr pszText, c
 	else
 	{
 		const CChar* sourceCharacter = dynamic_cast<const CChar*>(source);
-		ASSERT(sourceCharacter);
-		writeInt16((word)(sourceCharacter->GetDispID()));
+		if ( sourceCharacter != nullptr )
+			writeInt16((word)(sourceCharacter->GetDispID()));
+		else
+			writeInt16(0xFFFF);
 	}
 
 	writeByte((byte)(mode));
@@ -783,7 +817,11 @@ PacketMovementAck::PacketMovementAck(const CClient* target, byte sequence) : Pac
 	ADDTOCALLSTACK("PacketMovementAck::PacketMovementAck");
 
 	writeByte(sequence);
-	writeByte((byte)(target->GetChar()->Noto_GetFlag(target->GetChar(), true, target->GetNetState()->isClientVersionNumber(MINCLIVER_NOTOINVUL), true)));
+	const CChar *pChar = target->GetChar();
+	if ( pChar != nullptr )
+		writeByte((byte)(pChar->Noto_GetFlag(pChar, true, target->GetNetState()->isClientVersionNumber(MINCLIVER_NOTOINVUL), true)));
+	else
+		writeByte(0);
 	push(target);
 }
 
@@ -1106,7 +1144,8 @@ PacketSwing::PacketSwing(const CClient* target, const CChar* defender) : PacketS
 	ADDTOCALLSTACK("PacketSwing::PacketSwing");
 
 	writeByte(0);
-	writeInt32(target->GetChar()->GetUID());
+	const CChar *pChar = target->GetChar();
+	writeInt32(pChar ? static_cast<dword>(pChar->GetUID()) : 0);
 	writeInt32(defender->GetUID());
 	push(target);
 }
@@ -1503,6 +1542,185 @@ PacketQueryClient::PacketQueryClient(CClient* target, byte bCmd) : PacketSend(XC
 			break;
 		}
 	}
+
+	push(target);
+}
+
+
+/***************************************************************************
+ * UltimaLive outbound packets
+ ***************************************************************************/
+PacketUltimaLiveMapDefinitions::PacketUltimaLiveMapDefinitions(const CClient* target) : PacketSend(XCMD_StaticUpdate, 15, PRI_NORMAL)
+{
+	ADDTOCALLSTACK("PacketUltimaLiveMapDefinitions::PacketUltimaLiveMapDefinitions");
+	initLength();
+
+	int mapCount = 0;
+	for (int m = 0; m < MAP_SUPPORTED_QTY; ++m)
+	{
+		if (g_UltimaLive.IsMapRegistered(m))
+			++mapCount;
+	}
+
+	const int length = mapCount * 9;
+	int count = (length > 0) ? (length / 7) : 0;
+	int padding = 0;
+	if (length - (count * 7) > 0)
+	{
+		++count;
+		padding = (count * 7) - length;
+	}
+
+	writeInt32(0);
+	writeInt32(count);
+	writeInt16(0);
+	writeByte(0x01);
+	writeByte(0);
+
+	for (int m = 0; m < MAP_SUPPORTED_QTY; ++m)
+	{
+		const UltimaLiveMapDef * pDef = g_UltimaLive.GetMapDef(m);
+		if (!pDef)
+			continue;
+		writeByte(static_cast<byte>(pDef->iFileIndex));
+		writeInt16(pDef->uiWidth);
+		writeInt16(pDef->uiHeight);
+		writeInt16(pDef->uiWrapX);
+		writeInt16(pDef->uiWrapY);
+	}
+
+	for (int i = 0; i < padding; ++i)
+		writeByte(0);
+
+	push(target);
+}
+
+PacketUltimaLiveLoginComplete::PacketUltimaLiveLoginComplete(const CClient* target) : PacketSend(XCMD_StaticUpdate, 15, PRI_NORMAL)
+{
+	ADDTOCALLSTACK("PacketUltimaLiveLoginComplete::PacketUltimaLiveLoginComplete");
+	initLength();
+
+	writeInt32(1);
+	writeInt32(4);
+	writeInt16(0);
+	writeByte(0x02);
+	writeByte(0);
+
+	lpctstr pszShard = g_UltimaLive.GetShardIdentifier();
+	if (!pszShard || !*pszShard)
+		pszShard = g_Serv.GetName();
+
+	const size_t len = strlen(pszShard);
+	const size_t writeLen = (len < 28) ? len : 28;
+	writeStringFixedASCII(pszShard, static_cast<uint>(writeLen));
+	for (size_t i = writeLen; i < 28; ++i)
+		writeByte(0);
+
+	const byte bDiscovery = g_UltimaLive.IsDiscoveryEnabled() ? 1 : 0;
+	writeByte(bDiscovery);
+
+	push(target);
+}
+
+PacketUltimaLiveDiscoverySnapshot::PacketUltimaLiveDiscoverySnapshot(const CClient* target, byte bMap, const dword* pBlocks, size_t iCount) : PacketSend(XCMD_StaticUpdate, 15, PRI_NORMAL)
+{
+	ADDTOCALLSTACK("PacketUltimaLiveDiscoverySnapshot::PacketUltimaLiveDiscoverySnapshot");
+	initLength();
+
+	writeInt32(static_cast<dword>(iCount));
+	writeInt32(0);
+	writeInt16(0);
+	writeByte(0x04);
+	writeByte(bMap);
+
+	if (pBlocks)
+	{
+		for (size_t i = 0; i < iCount; ++i)
+			writeInt32(pBlocks[i]);
+	}
+
+	push(target);
+}
+
+PacketUltimaLiveDiscoveryBlock::PacketUltimaLiveDiscoveryBlock(const CClient* target, byte bMap, const dword* pBlocks, size_t iCount) : PacketSend(XCMD_StaticUpdate, 15, PRI_NORMAL)
+{
+	ADDTOCALLSTACK("PacketUltimaLiveDiscoveryBlock::PacketUltimaLiveDiscoveryBlock");
+	initLength();
+
+	writeInt32(static_cast<dword>(iCount));
+	writeInt32(0);
+	writeInt16(0);
+	writeByte(0x05);
+	writeByte(bMap);
+
+	if (pBlocks)
+	{
+		for (size_t i = 0; i < iCount; ++i)
+			writeInt32(pBlocks[i]);
+	}
+
+	push(target);
+}
+
+PacketUltimaLiveRefreshView::PacketUltimaLiveRefreshView(const CClient* target) : PacketSend(XCMD_StaticUpdate, 15, PRI_NORMAL)
+{
+	ADDTOCALLSTACK("PacketUltimaLiveRefreshView::PacketUltimaLiveRefreshView");
+	initLength();
+
+	writeInt32(0);
+	writeInt32(0);
+	writeInt16(0);
+	writeByte(0x03);
+	writeByte(0);
+
+	push(target);
+}
+
+PacketUltimaLiveQueryHash::PacketUltimaLiveQueryHash(const CClient* target, dword dwBlockId, byte bMap) : PacketSend(XCMD_StaticUpdate, 15, PRI_NORMAL)
+{
+	ADDTOCALLSTACK("PacketUltimaLiveQueryHash::PacketUltimaLiveQueryHash");
+	initLength();
+
+	writeInt32(dwBlockId);
+	writeInt32(0);
+	writeInt16(0);
+	writeByte(0xFF);
+	writeByte(bMap);
+
+	push(target);
+}
+
+PacketUltimaLiveStatics::PacketUltimaLiveStatics(const CClient* target, const byte* staticsData, uint staticsLength, dword dwBlockId, byte bMap) : PacketSend(XCMD_StaticUpdate, 15, PRI_NORMAL)
+{
+	ADDTOCALLSTACK("PacketUltimaLiveStatics::PacketUltimaLiveStatics");
+	initLength();
+
+	const uint staticCount = (staticsLength / 7);
+	writeInt32(dwBlockId);
+	writeInt32(staticCount);
+	writeInt16(0);
+	writeByte(0x00);
+	writeByte(bMap);
+	if (staticsData && staticsLength > 0)
+		writeData(staticsData, staticsLength);
+
+	push(target);
+}
+
+PacketUltimaLiveTerrain::PacketUltimaLiveTerrain(const CClient* target, const byte* landData, dword dwBlockId, byte bMap) : PacketSend(XCMD_UpdateTerrain, 0xC9, PRI_NORMAL)
+{
+	ADDTOCALLSTACK("PacketUltimaLiveTerrain::PacketUltimaLiveTerrain");
+
+	// Fixed 201-byte packet (0xC9): block @1, land @5, 3 padding bytes, map id @200.
+	writeInt32(dwBlockId);
+	if (landData)
+		writeData(landData, 192);
+	else
+		fill();
+	writeByte(0);
+	writeByte(0);
+	writeByte(0);
+	writeByte(bMap);
 
 	push(target);
 }
@@ -2472,7 +2690,7 @@ PacketCharacter::PacketCharacter(CClient* target, const CChar* character) : Pack
 				writeByte((byte)layer);
 				writeInt16((word)hue);
 			}
-			else if (hue != 0)
+			else if ((hue != 0) || (itemid & 0x8000))
 			{
 				writeInt16((word)(itemid | 0x8000));
 				writeByte((byte)layer);
@@ -2645,7 +2863,8 @@ PacketPaperdoll::PacketPaperdoll(const CClient* target, const CChar* character) 
 		mode |= (target->GetNetState()->isClientVersionNumber(MINCLIVER_ML)) ? 0x1 : 0x40;
 	if (target->GetNetState()->isClientVersionNumber(MINCLIVER_ML))
 	{
-        if (character == target->GetChar() || target->GetChar()->CanDress(character))
+		const CChar *pCharTarget = target->GetChar();
+        if (character == pCharTarget || (pCharTarget != nullptr && pCharTarget->CanDress(character)))
             mode |= 0x2;
 	}
 
@@ -5554,3 +5773,69 @@ bool PacketGlobalChat::CanSendTo(const CNetState* state) // static
 {
     return state->isClientVersionNumber(MINCLIVER_GLOBALCHAT);
 }
+
+
+/***************************************************************************
+ *
+ *
+ *	Packet 0xFE : PacketUniversalCommand		Universal command packet (NORMAL)
+ *
+ *
+ ***************************************************************************/
+PacketUniversalCommand::PacketUniversalCommand(word cmdId, uint len, Priority priority) : PacketSend(XCMD_UniversalCommand, len, priority)
+{
+	ADDTOCALLSTACK("PacketUniversalCommand::PacketUniversalCommand");
+
+	initLength();
+
+	writeInt16(cmdId);
+}
+
+PacketUniversalCommandCustom::PacketUniversalCommandCustom(const CClient* target, word cmdId, lpctstr args) : PacketUniversalCommand(cmdId, 0, PRI_NORMAL)
+{
+	ADDTOCALLSTACK("PacketUniversalCommandCustom::PacketUniversalCommandCustom");
+
+	if (args && *args)
+	{
+		writeStringASCII(args, true);
+	}
+	else
+	{
+		writeCharASCII('\0');
+	}
+
+	push(target);
+}
+
+PacketCurrentPlace::PacketCurrentPlace(const CClient* target, lpctstr ptcRegionName) : PacketUniversalCommand(UNIVERSALCMD_CurrentPlace, 0, PRI_NORMAL)
+{
+	ADDTOCALLSTACK("PacketCurrentPlace::PacketCurrentPlace");
+
+	if (ptcRegionName && *ptcRegionName)
+	{
+		writeStringASCII(ptcRegionName, true);
+	}
+	else
+	{
+		writeCharASCII('\0');
+	}
+
+	push(target);
+}
+
+PacketDiscoveredPlace::PacketDiscoveredPlace(const CClient* target, lpctstr ptcRegionName) : PacketUniversalCommand(UNIVERSALCMD_DiscoveredPlace, 0, PRI_NORMAL)
+{
+	ADDTOCALLSTACK("PacketDiscoveredPlace::PacketDiscoveredPlace");
+
+	if (ptcRegionName && *ptcRegionName)
+	{
+		writeStringASCII(ptcRegionName, true);
+	}
+	else
+	{
+		writeCharASCII('\0');
+	}
+
+	push(target);
+}
+

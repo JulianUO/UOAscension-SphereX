@@ -6,7 +6,7 @@
 #ifndef _INC_CSPELLDEF_H
 #define _INC_CSPELLDEF_H
 
-#include "../../../game/uo_files/uofiles_enums.h"
+#include "../../uo_types/uofiles_enums.h"
 #include "../../../game/uo_files/uofiles_enums_itemid.h"
 #include "../../../game/uo_files/uofiles_types.h"
 #include "../../resource/CValueDefs.h"

@@ -54,7 +54,7 @@ enum XCMD_TYPE	// XCMD_* messages are unique in both directions.
 	XCMD_VendorBuy		= 0x3b,
 	XCMD_Content		= 0x3c,
 	XCMD_StaticUpdate	= 0x3f,
-	//	0x40
+	XCMD_UpdateTerrain	= 0x40,	// UltimaLive terrain block
 	XCMD_LightPoint		= 0x4e,
 	XCMD_Light			= 0x4f,
 	//	0x50
@@ -194,7 +194,15 @@ enum XCMD_TYPE	// XCMD_* messages are unique in both directions.
 	XCMD_GlobalChat			= 0xf9,
     XCMD_UltimaStoreButton  = 0xfa,
     XCMD_PublicHouseContent = 0xfb,
-	XCMD_QTY				= 0xf9
+    XCMD_UniversalCommand   = 0xfe,
+	XCMD_QTY				= 0xfe
+};
+
+enum UNIVERSALCMD_TYPE
+{
+	UNIVERSALCMD_CurrentPlace		= 0x01,
+	UNIVERSALCMD_DiscoveredPlace	= 0x02,
+	UNIVERSALCMD_QTY
 };
 
 #define SEEDLENGTH_OLD (sizeof( dword ))

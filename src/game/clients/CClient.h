@@ -16,6 +16,7 @@
 #include "CChatChanMember.h"
 #include "CGlobalChatChanMember.h"
 #include "CGMPage.h"
+#include "../ultimalive/CUltimaLiveDiscovery.h"
 
 class Packet;
 class PacketCloseUIWindow;
@@ -145,6 +146,12 @@ public:
 	CAccount * m_pAccount;			// The account name. we logged in on
 
 	bool m_fUseNewChatSystem;		// is this client compatible with new SA+ chat system?
+	bool m_fUltimaLiveClient = false;
+	int m_iUltimaLivePrevBlock = -1;
+	int m_iUltimaLivePrevMap = -1;
+	word m_wUltimaLiveMajor = 0;
+	word m_wUltimaLiveMinor = 0;
+	CUltimaLiveDiscovery m_UltimaLiveDiscovery;
 	int64 m_timeLogin;			    // World clock of login time. "LASTCONNECTTIME"
 	int64 m_timeLastEvent;		    // Last time we got event from client.
 	int64 m_timeLastEventWalk;	    // Last time we got a walk event from client
@@ -357,6 +364,7 @@ public:
     void Event_VirtueSelect(dword dwVirtue, CChar *pCharTarg);
 	bool Event_Walk( byte rawdir, byte sequence = 0 ); // Player moves
 	bool Event_CheckWalkBuffer(byte rawdir);
+	void Event_ClearWalkState();	// reset fastwalk / walk-buffer timing after MovementRej
 	bool Event_ExceededNetworkQuota(uchar uiType, int64 iBytes, int64 iQuota);
 
 	TRIGRET_TYPE Menu_OnSelect( const CResourceID& rid, int iSelect, CObjBase * pObj );
@@ -419,6 +427,9 @@ public:
 
 	bool addRelay( const CServerDef * pServ );
 	bool addLoginErr(byte code);
+	void ApplyRegisteredLoginSession(dword clientVersion, dword reportedVersion);
+	void PrepareExternalLoginAccountTags(lpctstr pszAccount, dword clientVersion, dword reportedVersion);
+	void ClearExternalLoginAccountTags(lpctstr pszAccount);
 #define SF_UPDATE_HITS		0x01
 #define SF_UPDATE_MANA		0x02
 #define SF_UPDATE_STAM		0x04
@@ -488,6 +499,9 @@ public:
 	void addMap() const;
 	void addMapDiff() const;
     void addMapWaypoint(CObjBase *pObj, MAPWAYPOINT_TYPE type) const;
+    void addUniversalCommand(word cmdId, lpctstr args) const;
+    void addCurrentPlace(lpctstr ptcRegionName) const;
+    void addDiscoveredPlace(lpctstr ptcRegionName) const;
 	void addChangeServer() const;
 	void addPlayerUpdate() const;
 

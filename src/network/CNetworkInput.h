@@ -7,6 +7,7 @@
 #define _INC_CNETWORKINPUT_H
 
 #include "CSocket.h"
+#include <memory>
 
 
 class CNetworkThread;
@@ -17,13 +18,13 @@ class CNetworkInput
 {
 private:
     CNetworkThread* m_thread;	// owning network thread
-    byte* m_receiveBuffer;		// buffer for received data
-    byte* m_decryptBuffer;		// buffer for decrypted data
+    std::unique_ptr<byte[]> m_receiveBuffer;		// buffer for received data
+    std::unique_ptr<byte[]> m_decryptBuffer;		// buffer for decrypted data
 
 public:
     static const char* m_sClassName;
     CNetworkInput(void);
-    ~CNetworkInput(void);
+    ~CNetworkInput(void) = default;
 
 private:
     CNetworkInput(const CNetworkInput& copy);

@@ -16,6 +16,7 @@
 #include "../components/CCSpawn.h"
 #include "../CSector.h"
 #include "../CServer.h"
+#include "../ultimalive/CUltimaLive.h"
 #include "../CWorld.h"
 #include "../CWorldGameTime.h"
 #include "../CWorldMap.h"
@@ -311,10 +312,14 @@ void CClient::addObjectRemove( const CObjBase * pObj ) const
 void CClient::addRemoveAll( bool fItems, bool fChars )
 {
 	ADDTOCALLSTACK("CClient::addRemoveAll");
+	CChar * pCharSelf = GetChar();
+	if ( pCharSelf == nullptr )
+		return;
+
 	if ( fItems )
 	{
 		// Remove any multi objects first ! or client will hang
-		auto AreaItems = CWorldSearchHolder::GetInstance(GetChar()->GetTopPoint(), g_Cfg.m_iMapViewRadar);
+		auto AreaItems = CWorldSearchHolder::GetInstance(pCharSelf->GetTopPoint(), g_Cfg.m_iMapViewRadar);
 		AreaItems->SetSearchSquare(true);
 		for (;;)
 		{
@@ -326,8 +331,7 @@ void CClient::addRemoveAll( bool fItems, bool fChars )
 	}
 	if ( fChars )
 	{
-		CChar * pCharSrc = GetChar();
-		auto AreaChars = CWorldSearchHolder::GetInstance(GetChar()->GetTopPoint(), GetChar()->GetVisualRange());
+		auto AreaChars = CWorldSearchHolder::GetInstance(pCharSelf->GetTopPoint(), pCharSelf->GetVisualRange());
 		AreaChars->SetAllShow(IsPriv(PRIV_ALLSHOW));
 		AreaChars->SetSearchSquare(true);
 		for (;;)
@@ -335,7 +339,7 @@ void CClient::addRemoveAll( bool fItems, bool fChars )
 			CChar * pChar = AreaChars->GetChar();
 			if ( pChar == nullptr )
 				break;
-			if ( pChar == pCharSrc )
+			if ( pChar == pCharSelf )
 				continue;
 			addObjectRemove(pChar);
 		}
@@ -1497,7 +1501,10 @@ void CClient::addPlayerStart( CChar * pChar )
 */
 
 	new PacketPlayerStart(this);
-	addMapDiff();
+	if (g_UltimaLive.IsEnabled())
+		g_UltimaLive.OnPlayerStart(this);
+	else
+		addMapDiff();
 	m_pChar->MoveToChar(pt, true, false, false, false); // make sure we are in active list
 	m_pChar->Update();
 	addPlayerWarMode();
@@ -1953,6 +1960,8 @@ void CClient::addPlayerSee( const CPointMap & ptOld )
 
     const bool fOSIMultiSight = IsSetOF(OF_OSIMultiSight);
     const CChar *pCharThis = GetChar();
+	if ( pCharThis == nullptr )
+		return;
 	const int iViewDist = pCharThis->GetVisualRange();
     const CPointMap& ptCharThis = pCharThis->GetTopPoint();
 	const CRegion *pCurrentCharRegion = ptCharThis.GetRegion(REGION_TYPE_HOUSE);
@@ -2149,6 +2158,24 @@ void CClient::addMapWaypoint(CObjBase *pObj, MAPWAYPOINT_TYPE type) const
         if (PacketWaypointRemove::CanSendTo(GetNetState()))
             new PacketWaypointRemove(this, pObj);
     }
+}
+
+void CClient::addUniversalCommand(word cmdId, lpctstr args) const
+{
+	ADDTOCALLSTACK("CClient::addUniversalCommand");
+	new PacketUniversalCommandCustom(this, cmdId, args);
+}
+
+void CClient::addCurrentPlace(lpctstr ptcRegionName) const
+{
+	ADDTOCALLSTACK("CClient::addCurrentPlace");
+	new PacketCurrentPlace(this, ptcRegionName);
+}
+
+void CClient::addDiscoveredPlace(lpctstr ptcRegionName) const
+{
+	ADDTOCALLSTACK("CClient::addDiscoveredPlace");
+	new PacketDiscoveredPlace(this, ptcRegionName);
 }
 
 void CClient::addChangeServer() const
@@ -2574,7 +2601,9 @@ bool CClient::addBBoardMessage( const CItemContainer * pBoard, BBOARDF_TYPE flag
 	ADDTOCALLSTACK("CClient::addBBoardMessage");
 	ASSERT(pBoard);
 
-	CItemMessage *pMsgItem = static_cast<CItemMessage *>(uidMsg.ItemFind());
+	CItemMessage *pMsgItem = dynamic_cast<CItemMessage *>(uidMsg.ItemFind());
+	if ( pMsgItem == nullptr )
+		return false;
 	if (pBoard->IsItemInside( pMsgItem ) == false)
 		return false;
 
@@ -2806,6 +2835,16 @@ byte CClient::Setup_Start( CChar * pChar ) // Send character startup stuff to pl
 	pAccount->m_uidLastChar = pChar->GetUID();
 
 	g_Log.Event( LOGM_CLIENTS_LOG, "%x:Character startup for account '%s', char '%s'. IP='%s'.\n", GetSocketID(), pAccount->GetName(), pChar->GetName(), GetPeerStr() );
+
+	if ( GetNetState()->getReportedVersion() == 0 && GetNetState()->m_clientVersionNumber == 0 && pAccount != nullptr )
+	{
+		dword tmVerReported = (dword)(pAccount->m_TagDefs.GetKeyNum("reportedcliver"));
+		if ( !tmVerReported )
+			tmVerReported = (dword)(pAccount->m_TagDefs.GetKeyNum("ReportedCliVer"));
+		dword tmVer = (dword)(pAccount->m_TagDefs.GetKeyNum("clientversion"));
+
+		ApplyRegisteredLoginSession(tmVer, tmVerReported);
+	}
 
 	if ( GetPrivLevel() > PLEVEL_Player )		// GMs should login with invul and without allshow flag set
 	{
