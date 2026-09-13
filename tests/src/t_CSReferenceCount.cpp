@@ -40,6 +40,14 @@ TEST_CASE("CSReferenceCounted self-assignment is safe")
 {
     CSReferenceCountedOwned<TestCountedData> owner;
     CSReferenceCounted<TestCountedData> ref = owner.GetRef();
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wself-assign-overloaded"
+#pragma clang diagnostic ignored "-Wself-assign"
+#endif
     ref = ref;
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
     CHECK(owner._counted_references == 2);
 }
