@@ -7,6 +7,7 @@
 #include "../../common/CUOClientVersion.h"
 #include "../../network/CClientIterator.h"
 #include "../ultimalive/CUltimaLive.h"
+#include <cmath>
 #include "../../network/CNetworkManager.h"
 #include "../../network/CIPHistoryManager.h"
 #include "../../network/send.h"
@@ -302,8 +303,8 @@ void CClient::SetScreenSize(ushort x, ushort y)
     if (x > 0 && y > 0)
     {
         // Isometric calculation: tile distance to viewport corner (44px tile diameter)
-        double maxDistTiles = sqrt(static_cast<double>(x) * x + static_cast<double>(y) * y) / 44.0;
-        int screenBlocks = static_cast<int>(ceil(maxDistTiles / 8.0));
+        double maxDistTiles = std::sqrt(static_cast<double>(x) * x + static_cast<double>(y) * y) / 44.0;
+        int screenBlocks = static_cast<int>(std::ceil(maxDistTiles / 8.0));
         // Reveal almost everything on screen except 1 outer edge block
         int revealBlocks = std::max(2, screenBlocks - 1);
         m_UltimaLiveDiscovery.SetViewBlocks(revealBlocks);

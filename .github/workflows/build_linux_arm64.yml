@@ -34,20 +34,27 @@ jobs:
       run: |
         lsb_release -d
 
-        # Configure Ubuntu 24.04 noble deb822 sources for amd64/i386 and ports.ubuntu.com for arm64
-        sudo sed -i 's/Architectures: .*/Architectures: amd64 i386/' /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true
-        if [ -f /etc/apt/sources.list ]; then
-          sudo sed -i 's/deb http/deb [arch=amd64,i386] http/' /etc/apt/sources.list 2>/dev/null || true
-        fi
+        # Ensure default repos only query amd64 and i386
+        sudo rm -f /etc/apt/sources.list
+        sudo rm -f /etc/apt/sources.list.d/*.list 2>/dev/null || true
+
+        cat << 'EOF' | sudo tee /etc/apt/sources.list.d/ubuntu.sources
+Types: deb
+URIs: http://azure.archive.ubuntu.com/ubuntu/ http://security.ubuntu.com/ubuntu/
+Suites: noble noble-updates noble-security noble-backports
+Components: main universe restricted multiverse
+Architectures: amd64 i386
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+EOF
 
         cat << 'EOF' | sudo tee /etc/apt/sources.list.d/arm64.sources
-        Types: deb
-        URIs: http://ports.ubuntu.com/ubuntu-ports/
-        Suites: noble noble-updates noble-security
-        Components: main universe
-        Architectures: arm64
-        Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
-        EOF
+Types: deb
+URIs: http://ports.ubuntu.com/ubuntu-ports/
+Suites: noble noble-updates noble-security noble-backports
+Components: main universe restricted multiverse
+Architectures: arm64
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+EOF
 
         sudo dpkg --add-architecture arm64
         sudo apt-get -qq update > /dev/null

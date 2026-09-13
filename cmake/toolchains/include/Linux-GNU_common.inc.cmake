@@ -12,7 +12,7 @@ function(toolchain_exe_stuff_common)
 
     set(libs_link_list mariadb dl)
     foreach(lib_name ${libs_link_list})
-        find_library(lib_${lib_name}_with_path ${lib_name} PATH ${lib_search_paths})
+        find_library(lib_${lib_name}_with_path NAMES ${lib_name} lib${lib_name} PATHS ${lib_search_paths} /usr/lib/i386-linux-gnu /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu /usr/lib)
         message(STATUS "Library ${lib_name}: ${lib_${lib_name}_with_path}")
     endforeach()
 
