@@ -9,7 +9,7 @@ function(toolchain_force_compiler)
         set(CMAKE_CXX_COMPILER "aarch64-linux-gnu-g++" CACHE STRING "C++ compiler" FORCE)
 
         # where is the target environment located
-        set(CMAKE_FIND_ROOT_PATH "/usr/aarch64-linux-gnu" CACHE INTERNAL "" FORCE)
+        set(CMAKE_FIND_ROOT_PATH "/usr/aarch64-linux-gnu" "/usr/lib/aarch64-linux-gnu" CACHE INTERNAL "" FORCE)
 
         # adjust the default behavior of the FIND_XXX() commands:
         # search programs in the host environment
@@ -34,6 +34,9 @@ function(toolchain_after_project)
     if(CROSSCOMPILING_ARCH)
         # possible cross-compilation foreign arch lib locations
         set(lib_search_paths
+            "/usr/lib/aarch64-linux-gnu/libmariadb3"
+            "/usr/lib/aarch64-linux-gnu/mysql"
+            "/usr/lib/aarch64-linux-gnu"
             "/usr/aarch64-linux-gnu/usr/lib/libmariadb3"
             "/usr/aarch64-linux-gnu/usr/lib/mysql"
             "/usr/aarch64-linux-gnu/usr/lib/"
