@@ -35,6 +35,17 @@ jobs:
         lsb_release -d
         sudo dpkg --add-architecture i386
         sudo add-apt-repository universe
+
+        # Ubuntu 24.04 pruned i386 universe packages. Add Ubuntu 22.04 (jammy) universe mirror for i386:
+        cat << 'EOF' | sudo tee /etc/apt/sources.list.d/jammy-i386.sources
+        Types: deb
+        URIs: http://azure.archive.ubuntu.com/ubuntu/ http://archive.ubuntu.com/ubuntu/
+        Suites: jammy jammy-updates
+        Components: universe
+        Architectures: i386
+        Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+        EOF
+
         sudo apt-get update
         sudo apt-get install -y --no-install-recommends \
           ninja-build ccache \
