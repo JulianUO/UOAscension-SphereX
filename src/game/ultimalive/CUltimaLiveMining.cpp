@@ -390,7 +390,6 @@ bool CUltimaLiveMining::TryMiningHarvest(CUltimaLive & live, CChar * pChar, int 
 	CollectStaticsAt(live, iMap, mineX, mineY, statics);
 
 	const CUOStaticItemRec * pTargetStatic = nullptr;
-	const MiningWallTemplate * pTmpl = nullptr;
 	bool fHasFloorEdge = false;
 
 	for (const CUOStaticItemRec & s : statics)
@@ -405,7 +404,6 @@ bool CUltimaLiveMining::TryMiningHarvest(CUltimaLive & live, CChar * pChar, int 
 			if (t && !pTargetStatic)
 			{
 				pTargetStatic = &s;
-				pTmpl = t;
 			}
 		}
 	}

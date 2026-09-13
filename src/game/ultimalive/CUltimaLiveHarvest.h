@@ -21,6 +21,9 @@ struct HarvestGraphicDef
 	word wTileId = 0;
 	char iDx = 0;
 	char iDy = 0;
+
+	HarvestGraphicDef() = default;
+	HarvestGraphicDef(word tile, char dx, char dy) noexcept : wTileId(tile), iDx(dx), iDy(dy) {}
 };
 
 struct HarvestTreeTemplate

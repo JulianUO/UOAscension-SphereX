@@ -1319,15 +1319,13 @@ bool CUltimaLive::ParseStaffCommand(CClient * pClient, lpctstr pszCommand)
 	if (!strnicmp(ppCmd[0], "delstatic", 9))
 	{
 		word id = (iQty >= 2) ? static_cast<word>(atoi(ppCmd[1])) : 0;
-		char z = static_cast<char>(pt.m_z);
-		if (iQty >= 3)
-			z = static_cast<char>(atoi(ppCmd[2]));
+		char z = (iQty >= 3) ? static_cast<char>(atoi(ppCmd[2])) : static_cast<char>(pt.m_z);
 		std::vector<CUOStaticItemRec> at;
 		if (m_pOverlay->GetStaticsAt(iMap, pt.m_x, pt.m_y, at))
 		{
 			for (const CUOStaticItemRec & st : at)
 			{
-				if (id == 0 || st.m_wTileID == id)
+				if ((id == 0 || st.m_wTileID == id) && (iQty < 3 || st.m_z == z))
 					DeleteStaticAt(iMap, pt.m_x, pt.m_y, st.m_wTileID, st.m_z);
 			}
 		}

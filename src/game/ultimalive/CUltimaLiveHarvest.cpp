@@ -57,11 +57,7 @@ namespace
 {
 	void AddGraphic(std::vector<HarvestGraphicDef> & list, word wTileId, char dx, char dy)
 	{
-		HarvestGraphicDef g;
-		g.wTileId = wTileId;
-		g.iDx = dx;
-		g.iDy = dy;
-		list.push_back(g);
+		list.emplace_back(wTileId, dx, dy);
 	}
 
 	void AddFallenEastWest(std::vector<HarvestGraphicDef> & fallen)

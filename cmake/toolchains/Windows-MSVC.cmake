@@ -155,10 +155,11 @@ function(toolchain_exe_stuff)
     if("${ARCH}" STREQUAL "x86_64")
         target_compile_options(spheresvr PRIVATE /arch:SSE2)
     endif()
-    #-- Apply linker flags.
-
-    # For some reason only THIS one isn't created, and CMake complains with an error...
-    set(CMAKE_EXE_LINKER_FLAGS_NIGHTLY CACHE INTERNAL ${CMAKE_EXE_LINKER_FLAGS_RELEASE} "")
+    # For custom build types, CMake requires predefined flags for each target type
+    set(CMAKE_EXE_LINKER_FLAGS_NIGHTLY "" CACHE INTERNAL "")
+    set(CMAKE_SHARED_LINKER_FLAGS_NIGHTLY "" CACHE INTERNAL "")
+    set(CMAKE_STATIC_LINKER_FLAGS_NIGHTLY "" CACHE INTERNAL "")
+    set(CMAKE_MODULE_LINKER_FLAGS_NIGHTLY "" CACHE INTERNAL "")
 
     # gersemi: off
     target_link_options(spheresvr PRIVATE

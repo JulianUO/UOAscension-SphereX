@@ -89,7 +89,10 @@ set(CMAKE_EXE_LINKER_FLAGS_RELEASE "")
 #STRING (REGEX REPLACE "/RTC(su|[1su])" "" CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
 
 # Also, it fails to create those predefined flags, which it needs, for custom build types (e.g. Nightly).
-set(CMAKE_EXE_LINKER_FLAGS_NIGHTLY "")
+set(CMAKE_EXE_LINKER_FLAGS_NIGHTLY "" CACHE STRING "Flags for Nightly build" FORCE)
+set(CMAKE_SHARED_LINKER_FLAGS_NIGHTLY "" CACHE STRING "Flags for Nightly build" FORCE)
+set(CMAKE_STATIC_LINKER_FLAGS_NIGHTLY "" CACHE STRING "Flags for Nightly build" FORCE)
+set(CMAKE_MODULE_LINKER_FLAGS_NIGHTLY "" CACHE STRING "Flags for Nightly build" FORCE)
 
 
 # --------------------  GUI checkboxes --------------------
